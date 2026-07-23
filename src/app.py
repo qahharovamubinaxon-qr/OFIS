@@ -17,6 +17,7 @@ from src.config import paths
 from src.config.settings_service import SettingsService
 from src.database.connection import Database
 from src.database.repositories.company_repo import CompanyRepository
+from src.database.repositories.generated_repo import GeneratedRepository
 from src.database.repositories.settings_repo import SettingsRepository
 from src.domain.company import Company
 from src.domain.enums import EmployerType
@@ -46,7 +47,10 @@ def build_container() -> Container:
     company_service = CompanyService(company_repo)
     container.register_instance(CompanyService, company_service)
 
-    container.register_instance(GenerationService, GenerationService(settings))
+    generated_repo = GeneratedRepository(db)
+    container.register_instance(GeneratedRepository, generated_repo)
+
+    container.register_instance(GenerationService, GenerationService(settings, generated_repo))
 
     # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
     # service degrades to "use manual fill" when no key is present.

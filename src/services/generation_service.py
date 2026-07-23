@@ -15,6 +15,7 @@ from pathlib import Path
 from src.common.logging import get_logger
 from src.config import paths
 from src.config.settings_service import SettingsService
+from src.database.repositories.generated_repo import GeneratedRepository
 from src.domain.company import Company
 from src.domain.employee import Employee
 from src.pdf.engine import fill
@@ -39,8 +40,11 @@ class GenerationResult:
 
 
 class GenerationService:
-    def __init__(self, settings: SettingsService) -> None:
+    def __init__(
+        self, settings: SettingsService, generated_repo: GeneratedRepository | None = None
+    ) -> None:
         self._settings = settings
+        self._repo = generated_repo
 
     def next_reg_number(self) -> int:
         """Peek the number the next generated PDF will carry (does not consume)."""
@@ -66,6 +70,14 @@ class GenerationService:
         mapping = FieldMapping.load(_MAPPING_PATH)
         out_path = self._unique_output_path(company, employee)
         fill(company.template_path, mapping, values, out_path)
+
+        if self._repo is not None:
+            self._repo.add(
+                company_id=str(company.id), company_name=company.name,
+                surname=employee.passport.surname, full_name=employee.full_name,
+                citizenship=employee.passport.nationality or "", reg_number=reg_number,
+                pdf_path=str(out_path), form_date=form_date,
+            )
         log.info("Generated %s (reg %s) for %s", out_path.name, reg_number, company.name)
         return GenerationResult(pdf_path=out_path, reg_number=reg_number, surname=employee.passport.surname)
 

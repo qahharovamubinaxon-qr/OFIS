@@ -23,12 +23,14 @@ from src.common.di import Container
 from src.config import constants
 from src.config.settings_service import SettingsService
 from src.controllers.process_controller import ProcessController
+from src.database.repositories.generated_repo import GeneratedRepository
 from src.ocr.service import OcrService
 from src.services.company_service import CompanyService
 from src.services.generation_service import GenerationService
 from src.ui.i18n import Translator
+from src.ui.views.archive_view import ArchiveView
 from src.ui.views.companies_view import CompaniesView
-from src.ui.views.placeholder_view import PlaceholderView
+from src.ui.views.dashboard_view import DashboardView
 from src.ui.views.process_view import ProcessView
 from src.ui.views.settings_view import SettingsView
 
@@ -75,6 +77,12 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
 
     def _make_view(self, key: str, title: str, subtitle: str) -> QWidget:
+        if key == "nav.dashboard":
+            return DashboardView(
+                self._container.resolve(GeneratedRepository),
+                self._container.resolve(CompanyService),
+                self._container.resolve(GenerationService),
+            )
         if key == "nav.process":
             controller = ProcessController(
                 self._container.resolve(CompanyService),
@@ -84,9 +92,13 @@ class MainWindow(QMainWindow):
             return ProcessView(controller, self._tr)
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
+        if key == "nav.archive":
+            return ArchiveView(self._container.resolve(GeneratedRepository), "Arxiv / Архив")
+        if key == "nav.search":
+            return ArchiveView(self._container.resolve(GeneratedRepository), "Qidiruv / Поиск")
         if key == "nav.settings":
             return SettingsView(self._settings, on_theme_change=self._apply_theme)
-        return PlaceholderView(self._tr.tr(key, title), self._tr.tr(f"{key}.sub", subtitle))
+        return QWidget()
 
     def _apply_theme(self, theme: str) -> None:
         from PySide6.QtWidgets import QApplication
