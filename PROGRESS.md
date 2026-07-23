@@ -48,7 +48,27 @@
   add false vertical strokes) — clean rows (passport №, dates) align pixel-exact,
   text rows drift. **Needs the BLANK бланк** to calibrate all rows cleanly.
 
-## Next — Phase 2/3 (Core Infrastructure + Database)
+## Phases 2–7 — Working app (manual mode end-to-end) ✅
+- **Companies**: CompanyRepository + CompanyService (store/list, per-company
+  template import); default ИП ГОРДИЕНКО seeded on first run.
+- **Generation**: GenerationService — data → build_values → fill company template
+  → save output/<company>/<SURNAME>.pdf (deduped) → advance 3-digit reg counter.
+- **Business rules** (field_extractor): patent expiry = issue+1yr, ФИО+гражданство,
+  должность only when custom (else pre-printed default kept via engine whiteout).
+- **AI/OCR**: IAiProvider + Gemini adapter (keyed from Settings, lazy import) +
+  FakeProvider + AiManager (fallback → "use manual fill"); OcrService maps
+  passport/patent images → validated models.
+- **Manual mode**: 16-field labeled table (manual_entry) → build_employee → same
+  engine. Offline fallback, needs no key.
+- **UI (PySide6)**: MainWindow shell + real ProcessView (company/date/должность,
+  AI upload + RUN, «Qo'lda to'ldirish»), CompaniesView (list + add w/ template),
+  SettingsView (Gemini key, theme live, language, output folder). Wired via
+  ProcessController on worker threads (responsive).
+- **Verified**: full app constructs offscreen (6 views); manual generation
+  end-to-end produces ЮЛДАШЕВ_БЕКЗОД.pdf; all 16 fields correct. Tests 24/24.
+- **AI**: plug a Gemini key in Settings → RUN reads passport+patent automatically.
+
+## Next (Core Infrastructure + Database)
 - Flesh out repositories (company, employee, documents, history, generated).
 - `CompanyService` + the Companies screen (Phase 5) so a real company/template
   can be registered.

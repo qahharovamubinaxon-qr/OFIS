@@ -19,12 +19,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.common.di import Container
 from src.config import constants
 from src.config.settings_service import SettingsService
+from src.controllers.process_controller import ProcessController
+from src.ocr.service import OcrService
+from src.services.company_service import CompanyService
+from src.services.generation_service import GenerationService
 from src.ui.i18n import Translator
+from src.ui.views.companies_view import CompaniesView
 from src.ui.views.placeholder_view import PlaceholderView
+from src.ui.views.process_view import ProcessView
+from src.ui.views.settings_view import SettingsView
 
-# (i18n key, default title, default subtitle) — order defines both nav and stack.
 _NAV = [
     ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts"),
     ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF"),
@@ -36,9 +43,10 @@ _NAV = [
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: SettingsService, translator: Translator) -> None:
+    def __init__(self, container: Container, translator: Translator) -> None:
         super().__init__()
-        self._settings = settings
+        self._container = container
+        self._settings = container.resolve(SettingsService)
         self._tr = translator
 
         self.setWindowTitle(constants.APP_NAME)
@@ -59,15 +67,35 @@ class MainWindow(QMainWindow):
 
         for key, title, subtitle in _NAV:
             self._nav_list.addItem(self._tr.tr(key, title))
-            self._stack.addWidget(
-                PlaceholderView(self._tr.tr(key, title), self._tr.tr(f"{key}.sub", subtitle))
-            )
+            self._stack.addWidget(self._make_view(key, title, subtitle))
 
-        # Row index maps 1:1 to stack index — no header offset.
         self._nav_list.currentRowChanged.connect(self._stack.setCurrentIndex)
-        self._nav_list.setCurrentRow(0)
+        self._nav_list.setCurrentRow(1)  # open on Process Employee
 
         self._build_status_bar()
+
+    def _make_view(self, key: str, title: str, subtitle: str) -> QWidget:
+        if key == "nav.process":
+            controller = ProcessController(
+                self._container.resolve(CompanyService),
+                self._container.resolve(OcrService),
+                self._container.resolve(GenerationService),
+            )
+            return ProcessView(controller, self._tr)
+        if key == "nav.companies":
+            return CompaniesView(self._container.resolve(CompanyService))
+        if key == "nav.settings":
+            return SettingsView(self._settings, on_theme_change=self._apply_theme)
+        return PlaceholderView(self._tr.tr(key, title), self._tr.tr(f"{key}.sub", subtitle))
+
+    def _apply_theme(self, theme: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from src.ui.theme import apply_theme
+
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, theme)  # type: ignore[arg-type]
 
     def _build_sidebar(self) -> QWidget:
         panel = QWidget()

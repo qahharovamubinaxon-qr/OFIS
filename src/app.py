@@ -117,7 +117,7 @@ def main() -> int:
     apply_theme(app, settings.theme)
 
     translator = Translator(settings.language)
-    window = MainWindow(settings, translator)
+    window = MainWindow(container, translator)
     window.show()
 
     log.info("UI ready (theme=%s, language=%s)", settings.theme, settings.language)
