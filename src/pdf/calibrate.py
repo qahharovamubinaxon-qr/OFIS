@@ -99,6 +99,56 @@ def detect_grid_rows(
     return rows
 
 
+def detect_all_runs(
+    page: fitz.Page,
+    page_index: int,
+    *,
+    dpi: int = 200,
+    min_cells: int = 2,
+    min_cell_px: int = 14,
+    pitch_lo: float = 15.0,
+    pitch_hi: float = 16.5,
+) -> list[GridRow]:
+    """Every evenly-spaced cell run on a page (a band may hold several: a date
+    band yields три runs — число/месяц/год). Filtered to the form's true box
+    pitch so label lettering is ignored. Used to calibrate multi-group rows.
+    """
+    gray, scale = _render_gray(page, dpi)
+    inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(12, min_cell_px)))
+    vertical = cv2.morphologyEx(inv, cv2.MORPH_OPEN, v_kernel)
+    bands = _contiguous_bands(vertical.sum(axis=1) > (min_cell_px * 255), min_height=min_cell_px)
+
+    out: list[GridRow] = []
+    for top, bottom in bands:
+        xs = _peaks(vertical[top:bottom, :].sum(axis=0), min_gap=min_cell_px // 2)
+        if len(xs) < min_cells + 1:
+            continue
+        gaps = np.diff(xs)
+        i = 0
+        while i < len(gaps):
+            j = i
+            while j + 1 < len(gaps) and abs(gaps[j + 1] - gaps[i]) < gaps[i] * 0.3:
+                j += 1
+            ncells = j - i + 1
+            if ncells >= min_cells and gaps[i] >= min_cell_px:
+                pitch_px = float(np.median(gaps[i : j + 1]))
+                pitch_pt = round(pitch_px * scale, 2)
+                if pitch_lo <= pitch_pt <= pitch_hi:
+                    out.append(
+                        GridRow(
+                            page=page_index,
+                            y_top=round(top * scale, 2),
+                            y_bottom=round(bottom * scale, 2),
+                            x0=round((xs[i] + pitch_px / 2) * scale, 2),
+                            pitch=pitch_pt,
+                            max_cells=int(ncells),
+                        )
+                    )
+            i = j + 1
+    return out
+
+
 def _contiguous_bands(mask: np.ndarray, min_height: int) -> list[tuple[int, int]]:
     bands: list[tuple[int, int]] = []
     start: int | None = None

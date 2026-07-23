@@ -4,6 +4,10 @@
   "authority": "МВД России, приказ от 30.07.2020 № 536 (ред. 22.11.2023 № 887)",
   "version": "1",
   "pages": 5,
-  "page_size_pt": [595.3, 842.4],
-  "sha256": "f134263608ce703bcfe7bf39681bf2385923b16070af3c3e65ed0023cb518879"
+  "page_size_pt": [
+    595.3,
+    842.4
+  ],
+  "sha256": "c9567222359fae0d865c81d55488bd8e1baa94e240604376b0ef5b5b4f49e911",
+  "note": "Blank official form; company employer block pre-filled, employee fields empty."
 }

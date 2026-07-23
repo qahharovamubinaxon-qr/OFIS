@@ -20,9 +20,8 @@ MAPPING = ROOT / "templates" / "mvd_prilozhenie_7" / "mapping.v1.json"
 def test_fill_produces_valid_pdf(tmp_path: Path) -> None:
     mapping = FieldMapping.load(MAPPING)
     values = {
-        "employee.passport.surname": "РАХИМОВ",
+        "employee.surname": "РАХИМОВ",
         "employee.passport.number": "123456789",
-        "employee.profession": "МАЛЯР",
     }
     out = fill(TEMPLATE, mapping, values, tmp_path / "out.pdf")
 
