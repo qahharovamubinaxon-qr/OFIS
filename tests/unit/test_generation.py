@@ -57,7 +57,7 @@ def test_seed_and_generate(container) -> None:
     assert result.pdf_path.name == "КАРИМОВ_ОТАБЕК.pdf"
     assert result.reg_number == start
     doc = fitz.open(str(result.pdf_path))
-    assert "КАРИМОВ" in doc[1].get_text().replace(" ", "")
+    assert "КАРИМОВ" in "".join(doc[1].get_text().split())  # per-cell glyphs, ignore whitespace
     doc.close()
 
 

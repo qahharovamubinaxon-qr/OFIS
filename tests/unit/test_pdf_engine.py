@@ -29,7 +29,7 @@ def test_fill_produces_valid_pdf(tmp_path: Path) -> None:
     doc = fitz.open(str(out))
     assert doc.page_count == 5  # template preserved, no pages lost
     # the surname we inserted is now real text on page 2
-    assert "РАХИМОВ" in doc[1].get_text().replace(" ", "")
+    assert "РАХИМОВ" in "".join(doc[1].get_text().split())
     doc.close()
 
 
