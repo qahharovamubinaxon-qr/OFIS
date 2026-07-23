@@ -19,10 +19,16 @@ APP_NAME = "OFIS"
 
 @lru_cache(maxsize=1)
 def app_root() -> Path:
-    """Directory the application is installed/run from (read-only at runtime)."""
-    if getattr(sys, "frozen", False):  # PyInstaller one-file
+    """Root of the bundled, read-only assets (resources/, templates/).
+
+    Under PyInstaller the datas are unpacked to ``sys._MEIPASS``; in development
+    it is the repo root (two levels up from this file).
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(str(meipass))
+    if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    # repo root = two levels up from this file (src/config/paths.py -> repo)
     return Path(__file__).resolve().parents[2]
 
 

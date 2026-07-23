@@ -12,6 +12,7 @@ ids → coordinates, which keeps it reusable across any template/domain.
 
 from __future__ import annotations
 
+import os as _os
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -25,10 +26,20 @@ from src.pdf.renderers import render_grid, render_mark, render_text
 
 log = get_logger(__name__)
 
-# Embedded Cyrillic font (Arial-metric-compatible). The Base-14 PDF fonts do not
-# cover Cyrillic, so every template value is drawn with this.
+# Values are drawn in Calibri (the owner's choice). On Windows the real system
+# Calibri is used; elsewhere (and if Calibri is absent) the bundled Carlito —
+# a metric-compatible open clone — is used, so output looks identical.
 _FONT_NAME = "ofis"
-_FONT_FILE = paths.resources_dir() / "fonts" / "OfisSans-Regular.ttf"
+_BUNDLED_FONT = paths.resources_dir() / "fonts" / "OfisSans-Regular.ttf"
+
+
+def _font_file() -> "Path":
+    if _os.name == "nt":
+        for name in ("calibri.ttf", "Calibri.ttf"):
+            candidate = Path(_os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / name
+            if candidate.exists():
+                return candidate
+    return _BUNDLED_FONT
 
 
 def _resolve(field: Field_, values: dict[str, object]) -> str:
@@ -90,15 +101,16 @@ def fill(
             "Template file not found", context={"path": str(template_path)}
         )
 
-    if not _FONT_FILE.exists():
-        raise FontMissingError("Fill font missing", context={"path": str(_FONT_FILE)})
+    font_file = _font_file()
+    if not font_file.exists():
+        raise FontMissingError("Fill font missing", context={"path": str(font_file)})
 
     fields = mapping.calibrated_fields() if only_calibrated else mapping.fields
-    font = fitz.Font(fontfile=str(_FONT_FILE))
+    font = fitz.Font(fontfile=str(font_file))
     doc = fitz.open(str(template_path))
     try:
         for page in doc:
-            page.insert_font(fontname=_FONT_NAME, fontfile=str(_FONT_FILE))
+            page.insert_font(fontname=_FONT_NAME, fontfile=str(font_file))
 
         for field in fields:
             if not _visible(field, values):
