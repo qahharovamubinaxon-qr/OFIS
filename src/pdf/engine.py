@@ -1,0 +1,98 @@
+"""The PDF engine: fill a template from a flat ``{field_id: value}`` dict.
+
+Receives only data + a validated mapping — never touches OCR/AI/UI/DB
+(PDF_ENGINE.md). The template is opened and drawn on a copy; the original is
+never modified. Generation is deterministic for identical inputs.
+
+Value resolution is intentionally simple and explicit: the caller flattens an
+Employee/Company into ``{"employee.passport.surname": "АЗИМОВ", ...}`` (done by
+``src.services.field_extractor`` in a later phase). The engine only knows field
+ids → coordinates, which keeps it reusable across any template/domain.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import fitz  # PyMuPDF
+
+from src.common.errors import FontMissingError, TemplateMissingError
+from src.common.logging import get_logger
+from src.config import paths
+from src.pdf.formatters import apply_formatter, apply_transform
+from src.pdf.mapping import FieldMapping, Field_
+from src.pdf.renderers import render_grid, render_mark, render_text
+
+log = get_logger(__name__)
+
+# Embedded Cyrillic font (Arial-metric-compatible). The Base-14 PDF fonts do not
+# cover Cyrillic, so every template value is drawn with this.
+_FONT_NAME = "ofis"
+_FONT_FILE = paths.resources_dir() / "fonts" / "OfisSans-Regular.ttf"
+
+
+def _resolve(field: Field_, values: dict[str, object]) -> str:
+    raw = values.get(field.id)
+    if raw is None:
+        return ""
+    text = apply_formatter(raw, field.formatter)
+    return apply_transform(text, field.transform)
+
+
+def _visible(field: Field_, values: dict[str, object]) -> bool:
+    """Evaluate a simple ``a.b == value`` visibility rule. No eval, no surprises."""
+    if not field.visible_if:
+        return True
+    try:
+        left, right = (s.strip() for s in field.visible_if.split("==", 1))
+    except ValueError:
+        return True
+    return str(values.get(left, "")).lower() == right.strip().lower()
+
+
+def fill(
+    template_path: Path,
+    mapping: FieldMapping,
+    values: dict[str, object],
+    output_path: Path,
+    *,
+    only_calibrated: bool = True,
+) -> Path:
+    """Fill ``template_path`` per ``mapping`` with ``values`` → ``output_path``."""
+    if not template_path.exists():
+        raise TemplateMissingError(
+            "Template file not found", context={"path": str(template_path)}
+        )
+
+    if not _FONT_FILE.exists():
+        raise FontMissingError("Fill font missing", context={"path": str(_FONT_FILE)})
+
+    fields = mapping.calibrated_fields() if only_calibrated else mapping.fields
+    font = fitz.Font(fontfile=str(_FONT_FILE))
+    doc = fitz.open(str(template_path))
+    try:
+        for page in doc:
+            page.insert_font(fontname=_FONT_NAME, fontfile=str(_FONT_FILE))
+
+        for field in fields:
+            if not _visible(field, values):
+                continue
+            page = doc[field.page - 1]
+            if field.type == "mark":
+                render_mark(page, field, _FONT_NAME)
+                continue
+            value = _resolve(field, values)
+            if not value:
+                continue
+            if field.type == "grid":
+                render_grid(page, field, value, font, _FONT_NAME)
+            elif field.type == "text":
+                render_text(page, field, value, font, _FONT_NAME)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(output_path), garbage=4, deflate=True)
+    finally:
+        doc.close()
+
+    log.info("Generated PDF: %s (%d fields)", output_path.name, len(fields))
+    return output_path

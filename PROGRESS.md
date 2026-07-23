@@ -34,6 +34,20 @@
 - Note: GUI (`app.py` → window) verified by construction; run on Windows/desktop
   with a display (`python -m src.app`) — this dev box is headless Linux.
 
+## Phase 8 (partial) — PDF Engine + auto-calibration ✅
+- `src/pdf/`: `mapping.py` (versioned FieldMapping, Pydantic), `formatters.py`
+  (transforms + date parts), `renderers.py` (grid/text/mark, Cyrillic-accurate
+  widths), `engine.py` (fill a template from `{field_id: value}`, embeds a
+  Cyrillic font, never mutates the template, deterministic), `calibrate.py`
+  (**OpenCV auto-detection** of character-grid rows → x0/pitch/max_cells in points).
+- `resources/fonts/OfisSans` = Liberation Sans (OFL, Arial-metric, Cyrillic).
+- `scripts/calibrate_mvd.py` builds `mapping.v1.json` from detection (11 fields).
+- Proven end-to-end: engine fills the real МВД form, inserted Cyrillic is real
+  page text; tests 11/11.
+- FINDING: auto-detection is corrupted on the *filled* sample (printed glyphs
+  add false vertical strokes) — clean rows (passport №, dates) align pixel-exact,
+  text rows drift. **Needs the BLANK бланк** to calibrate all rows cleanly.
+
 ## Next — Phase 2/3 (Core Infrastructure + Database)
 - Flesh out repositories (company, employee, documents, history, generated).
 - `CompanyService` + the Companies screen (Phase 5) so a real company/template

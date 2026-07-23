@@ -2,52 +2,162 @@
   "template": "mvd_prilozhenie_7",
   "template_version": "1",
   "mapping_version": "1",
-  "page_size": [595.3, 842.4],
-  "_note": "Coordinates are calibrated in Phase 8 with pdf/calibrate.py (two clicks per grid row → x0/pitch/max_cells). The few entries below are structural examples proving the schema shape; their numbers are placeholders marked _calibrated:false and are NOT used for generation until calibrated. See ARCHITECTURE.md §8.",
+  "page_size": [
+    595.3,
+    842.4
+  ],
   "fields": [
+    {
+      "id": "company.address_full",
+      "type": "grid",
+      "page": 2,
+      "x0": 36.0,
+      "y": 181.01,
+      "pitch": 15.84,
+      "max_cells": 34,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
+    },
     {
       "id": "employee.passport.surname",
       "type": "grid",
-      "page": 2, "x0": 175.0, "y": 561.0, "pitch": 21.4, "max_cells": 20,
-      "font": "Arial", "size": 12, "align": "center",
-      "transform": "uppercase", "required": true,
-      "validator": "russian_name", "overflow": "shrink", "_calibrated": false
+      "page": 2,
+      "x0": 132.48,
+      "y": 360.39,
+      "pitch": 15.84,
+      "max_cells": 28,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
     },
     {
       "id": "employee.passport.name",
       "type": "grid",
-      "page": 2, "x0": 175.0, "y": 598.0, "pitch": 21.4, "max_cells": 20,
-      "transform": "uppercase", "required": true, "_calibrated": false
+      "page": 2,
+      "x0": 195.48,
+      "y": 389.91,
+      "pitch": 15.84,
+      "max_cells": 24,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
     },
     {
-      "id": "employee.passport.birth_date.day",
-      "type": "grid", "page": 2, "x0": 220.0, "y": 470.0, "pitch": 21.4,
-      "max_cells": 2, "formatter": "date_dd", "required": true, "_calibrated": false
+      "id": "employee.passport.patronymic",
+      "type": "grid",
+      "page": 2,
+      "x0": 273.96,
+      "y": 419.07,
+      "pitch": 15.84,
+      "max_cells": 19,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
     },
     {
-      "id": "employee.passport.birth_date.month",
-      "type": "grid", "page": 2, "x0": 285.0, "y": 470.0, "pitch": 21.4,
-      "max_cells": 2, "formatter": "date_mm", "required": true, "_calibrated": false
+      "id": "employee.passport.nationality",
+      "type": "grid",
+      "page": 2,
+      "x0": 195.48,
+      "y": 448.85,
+      "pitch": 15.84,
+      "max_cells": 24,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
     },
     {
       "id": "employee.passport.birth_date.year",
-      "type": "grid", "page": 2, "x0": 360.0, "y": 470.0, "pitch": 21.4,
-      "max_cells": 4, "formatter": "date_yyyy", "required": true, "_calibrated": false
+      "type": "grid",
+      "page": 2,
+      "x0": 273.96,
+      "y": 546.87,
+      "pitch": 15.84,
+      "max_cells": 4,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "formatter": "date_yyyy"
     },
     {
-      "id": "company.inn",
-      "type": "grid", "page": 2, "x0": 120.0, "y": 210.0, "pitch": 21.4,
-      "max_cells": 12, "validator": "inn", "required": true, "_calibrated": false
+      "id": "employee.passport.number",
+      "type": "grid",
+      "page": 2,
+      "x0": 219.96,
+      "y": 630.39,
+      "pitch": 15.84,
+      "max_cells": 9,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true
     },
     {
-      "id": "company.employer_type.legal_entity",
-      "type": "mark", "page": 1, "x": 70.0, "y": 505.0, "glyph": "V",
-      "visible_if": "company.employer_type == legal_entity", "_calibrated": false
+      "id": "employee.passport.issued_by",
+      "type": "grid",
+      "page": 2,
+      "x0": 180.0,
+      "y": 669.53,
+      "pitch": 15.84,
+      "max_cells": 25,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
+    },
+    {
+      "id": "employee.patent.doc_name",
+      "type": "grid",
+      "page": 3,
+      "x0": 194.76,
+      "y": 101.55,
+      "pitch": 15.84,
+      "max_cells": 20,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
+    },
+    {
+      "id": "employee.patent.number",
+      "type": "grid",
+      "page": 3,
+      "x0": 223.92,
+      "y": 133.95,
+      "pitch": 15.84,
+      "max_cells": 11,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true
     },
     {
       "id": "employee.profession",
-      "type": "grid", "page": 3, "x0": 60.0, "y": 610.0, "pitch": 21.4,
-      "max_cells": 24, "transform": "uppercase", "required": true, "_calibrated": false
+      "type": "grid",
+      "page": 3,
+      "x0": 89.64,
+      "y": 489.17,
+      "pitch": 15.84,
+      "max_cells": 31,
+      "font": "OfisSans",
+      "size": 11.0,
+      "align": "center",
+      "_calibrated": true,
+      "transform": "uppercase"
     }
   ]
 }
