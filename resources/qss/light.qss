@@ -1,0 +1,18 @@
+/* OFIS light theme. */
+QWidget { background: #f6f7f9; color: #1c2430; font-family: "Segoe UI", "Arial"; font-size: 14px; }
+QMainWindow { background: #f6f7f9; }
+
+#sidebar { background: #ffffff; border-right: 1px solid #e4e8ee; }
+#brand { color: #2f6bff; font-size: 22px; font-weight: 800; letter-spacing: 3px;
+         padding: 22px 0 18px 0; border-bottom: 1px solid #e4e8ee; }
+
+#navList { background: transparent; border: none; padding: 10px 8px; outline: 0; }
+#navList::item { padding: 12px 14px; margin: 3px 4px; border-radius: 8px; color: #55606f; }
+#navList::item:hover { background: #eef1f6; color: #1c2430; }
+#navList::item:selected { background: #e3ecff; color: #0f213f; }
+
+#viewTitle { font-size: 26px; font-weight: 700; color: #131a24; }
+#viewSubtitle { font-size: 14px; color: #6b7686; margin-top: 6px; }
+
+QStatusBar { background: #ffffff; color: #6b7686; border-top: 1px solid #e4e8ee; }
+QStatusBar QLabel { color: #6b7686; }

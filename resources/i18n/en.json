@@ -1,0 +1,15 @@
+{
+  "nav.dashboard": "Dashboard",
+  "nav.process": "Process Employee",
+  "nav.companies": "Companies",
+  "nav.archive": "Archive",
+  "nav.search": "Search",
+  "nav.settings": "Settings",
+  "nav.dashboard.sub": "Today's activity, totals and alerts",
+  "nav.process.sub": "Upload documents, read them with AI, verify, generate PDF",
+  "nav.companies.sub": "Templates, logos and company data",
+  "nav.archive.sub": "Every generated package, by year and company",
+  "nav.search.sub": "Find an employee by passport, patent or name",
+  "nav.settings.sub": "Language, theme, AI providers, folders",
+  "status.ready": "Ready"
+}

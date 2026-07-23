@@ -1,0 +1,96 @@
+"""The application shell: sidebar navigation + stacked content + status bar.
+
+Phase 1 wires the real chrome (navigation, theming, i18n, status bar) with every
+screen shown as a themed placeholder. Each subsequent phase swaps one placeholder
+for its real view without touching this shell — the navigation contract stays put.
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QMainWindow,
+    QStackedWidget,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.config import constants
+from src.config.settings_service import SettingsService
+from src.ui.i18n import Translator
+from src.ui.views.placeholder_view import PlaceholderView
+
+# (i18n key, default title, default subtitle) — order defines both nav and stack.
+_NAV = [
+    ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts"),
+    ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF"),
+    ("nav.companies", "Companies", "Templates, logos and company data"),
+    ("nav.archive", "Archive", "Every generated package, by year and company"),
+    ("nav.search", "Search", "Find an employee by passport, patent or name"),
+    ("nav.settings", "Settings", "Language, theme, AI providers, folders"),
+]
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, settings: SettingsService, translator: Translator) -> None:
+        super().__init__()
+        self._settings = settings
+        self._tr = translator
+
+        self.setWindowTitle(constants.APP_NAME)
+        self.resize(1180, 760)
+        self.setMinimumSize(960, 640)
+
+        central = QWidget()
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._nav_list = QListWidget()
+        self._stack = QStackedWidget()
+
+        root.addWidget(self._build_sidebar())
+        root.addWidget(self._stack, stretch=1)
+        self.setCentralWidget(central)
+
+        for key, title, subtitle in _NAV:
+            self._nav_list.addItem(self._tr.tr(key, title))
+            self._stack.addWidget(
+                PlaceholderView(self._tr.tr(key, title), self._tr.tr(f"{key}.sub", subtitle))
+            )
+
+        # Row index maps 1:1 to stack index — no header offset.
+        self._nav_list.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav_list.setCurrentRow(0)
+
+        self._build_status_bar()
+
+    def _build_sidebar(self) -> QWidget:
+        panel = QWidget()
+        panel.setObjectName("sidebar")
+        panel.setFixedWidth(232)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        brand = QLabel(constants.APP_SHORT)
+        brand.setObjectName("brand")
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(brand)
+
+        self._nav_list.setObjectName("navList")
+        self._nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self._nav_list, stretch=1)
+        return panel
+
+    def _build_status_bar(self) -> None:
+        bar = QStatusBar()
+        self.setStatusBar(bar)
+        provider = self._settings.get_str("ai.primary_provider").capitalize()
+        bar.addWidget(QLabel(f"  {self._tr.tr('status.ready', 'Ready')}"))
+        bar.addPermanentWidget(QLabel(f"AI: {provider}"))
+        bar.addPermanentWidget(QLabel(f"v{constants.APP_VERSION}  "))

@@ -1,0 +1,53 @@
+{
+  "template": "mvd_prilozhenie_7",
+  "template_version": "1",
+  "mapping_version": "1",
+  "page_size": [595.3, 842.4],
+  "_note": "Coordinates are calibrated in Phase 8 with pdf/calibrate.py (two clicks per grid row → x0/pitch/max_cells). The few entries below are structural examples proving the schema shape; their numbers are placeholders marked _calibrated:false and are NOT used for generation until calibrated. See ARCHITECTURE.md §8.",
+  "fields": [
+    {
+      "id": "employee.passport.surname",
+      "type": "grid",
+      "page": 2, "x0": 175.0, "y": 561.0, "pitch": 21.4, "max_cells": 20,
+      "font": "Arial", "size": 12, "align": "center",
+      "transform": "uppercase", "required": true,
+      "validator": "russian_name", "overflow": "shrink", "_calibrated": false
+    },
+    {
+      "id": "employee.passport.name",
+      "type": "grid",
+      "page": 2, "x0": 175.0, "y": 598.0, "pitch": 21.4, "max_cells": 20,
+      "transform": "uppercase", "required": true, "_calibrated": false
+    },
+    {
+      "id": "employee.passport.birth_date.day",
+      "type": "grid", "page": 2, "x0": 220.0, "y": 470.0, "pitch": 21.4,
+      "max_cells": 2, "formatter": "date_dd", "required": true, "_calibrated": false
+    },
+    {
+      "id": "employee.passport.birth_date.month",
+      "type": "grid", "page": 2, "x0": 285.0, "y": 470.0, "pitch": 21.4,
+      "max_cells": 2, "formatter": "date_mm", "required": true, "_calibrated": false
+    },
+    {
+      "id": "employee.passport.birth_date.year",
+      "type": "grid", "page": 2, "x0": 360.0, "y": 470.0, "pitch": 21.4,
+      "max_cells": 4, "formatter": "date_yyyy", "required": true, "_calibrated": false
+    },
+    {
+      "id": "company.inn",
+      "type": "grid", "page": 2, "x0": 120.0, "y": 210.0, "pitch": 21.4,
+      "max_cells": 12, "validator": "inn", "required": true, "_calibrated": false
+    },
+    {
+      "id": "company.employer_type.legal_entity",
+      "type": "mark", "page": 1, "x": 70.0, "y": 505.0, "glyph": "V",
+      "visible_if": "company.employer_type == legal_entity", "_calibrated": false
+    },
+    {
+      "id": "employee.profession",
+      "type": "grid", "page": 3, "x0": 60.0, "y": 610.0, "pitch": 21.4,
+      "max_cells": 24, "transform": "uppercase", "required": true, "_calibrated": false
+    }
+  ]
+}

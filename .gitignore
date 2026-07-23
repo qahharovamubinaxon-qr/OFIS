@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Env / secrets
+.env
+*.key
+
+# Build
+build/dist/
+dist/
+*.spec.bak
+
+# App runtime data (should live in AppData, never in repo)
+output/
+archive/
+logs/
+*.log
+*.db
+*.db-wal
+*.db-shm
+cache/
+temp/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Tests
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage

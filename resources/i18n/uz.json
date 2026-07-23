@@ -1,0 +1,15 @@
+{
+  "nav.dashboard": "Boshqaruv paneli",
+  "nav.process": "Xodimni qayta ishlash",
+  "nav.companies": "Kompaniyalar",
+  "nav.archive": "Arxiv",
+  "nav.search": "Qidiruv",
+  "nav.settings": "Sozlamalar",
+  "nav.dashboard.sub": "Bugungi faoliyat, umumiy sonlar va ogohlantirishlar",
+  "nav.process.sub": "Hujjat yuklash, AI o'qish, tekshirish, PDF yaratish",
+  "nav.companies.sub": "Shablonlar, logotiplar va kompaniya ma'lumotlari",
+  "nav.archive.sub": "Har bir yaratilgan paket — yil va kompaniya bo'yicha",
+  "nav.search.sub": "Xodimni pasport, patent yoki ism bo'yicha topish",
+  "nav.settings.sub": "Til, mavzu, AI provayderlar, papkalar",
+  "status.ready": "Tayyor"
+}

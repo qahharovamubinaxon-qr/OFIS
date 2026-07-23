@@ -1,0 +1,18 @@
+/* OFIS dark theme — professional Windows 11 feel. */
+QWidget { background: #0f1216; color: #e6e9ef; font-family: "Segoe UI", "Arial"; font-size: 14px; }
+QMainWindow { background: #0f1216; }
+
+#sidebar { background: #12161c; border-right: 1px solid #1e242d; }
+#brand { color: #4c8dff; font-size: 22px; font-weight: 800; letter-spacing: 3px;
+         padding: 22px 0 18px 0; border-bottom: 1px solid #1e242d; }
+
+#navList { background: transparent; border: none; padding: 10px 8px; outline: 0; }
+#navList::item { padding: 12px 14px; margin: 3px 4px; border-radius: 8px; color: #aab3c0; }
+#navList::item:hover { background: #1a2029; color: #e6e9ef; }
+#navList::item:selected { background: #1d2735; color: #ffffff; }
+
+#viewTitle { font-size: 26px; font-weight: 700; color: #f2f4f8; }
+#viewSubtitle { font-size: 14px; color: #8a94a3; margin-top: 6px; }
+
+QStatusBar { background: #12161c; color: #8a94a3; border-top: 1px solid #1e242d; }
+QStatusBar QLabel { color: #8a94a3; }
