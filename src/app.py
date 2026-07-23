@@ -48,6 +48,17 @@ def build_container() -> Container:
 
     container.register_instance(GenerationService, GenerationService(settings))
 
+    # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
+    # service degrades to "use manual fill" when no key is present.
+    from src.ai.gemini_provider import GeminiProvider
+    from src.ai.manager import AiManager
+    from src.ocr.service import OcrService
+
+    gemini = GeminiProvider(api_key=str(settings.get("ai.gemini_key", "") or ""))
+    ai_manager = AiManager([gemini])
+    container.register_instance(AiManager, ai_manager)
+    container.register_instance(OcrService, OcrService(ai_manager))
+
     _seed_default_company(company_service)
 
     return container
