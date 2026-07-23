@@ -16,7 +16,12 @@ from src.common.logging import configure_logging, get_logger
 from src.config import paths
 from src.config.settings_service import SettingsService
 from src.database.connection import Database
+from src.database.repositories.company_repo import CompanyRepository
 from src.database.repositories.settings_repo import SettingsRepository
+from src.domain.company import Company
+from src.domain.enums import EmployerType
+from src.services.company_service import CompanyService
+from src.services.generation_service import GenerationService
 
 log = get_logger(__name__)
 
@@ -35,7 +40,45 @@ def build_container() -> Container:
     settings = SettingsService(settings_repo)
     container.register_instance(SettingsService, settings)
 
+    company_repo = CompanyRepository(db)
+    container.register_instance(CompanyRepository, company_repo)
+
+    company_service = CompanyService(company_repo)
+    container.register_instance(CompanyService, company_service)
+
+    container.register_instance(GenerationService, GenerationService(settings))
+
+    _seed_default_company(company_service)
+
     return container
+
+
+def _seed_default_company(companies: CompanyService) -> None:
+    """First-run seed: the ИП ГОРДИЕНКО company whose blank МВД form ships in
+    templates/. Idempotent — skipped once any company exists."""
+    if companies.count() > 0:
+        return
+    template = paths.templates_dir() / "mvd_prilozhenie_7" / "template.pdf"
+    if not template.exists():
+        return
+    try:
+        companies.create(
+            Company(
+                name="ИП ГОРДИЕНКО АЛЕКСЕЙ АНАТОЛЬЕВИЧ",
+                internal_code="GORDIENKO",
+                employer_type=EmployerType.IP,
+                okved="46.21.19",
+                ogrn="315080100000587",
+                inn="080100230802",
+                address_index="111677",
+                address_text="МОСКВА УЛ. ВЕРТОЛЁТЧИКОВ Д4 К2",
+                director_fio="ГОРДИЕНКО АЛЕКСЕЙ АНАТОЛЬЕВИЧ",
+                template_path=template,
+            )
+        )
+        log.info("Seeded default company ГОРДИЕНКО")
+    except OfisError as exc:
+        log.warning("Seed skipped: %s", exc.message)
 
 
 def main() -> int:
