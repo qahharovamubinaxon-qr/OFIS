@@ -106,6 +106,15 @@ class ProcessView(QWidget):
         root.addStretch(1)
 
     # ------------------------------------------------------------------
+    def refresh(self) -> None:
+        """Called when the screen is shown — pick up new companies + reg number."""
+        current = self._company.currentText()
+        self._reload_companies()
+        idx = self._company.findText(current)
+        if idx >= 0:
+            self._company.setCurrentIndex(idx)
+        self._status.setText(self._ai_hint())
+
     def _reload_companies(self) -> None:
         self._company.clear()
         self._companies = self._c.companies()

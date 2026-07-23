@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
             self._nav_list.addItem(self._tr.tr(key, title))
             self._stack.addWidget(self._make_view(key, title, subtitle))
 
-        self._nav_list.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav_list.currentRowChanged.connect(self._on_nav)
         self._nav_list.setCurrentRow(1)  # open on Process Employee
 
         self._build_status_bar()
@@ -99,6 +99,13 @@ class MainWindow(QMainWindow):
         if key == "nav.settings":
             return SettingsView(self._settings, on_theme_change=self._apply_theme)
         return QWidget()
+
+    def _on_nav(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+        view = self._stack.currentWidget()
+        refresh = getattr(view, "refresh", None)
+        if callable(refresh):
+            refresh()
 
     def _apply_theme(self, theme: str) -> None:
         from PySide6.QtWidgets import QApplication
