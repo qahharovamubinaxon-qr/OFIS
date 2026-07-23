@@ -1,7 +1,27 @@
 # OFIS — Progress
 
-## Current phase
-**Phase 1 — Project Foundation** ✅ complete (see DEVELOPMENT_ROADMAP.md).
+## Current state — WORKING MVP ✅
+The app runs end-to-end and produces correct МВД Приложение № 7 PDFs.
+
+- **Manual mode works with no AI key** — the full offline path is complete.
+- **AI mode is ready** — enter a Gemini key in Settings and RUN reads the
+  passport + patent photos automatically.
+- All **16 fill-in fields** land correctly on pages 2/3/5 (incl. patent +1yr,
+  reg-number auto-increment, ФИО+гражданство, должность whiteout).
+- 6 screens: Dashboard, Process, Companies, Archive, Search, Settings.
+- Saves `output/<company>/<SURNAME>.pdf`; every doc logged for Archive/Search.
+- Run on Windows: `python -m src.app` (see docs/RUN_WINDOWS.md); EXE via
+  build/ofis.spec. Tests: **24/24**.
+
+### Next (needs owner input / Windows)
+- Gemini key → verify real OCR accuracy on live passport/patent photos.
+- Optional OCR image preprocessing (deskew/contrast) once accuracy is measured.
+- Add the remaining company templates (5–6) via Companies → + Yangi firma.
+- Later forms (регистрация, трудовой договор): new templates/<name>/ only.
+
+## Roadmap phase
+**Phases 1–10 substantially delivered** (foundation → DB → UI → OCR → AI → PDF →
+archive → search). Packaging spec ready (Phase 14). See DEVELOPMENT_ROADMAP.md.
 
 ## Done
 - **Phase 0 — Design**: `ARCHITECTURE.md` — full technical design binding the 16
