@@ -39,6 +39,32 @@ def _resolve(field: Field_, values: dict[str, object]) -> str:
     return apply_transform(text, field.transform)
 
 
+def _clear_region(page: fitz.Page, field: Field_) -> None:
+    """Whiteout a pre-printed default before writing a custom value (field 16).
+
+    Covers the cell interiors while leaving the box borders intact (inset 1.5pt).
+    Only runs for fields whose mapping sets ``clear: true``.
+    """
+    extra = field.model_extra or {}
+    if not extra.get("clear"):
+        return
+    top = float(extra.get("clear_top", (field.y or 0) - field.size * 1.2))
+    bottom = float(extra.get("clear_bottom", (field.y or 0) + field.size * 0.4))
+    if field.type == "grid" and field.x0 is not None and field.pitch is not None:
+        # Whiteout the whole cell band (fully covers the pre-printed default),
+        # then redraw the vertical cell dividers so the empty grid is preserved.
+        cells = field.max_cells or 1
+        left = field.x0 - field.pitch / 2
+        right = field.x0 + (cells - 0.5) * field.pitch
+        page.draw_rect(fitz.Rect(left, top, right, bottom), color=None, fill=(1, 1, 1))
+        for i in range(cells + 1):
+            x = left + i * field.pitch
+            page.draw_line((x, top), (x, bottom), color=(0, 0, 0), width=0.7)
+    else:
+        left = (field.x or 0)
+        page.draw_rect(fitz.Rect(left, top, left + (field.width or 0), bottom), color=None, fill=(1, 1, 1))
+
+
 def _visible(field: Field_, values: dict[str, object]) -> bool:
     """Evaluate a simple ``a.b == value`` visibility rule. No eval, no surprises."""
     if not field.visible_if:
@@ -84,6 +110,7 @@ def fill(
             value = _resolve(field, values)
             if not value:
                 continue
+            _clear_region(page, field)
             if field.type == "grid":
                 render_grid(page, field, value, font, _FONT_NAME)
             elif field.type == "text":

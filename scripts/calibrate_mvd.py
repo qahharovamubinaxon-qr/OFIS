@@ -76,17 +76,40 @@ GRID_TARGETS: list[Target] = [
     Target("patent.to.d", 3, 228, 313.5, formatter="dd"),
     Target("patent.to.m", 3, 228, 354.5, formatter="mm"),
     Target("patent.to.y", 3, 228, 395.6, formatter="yyyy"),
+    # ---- mark 13: form date (Дата заключения договора, 3.3) ----
+    Target("doc.date.d", 3, 694, 332.9, formatter="dd"),
+    Target("doc.date.m", 3, 694, 374.0, formatter="mm"),
+    Target("doc.date.y", 3, 694, 415.3, formatter="yyyy"),
     # (profession handled in MANUAL_GRID — its row splits under detection.)
 ]
 
 # Fields whose row auto-detection mishandles (splits/merges). Geometry taken
 # from reliable sibling rows on the same page. pitch is the form's true 15.84.
+# `clear` = whiteout the pre-printed default (ПОДСОБНЫЙ РАБОЧИЙ) before writing
+# a custom должность; only reached when a value is present.
 MANUAL_GRID: list[dict] = [
     {
         "id": "employee.profession",
         "type": "grid", "page": 3, "x0": 50.4, "y": 489.0,
         "pitch": 15.84, "max_cells": 34, "font": "OfisSans", "size": 11.0,
         "align": "center", "transform": "uppercase", "_calibrated": True,
+        "clear": True, "clear_top": 472.5, "clear_bottom": 495.5,
+    },
+]
+
+# Page-5 «Справка» fields sit on printed lines, not boxes → text placement.
+# Coordinates from horizontal-line detection on the blank (y just above line).
+MANUAL_TEXT: list[dict] = [
+    {
+        "id": "doc.reg_number",  # mark 14 — 3-digit, auto-incremented
+        "type": "text", "page": 5, "x": 180.7, "y": 65.0, "width": 196.6,
+        "align": "center", "font": "OfisSans", "size": 11.0, "_calibrated": True,
+    },
+    {
+        "id": "employee.fio_citizenship",  # mark 15 — "ФИО, ГРАЖДАНСТВО"
+        "type": "text", "page": 5, "x": 40.0, "y": 321.0, "width": 520.0,
+        "align": "left", "font": "OfisSans", "size": 11.0,
+        "transform": "uppercase", "overflow": "shrink", "_calibrated": True,
     },
 ]
 
@@ -136,13 +159,14 @@ def main() -> None:
         fields.append(_grid(row, t))
 
     fields.extend(MANUAL_GRID)
+    fields.extend(MANUAL_TEXT)
 
     mapping = {
         "template": "mvd_prilozhenie_7",
         "template_version": "1",
         "mapping_version": "1",
         "page_size": [round(doc[0].rect.width, 1), round(doc[0].rect.height, 1)],
-        "fields": sorted(fields, key=lambda f: (f["page"], f["y"], f["x0"])),
+        "fields": sorted(fields, key=lambda f: (f["page"], f["y"], f.get("x0", f.get("x", 0)))),
     }
     OUT.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {OUT}: {len(fields)}/{len(GRID_TARGETS)} grid fields calibrated")
