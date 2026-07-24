@@ -17,8 +17,22 @@ from src.common.logging import get_logger
 
 log = get_logger(__name__)
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 _MIGRATION_RE = re.compile(r"^(\d{4})_.+\.sql$")
+
+
+def _migrations_dir() -> Path:
+    """Where the ``*.sql`` migrations live — resolved for both dev and EXE.
+
+    In development they sit next to this file. Under PyInstaller the source tree
+    is inside the archive (so ``__file__``/migrations does not exist on disk), and
+    the ``.sql`` files are bundled beside resources/templates under ``app_root``.
+    """
+    local = Path(__file__).resolve().parent / "migrations"
+    if local.is_dir() and any(local.glob("*.sql")):
+        return local
+    from src.config import paths
+
+    return paths.app_root() / "migrations"
 
 
 class Database:
@@ -37,7 +51,7 @@ class Database:
 
     def migrate(self, migrations_dir: Path | None = None) -> int:
         """Apply any pending migrations. Returns how many were applied."""
-        directory = migrations_dir or _MIGRATIONS_DIR
+        directory = migrations_dir or _migrations_dir()
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations "
             "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"

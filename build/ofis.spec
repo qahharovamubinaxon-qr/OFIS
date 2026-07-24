@@ -16,6 +16,8 @@ a = Analysis(  # noqa: F821
     datas=[
         (str(ROOT / "resources"), "resources"),
         (str(ROOT / "templates"), "templates"),
+        # DB migrations must ship so schema upgrades apply on a built EXE.
+        (str(ROOT / "src" / "database" / "migrations"), "migrations"),
     ],
     hiddenimports=["google.generativeai", "PIL", "PIL.Image", "PIL.ImageOps"],
     hookspath=[],
