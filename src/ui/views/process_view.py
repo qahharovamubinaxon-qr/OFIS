@@ -44,6 +44,7 @@ class ProcessView(QWidget):
         self._tr = translator
         self._passport_path: Path | None = None
         self._patent_path: Path | None = None
+        self._patent_back_path: Path | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
@@ -76,10 +77,13 @@ class ProcessView(QWidget):
         up = QHBoxLayout()
         self._passport_btn = QPushButton("📷 Паспорт")
         self._passport_btn.clicked.connect(self._pick_passport)
-        self._patent_btn = QPushButton("📷 Патент")
+        self._patent_btn = QPushButton("📷 Патент (олд)")
         self._patent_btn.clicked.connect(self._pick_patent)
+        self._patent_back_btn = QPushButton("📷 Патент (орқа)")
+        self._patent_back_btn.clicked.connect(self._pick_patent_back)
         up.addWidget(self._passport_btn)
         up.addWidget(self._patent_btn)
+        up.addWidget(self._patent_back_btn)
         up.addStretch(1)
         root.addLayout(up)
 
@@ -142,10 +146,16 @@ class ProcessView(QWidget):
             self._passport_btn.setText(f"✓ Паспорт: {Path(path).name}")
 
     def _pick_patent(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Патент", "", "Images (*.jpg *.jpeg *.png *.webp)")
+        path, _ = QFileDialog.getOpenFileName(self, "Патент (олд томон)", "", "Images (*.jpg *.jpeg *.png *.webp)")
         if path:
             self._patent_path = Path(path)
-            self._patent_btn.setText(f"✓ Патент: {Path(path).name}")
+            self._patent_btn.setText(f"✓ Патент олд: {Path(path).name}")
+
+    def _pick_patent_back(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Патент (орқа томон)", "", "Images (*.jpg *.jpeg *.png *.webp)")
+        if path:
+            self._patent_back_path = Path(path)
+            self._patent_back_btn.setText(f"✓ Патент орқа: {Path(path).name}")
 
     # ------------------------------------------------------------------
     def _run_ai(self) -> None:
@@ -162,11 +172,12 @@ class ProcessView(QWidget):
 
         passport = self._c.read_image(self._passport_path)
         patent = self._c.read_image(self._patent_path) if self._patent_path else None
+        patent_back = self._c.read_image(self._patent_back_path) if self._patent_back_path else None
         profession = self._profession.text().strip() or None
         form_date = self._form_date()
         self._busy("AI o'qiyapti va PDF yaratyapti…")
         run_async(
-            self._c.generate_from_images, company, passport, patent,
+            self._c.generate_from_images, company, passport, patent, patent_back,
             form_date=form_date, profession=profession,
             on_success=self._done, on_error=self._failed,
         )

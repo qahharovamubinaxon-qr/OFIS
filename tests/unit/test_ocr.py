@@ -46,3 +46,25 @@ def test_patent_profession_defaults_when_empty() -> None:
 
 def test_manager_reports_availability() -> None:
     assert AiManager([FakeProvider()]).available() is True
+
+
+def test_patent_back_merges_issue_and_issuer() -> None:
+    from datetime import date
+
+    canned = {
+        DocType.PATENT: {"series": "50", "number": "2600168448", "profession": "ВОДИТЕЛЬ",
+                         "issue_date": "", "issued_by": ""},
+    }
+    # Front has no date/issuer; the back supplies both (patent_back_prompt reuses
+    # DocType.PATENT canned data in this fake, standing in for the real back read).
+    back = {DocType.PATENT: {"issue_date": "2026-05-31",
+                             "issued_by": "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ",
+                             "series": "50", "number": "2600168448", "profession": "ВОДИТЕЛЬ"}}
+    svc = OcrService(AiManager([FakeProvider(canned)]))
+    front_only = svc.read_patent(b"front")
+    assert front_only.issue_date is None  # nothing on the front
+
+    svc2 = OcrService(AiManager([FakeProvider(back)]))
+    merged = svc2.read_patent(b"front", b"back")
+    assert merged.issue_date == date(2026, 5, 31)
+    assert "МОСКОВСКОЙ" in (merged.issued_by or "")

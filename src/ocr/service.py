@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from src.ai.manager import AiManager
-from src.ai.prompts import prompt_for
+from src.ai.prompts import patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType
@@ -53,12 +53,21 @@ class OcrService:
             issued_by=f.get("issued_by") or None,
         )
 
-    def read_patent(self, image: bytes) -> Patent:
-        f = self._ai.extract(image, DocType.PATENT, prompt_for(DocType.PATENT)).fields
+    def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
+        """Read the patent. The FRONT gives серия/номер/профессия; the BACK (if
+        supplied) gives дата выдачи + кем выдан — which is where they are printed.
+        """
+        f = self._ai.extract(front, DocType.PATENT, prompt_for(DocType.PATENT)).fields
+        issue_date = _parse_date(f.get("issue_date", ""))
+        issued_by = f.get("issued_by") or None
+        if back is not None:
+            b = self._ai.extract(back, DocType.PATENT, patent_back_prompt()).fields
+            issue_date = _parse_date(b.get("issue_date", "")) or issue_date
+            issued_by = (b.get("issued_by") or "").strip() or issued_by
         return Patent(
             series=f.get("series") or None,
             number=f.get("number", ""),
-            issue_date=_parse_date(f.get("issue_date", "")),
-            issued_by=f.get("issued_by") or None,
+            issue_date=issue_date,
+            issued_by=issued_by,
             profession=f.get("profession", "") or "ПОДСОБНЫЙ РАБОЧИЙ",
         )

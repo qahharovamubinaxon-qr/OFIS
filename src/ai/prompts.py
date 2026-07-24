@@ -19,11 +19,19 @@ _PASSPORT = _COMMON + (
     '"nationality","birth_date","series","number","issue_date","issued_by"}'
 )
 
+# Patent FRONT: series, number, profession (profession/специальность is printed
+# on the face). Issue date + issuing org live on the BACK.
 _PATENT = _COMMON + (
-    'This is a Russian work patent (патент). The issuing organization is on the '
-    'back side ("Кем выдан"). '
-    'Keys: {"document_type":"patent","series","number","issue_date","issued_by",'
-    '"profession"}'
+    'This is the FRONT of a Russian work patent (патент). '
+    'Keys: {"document_type":"patent","series","number","profession"}'
+)
+
+# Patent BACK: the issuing organization ("Кем выдан") and the issue date.
+_PATENT_BACK = _COMMON + (
+    'This is the BACK of a Russian work patent (патент). Read the issuing '
+    'organization ("Кем выдан", e.g. "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ") and '
+    'the issue date ("Дата выдачи"). '
+    'Keys: {"issued_by","issue_date"}'
 )
 
 _PROMPTS: dict[DocType, str] = {
@@ -34,3 +42,7 @@ _PROMPTS: dict[DocType, str] = {
 
 def prompt_for(doc_type: DocType) -> str:
     return _PROMPTS.get(doc_type, _COMMON)
+
+
+def patent_back_prompt() -> str:
+    return _PATENT_BACK

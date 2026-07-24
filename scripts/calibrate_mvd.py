@@ -25,6 +25,20 @@ from src.pdf.calibrate import GridRow, detect_all_runs
 TEMPLATE = Path("templates/mvd_prilozhenie_7/template.pdf")
 OUT = Path("templates/mvd_prilozhenie_7/mapping.v1.json")
 
+SIZE = 12.0  # one size bigger than before (owner request); font is Bold
+
+# Continuation rows for long «Кем выдан» values (word-aware wrap in renderers).
+# Baselines/x0 measured from the rows directly under each issued_by field.
+WRAP: dict[str, list[dict]] = {
+    "employee.passport.issued_by": [
+        {"x0": 132.48, "y": 699.3, "pitch": 15.84, "max_cells": 28},
+        {"x0": 234.7, "y": 728.6, "pitch": 15.84, "max_cells": 13},
+    ],
+    "patent.issued_by": [
+        {"x0": 43.9, "y": 199.6, "pitch": 15.84, "max_cells": 34},
+    ],
+}
+
 
 @dataclass(frozen=True)
 class Target:
@@ -52,9 +66,9 @@ GRID_TARGETS: list[Target] = [
     Target("employee.passport.series", 2, 630, 82.4),
     Target("employee.passport.number", 2, 630, 220.0),
     # ---- mark 7: passport issue date число/месяц/год ----
-    Target("employee.passport.issue.d", 2, 630, 406.4, formatter="dd", cells=2),
-    Target("employee.passport.issue.m", 2, 630, 468.3, formatter="mm"),
-    Target("employee.passport.issue.y", 2, 630, 509.7, formatter="yyyy"),
+    Target("employee.passport.issue.d", 2, 630, 427.0, formatter="dd", cells=2),
+    Target("employee.passport.issue.m", 2, 630, 468.3, formatter="mm", cells=2),
+    Target("employee.passport.issue.y", 2, 630, 509.7, formatter="yyyy", cells=4),
     # ---- mark 8: passport issued_by (first row; long text) ----
     Target("employee.passport.issued_by", 2, 668, 132.5, transform="uppercase"),
     # ---- page 3: patent ----
@@ -91,7 +105,7 @@ MANUAL_GRID: list[dict] = [
     {
         "id": "employee.profession",
         "type": "grid", "page": 3, "x0": 50.4, "y": 489.0,
-        "pitch": 15.84, "max_cells": 34, "font": "OfisSans", "size": 11.0,
+        "pitch": 15.84, "max_cells": 34, "font": "OfisSans", "size": SIZE,
         "align": "center", "transform": "uppercase", "_calibrated": True,
         "clear": True, "clear_top": 472.5, "clear_bottom": 495.5,
     },
@@ -103,12 +117,12 @@ MANUAL_TEXT: list[dict] = [
     {
         "id": "doc.reg_number",  # mark 14 — 3-digit, auto-incremented
         "type": "text", "page": 5, "x": 180.7, "y": 65.0, "width": 196.6,
-        "align": "center", "font": "OfisSans", "size": 11.0, "_calibrated": True,
+        "align": "center", "font": "OfisSans", "size": SIZE, "_calibrated": True,
     },
     {
         "id": "employee.fio_citizenship",  # mark 15 — "ФИО, ГРАЖДАНСТВО"
         "type": "text", "page": 5, "x": 40.0, "y": 321.0, "width": 520.0,
-        "align": "left", "font": "OfisSans", "size": 11.0,
+        "align": "left", "font": "OfisSans", "size": SIZE,
         "transform": "uppercase", "overflow": "shrink", "_calibrated": True,
     },
 ]
@@ -135,7 +149,7 @@ def _grid(row: GridRow, t: Target) -> dict:
         "pitch": row.pitch,
         "max_cells": min(row.max_cells, t.cells) if t.cells else row.max_cells,
         "font": "OfisSans",
-        "size": 11.0,
+        "size": SIZE,
         "align": "center",
         "_calibrated": True,
     }
@@ -143,6 +157,8 @@ def _grid(row: GridRow, t: Target) -> dict:
         f["transform"] = t.transform
     if t.formatter:
         f["formatter"] = FORMATTER_MAP[t.formatter]
+    if t.field_id in WRAP:
+        f["wrap"] = WRAP[t.field_id]
     return f
 
 

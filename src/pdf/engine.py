@@ -26,16 +26,16 @@ from src.pdf.renderers import render_grid, render_mark, render_text
 
 log = get_logger(__name__)
 
-# Values are drawn in Calibri (the owner's choice). On Windows the real system
-# Calibri is used; elsewhere (and if Calibri is absent) the bundled Carlito —
-# a metric-compatible open clone — is used, so output looks identical.
+# Values are drawn in Calibri Bold (the owner's choice — slightly bolder reads
+# better in the small boxes). On Windows the real system Calibri Bold is used;
+# elsewhere the bundled Carlito Bold (metric-compatible clone) — identical look.
 _FONT_NAME = "ofis"
-_BUNDLED_FONT = paths.resources_dir() / "fonts" / "OfisSans-Regular.ttf"
+_BUNDLED_FONT = paths.resources_dir() / "fonts" / "OfisSans-Bold.ttf"
 
 
 def _font_file() -> "Path":
     if _os.name == "nt":
-        for name in ("calibri.ttf", "Calibri.ttf"):
+        for name in ("calibrib.ttf", "Calibrib.ttf"):  # Calibri Bold
             candidate = Path(_os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / name
             if candidate.exists():
                 return candidate

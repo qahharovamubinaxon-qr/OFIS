@@ -46,12 +46,15 @@ class ProcessController:
         company: Company,
         passport_image: bytes,
         patent_image: bytes | None,
+        patent_back_image: bytes | None = None,
         *,
         form_date: date,
         profession: str | None,
     ) -> GenerationResult:
         passport = self._ocr.read_passport(passport_image)
-        patent = self._ocr.read_patent(patent_image) if patent_image else None
+        patent = (
+            self._ocr.read_patent(patent_image, patent_back_image) if patent_image else None
+        )
         from src.domain.employee import Employee
 
         employee = Employee(
