@@ -26,20 +26,31 @@ from src.pdf.renderers import render_grid, render_mark, render_text
 
 log = get_logger(__name__)
 
-# Values are drawn in Calibri Bold (the owner's choice — slightly bolder reads
-# better in the small boxes). On Windows the real system Calibri Bold is used;
-# elsewhere the bundled Carlito Bold (metric-compatible clone) — identical look.
-_FONT_NAME = "ofis"
-_BUNDLED_FONT = paths.resources_dir() / "fonts" / "OfisSans-Bold.ttf"
+# Two font families, chosen per field via its "font" key:
+#   OfisSans  → Calibri Bold  (the МВД trudovoy form)
+#   OfisSerif → Times New Roman (the registration form)
+# On Windows the real system fonts are used; elsewhere metric-compatible open
+# clones (Carlito, Liberation Serif) that look identical.
+_DEFAULT_FAMILY = "OfisSans"
+_FONT_FAMILIES: dict[str, dict[str, object]] = {
+    "OfisSans": {"nt": ("calibrib.ttf", "calibri.ttf"), "bundled": "OfisSans-Bold.ttf"},
+    "OfisSerif": {"nt": ("times.ttf", "timesbd.ttf"), "bundled": "OfisSerif-Regular.ttf"},
+}
 
 
-def _font_file() -> "Path":
+def _fontname(family: str) -> str:
+    """The internal PDF font name PyMuPDF registers this family under."""
+    return "ofis_serif" if family == "OfisSerif" else "ofis_sans"
+
+
+def _font_file(family: str) -> "Path":
+    spec = _FONT_FAMILIES.get(family, _FONT_FAMILIES[_DEFAULT_FAMILY])
     if _os.name == "nt":
-        for name in ("calibrib.ttf", "Calibrib.ttf"):  # Calibri Bold
+        for name in spec["nt"]:  # type: ignore[union-attr]
             candidate = Path(_os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / name
             if candidate.exists():
                 return candidate
-    return _BUNDLED_FONT
+    return paths.resources_dir() / "fonts" / str(spec["bundled"])
 
 
 def _resolve(field: Field_, values: dict[str, object]) -> str:
@@ -101,32 +112,41 @@ def fill(
             "Template file not found", context={"path": str(template_path)}
         )
 
-    font_file = _font_file()
-    if not font_file.exists():
-        raise FontMissingError("Fill font missing", context={"path": str(font_file)})
-
     fields = mapping.calibrated_fields() if only_calibrated else mapping.fields
-    font = fitz.Font(fontfile=str(font_file))
+
+    # Load only the font families this mapping actually uses, register each on
+    # every page under its own name, and keep a fitz.Font for width measuring.
+    families = {f.font for f in fields} | {_DEFAULT_FAMILY}
+    fonts: dict[str, fitz.Font] = {}
+    for family in families:
+        path = _font_file(family)
+        if not path.exists():
+            raise FontMissingError("Fill font missing", context={"path": str(path)})
+        fonts[family] = fitz.Font(fontfile=str(path))
+
     doc = fitz.open(str(template_path))
     try:
         for page in doc:
-            page.insert_font(fontname=_FONT_NAME, fontfile=str(font_file))
+            for family in families:
+                page.insert_font(fontname=_fontname(family), fontfile=str(_font_file(family)))
 
         for field in fields:
             if not _visible(field, values):
                 continue
             page = doc[field.page - 1]
+            fam = field.font if field.font in fonts else _DEFAULT_FAMILY
+            fname = _fontname(fam)
             if field.type == "mark":
-                render_mark(page, field, _FONT_NAME)
+                render_mark(page, field, fname)
                 continue
             value = _resolve(field, values)
             if not value:
                 continue
             _clear_region(page, field)
             if field.type == "grid":
-                render_grid(page, field, value, font, _FONT_NAME)
+                render_grid(page, field, value, fonts[fam], fname)
             elif field.type == "text":
-                render_text(page, field, value, font, _FONT_NAME)
+                render_text(page, field, value, fonts[fam], fname)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output_path), garbage=4, deflate=True)

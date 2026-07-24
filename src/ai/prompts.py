@@ -18,8 +18,10 @@ _COMMON = (
 )
 
 _PASSPORT = _COMMON + (
+    'Also read gender ("male" or "female") and the passport expiry date. '
     'Keys: {"document_type":"passport","surname","name","patronymic",'
-    '"nationality","birth_date","series","number","issue_date","issued_by"}'
+    '"nationality","birth_date","gender","series","number","issue_date",'
+    '"expiry_date","issued_by"}'
 )
 
 # Patent FRONT: the worker's ФИО (in Russian on the patent — the reliable name

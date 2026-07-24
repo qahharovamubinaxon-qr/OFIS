@@ -13,11 +13,20 @@ from src.ai.manager import AiManager
 from src.ai.prompts import patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
-from src.domain.enums import DocType
+from src.domain.enums import DocType, Gender
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic
 
 log = get_logger(__name__)
+
+
+def _parse_gender(value: str) -> Gender | None:
+    v = (value or "").strip().lower()
+    if v in ("male", "m", "муж", "мужской", "erkak"):
+        return Gender.MALE
+    if v in ("female", "f", "жен", "женский", "ayol"):
+        return Gender.FEMALE
+    return None
 
 
 def _parse_date(value: str) -> date | None:
@@ -49,10 +58,12 @@ class OcrService:
             name=to_cyrillic(f.get("name", "")),
             patronymic=to_cyrillic(f.get("patronymic", "")) or None,
             nationality=to_cyrillic(f.get("nationality", "")) or None,
+            gender=_parse_gender(f.get("gender", "")),
             series=f.get("series") or None,  # series/number stay as printed
             number=f.get("number", ""),
             birth_date=_parse_date(f.get("birth_date", "")),
             issue_date=_parse_date(f.get("issue_date", "")),
+            expiry_date=_parse_date(f.get("expiry_date", "")),
             issued_by=to_cyrillic(f.get("issued_by", "")) or None,
         )
 

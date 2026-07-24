@@ -35,6 +35,7 @@ class Passport(BaseModel):
     series: str | None = None
     number: str
     issue_date: date | None = None
+    expiry_date: date | None = None  # Срок действия — needed by the registration form
     issued_by: str | None = None
 
     @field_validator("surname", "name", "patronymic", "nationality", "issued_by")

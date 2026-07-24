@@ -1,0 +1,10 @@
+{
+  "template": "registration",
+  "title": "Уведомление о прибытии иностранного гражданина в место пребывания",
+  "version": "1",
+  "pages": 2,
+  "page_size_pt": [595.3, 842.4],
+  "font": "OfisSerif (Times New Roman)",
+  "note": "Blank; address (page 1) + host ФИО (page 2) pre-filled per registration address.",
+  "sha256": "08dd212e852d0390d5a0f9753a742fae20c9be5b58d4b9b6efbb4267022f9a47"
+}
