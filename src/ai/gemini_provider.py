@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 
 from src.ai.base import AiRawResult, IAiProvider
 from src.common.errors import AiAuthError, AiError, AiInvalidJsonError
@@ -19,37 +20,60 @@ from src.domain.enums import DocType
 log = get_logger(__name__)
 
 _MODEL = "gemini-2.0-flash"
+# Tried in order until one responds — shields against a single model being
+# deprecated or its free quota being saturated for a given key.
+_MODEL_FALLBACKS = ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-flash-latest")
 
 
 class GeminiProvider(IAiProvider):
     name = "gemini"
 
-    def __init__(self, api_key: str | None = None, model: str = _MODEL) -> None:
-        self._api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        key_getter: Callable[[], str] | None = None,
+        model: str = _MODEL,
+    ) -> None:
+        # ``key_getter`` reads the key live (from Settings) so entering it takes
+        # effect immediately, without restarting the app.
+        self._static = api_key
+        self._key_getter = key_getter
         self._model = model
 
+    def _key(self) -> str:
+        if self._key_getter:
+            live = (self._key_getter() or "").strip()
+            if live:
+                return live
+        return (self._static or "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+
     def is_configured(self) -> bool:
-        return bool(self._api_key)
+        return bool(self._key())
 
     def extract(self, image: bytes, doc_type: DocType, prompt: str) -> AiRawResult:
-        if not self._api_key:
+        api_key = self._key()
+        if not api_key:
             raise AiAuthError("Gemini API key is not set")
         try:
             import google.generativeai as genai  # lazy: optional dependency
         except ImportError as exc:  # pragma: no cover - env-dependent
             raise AiError("google-generativeai is not installed") from exc
 
-        try:
-            genai.configure(api_key=self._api_key)
-            model = genai.GenerativeModel(self._model)
-            resp = model.generate_content(
-                [prompt, {"mime_type": "image/jpeg", "data": image}]
-            )
-            text = (resp.text or "").strip()
-        except Exception as exc:  # noqa: BLE001 - provider boundary → typed error
-            raise AiError(f"Gemini request failed: {exc}") from exc
-
-        return _parse(text, doc_type, self.name)
+        genai.configure(api_key=api_key)
+        models = [self._model, *[m for m in _MODEL_FALLBACKS if m != self._model]]
+        last_exc: Exception | None = None
+        for model_name in models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                resp = model.generate_content(
+                    [prompt, {"mime_type": "image/jpeg", "data": image}]
+                )
+                text = (resp.text or "").strip()
+                return _parse(text, doc_type, self.name)
+            except Exception as exc:  # noqa: BLE001 - provider boundary → typed error
+                log.warning("Gemini model %s failed: %s", model_name, exc)
+                last_exc = exc
+        raise AiError(f"Gemini request failed: {last_exc}") from last_exc
 
 
 def _parse(text: str, doc_type: DocType, provider: str) -> AiRawResult:

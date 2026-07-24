@@ -58,7 +58,7 @@ def build_container() -> Container:
     from src.ai.manager import AiManager
     from src.ocr.service import OcrService
 
-    gemini = GeminiProvider(api_key=str(settings.get("ai.gemini_key", "") or ""))
+    gemini = GeminiProvider(key_getter=lambda: str(settings.get("ai.gemini_key", "") or ""))
     ai_manager = AiManager([gemini])
     container.register_instance(AiManager, ai_manager)
     container.register_instance(OcrService, OcrService(ai_manager))
