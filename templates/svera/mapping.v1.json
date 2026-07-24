@@ -55,21 +55,21 @@
       "id": "svera.proverka",
       "type": "text",
       "page": 1,
-      "x": 90,
-      "y": 325,
+      "x": 78,
+      "y": 328,
       "font": "OfisSerifBold",
       "size": 12,
       "align": "left",
       "_calibrated": true,
-      "width": 475,
-      "wrap_width": 475,
-      "line_height": 14.5,
+      "width": 490,
+      "wrap_width": 490,
+      "line_height": 15,
       "clear_rects": [
         [
-          80,
-          315,
+          55,
+          313,
           585,
-          344
+          348
         ]
       ]
     },
@@ -117,8 +117,8 @@
       "id": "svera.udo_number",
       "type": "text",
       "page": 2,
-      "x": 300,
-      "y": 120,
+      "x": 258,
+      "y": 123,
       "font": "OfisSerifBoldItalic",
       "size": 13,
       "align": "left",
@@ -128,10 +128,10 @@
       "id": "svera.photo",
       "type": "image",
       "page": 2,
-      "x": 120,
-      "y": 126,
-      "width": 84,
-      "height": 88,
+      "x": 52,
+      "y": 130,
+      "width": 66,
+      "height": 76,
       "_calibrated": true
     },
     {

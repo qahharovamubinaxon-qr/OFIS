@@ -44,11 +44,11 @@ FIELDS = [
     t("svera.date_long_top", 1, 448, 208, font=SB, size=12),
     # [3] long date + re-typeset "№ 4 комиссия…" (printed tail whited out)
     t("svera.date_long_prikaz", 1, 318, 223, font=SB, size=12),
-    # [7] проверка sentence — whiteout the printed two lines (baselines ≈325/340;
-    # the "(ФИО, должность)" label sits just above at ≈313), re-typeset with wrap
-    t("svera.proverka", 1, 90, 325, font=SB, size=12, width=475, wrap_width=475,
-      line_height=14.5,
-      clear_rects=[[80, 315, 585, 344]]),
+    # [7] проверка sentence — whiteout the printed two lines (baselines ≈328/344;
+    # the "(ФИО, должность)" label sits just above at ≈308), re-typeset with wrap
+    t("svera.proverka", 1, 78, 328, font=SB, size=12, width=490, wrap_width=490,
+      line_height=15,
+      clear_rects=[[55, 313, 585, 348]]),
     # [2] ФИО (nominative) — three centred lines in the ФИО column
     t("svera.fio_protocol", 1, 95, 400, font=SB, size=11, align="center", width=90,
       wrap_width=90, line_height=17.5),
@@ -59,11 +59,11 @@ FIELDS = [
       wrap_width=135, line_height=15),
 
     # ================= PAGE 2 — УДОСТОВЕРЕНИЕ =================
-    # [5] удостоверение № (after printed "УДОСТОВЕРЕНИЕ №")
-    t("svera.udo_number", 2, 300, 120, font=SBI, size=13),
-    # [1] student photo
-    {"id": "svera.photo", "type": "image", "page": 2, "x": 120, "y": 126,
-     "width": 84, "height": 88, "_calibrated": True},
+    # [5] удостоверение № (after printed "УДОСТОВЕРЕНИЕ №", "№" ends ≈255)
+    t("svera.udo_number", 2, 258, 123, font=SBI, size=13),
+    # [1] student photo — the box is x≈50-120, y≈128-208
+    {"id": "svera.photo", "type": "image", "page": 2, "x": 52, "y": 130,
+     "width": 66, "height": 76, "_calibrated": True},
     # [2] ФИО dative — left panel, 3 lines
     t("svera.fio_udo_left", 2, 298, 124, font=SBI, size=15, wrap_width=160, width=160,
       line_height=26),
