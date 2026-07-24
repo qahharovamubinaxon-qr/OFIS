@@ -1,0 +1,10 @@
+{
+  "template": "svera",
+  "title": "СФЕРА — Удостоверение + Протокол профессионального обучения",
+  "version": "1",
+  "pages": 2,
+  "page_size_pt": [595.3, 822.1],
+  "font": "OfisSerif (Times New Roman) + bold/italic variants",
+  "note": "Page 1 = Протокол (заседания комиссии), Page 2 = Удостоверение. Commission names, stamp, signatures, «Физ. лицо», «Сдал, 2079», «160 ч.» are pre-printed.",
+  "sha256": "95fd887780d9bae8f230aeac822cde67c8b9d2aeda89f1199bbab4db4c1013de"
+}

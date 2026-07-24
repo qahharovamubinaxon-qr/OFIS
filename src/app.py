@@ -18,6 +18,7 @@ from src.config.settings_service import SettingsService
 from src.database.connection import Database
 from src.database.repositories.company_repo import CompanyRepository
 from src.database.repositories.generated_repo import GeneratedRepository
+from src.database.repositories.profession_repo import ProfessionRepository
 from src.database.repositories.registration_address_repo import RegistrationAddressRepository
 from src.database.repositories.settings_repo import SettingsRepository
 from src.domain.company import Company
@@ -25,8 +26,10 @@ from src.domain.enums import EmployerType
 from src.domain.registration_address import RegistrationAddress
 from src.services.company_service import CompanyService
 from src.services.generation_service import GenerationService
+from src.services.profession_service import ProfessionService
 from src.services.registration_address_service import RegistrationAddressService
 from src.services.registration_service import RegistrationService
+from src.services.svera_service import SveraService
 
 log = get_logger(__name__)
 
@@ -62,6 +65,12 @@ def build_container() -> Container:
     container.register_instance(RegistrationAddressService, reg_addr_service)
     container.register_instance(RegistrationService, RegistrationService())
 
+    profession_repo = ProfessionRepository(db)
+    container.register_instance(ProfessionRepository, profession_repo)
+    profession_service = ProfessionService(profession_repo)
+    container.register_instance(ProfessionService, profession_service)
+    container.register_instance(SveraService, SveraService(settings))
+
     # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
     # service degrades to "use manual fill" when no key is present.
     from src.ai.gemini_provider import GeminiProvider
@@ -75,6 +84,7 @@ def build_container() -> Container:
 
     _seed_default_company(company_service)
     _seed_default_address(reg_addr_service)
+    profession_service.seed_defaults()
 
     return container
 

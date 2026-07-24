@@ -22,25 +22,38 @@ from src.common.logging import get_logger
 from src.config import paths
 from src.pdf.formatters import apply_formatter, apply_transform
 from src.pdf.mapping import FieldMapping, Field_
-from src.pdf.renderers import render_grid, render_mark, render_text
+from src.pdf.renderers import render_grid, render_image, render_mark, render_text
 
 log = get_logger(__name__)
 
-# Two font families, chosen per field via its "font" key:
+# Font families, chosen per field via its "font" key:
 #   OfisSans  → Calibri Bold  (the МВД trudovoy form)
-#   OfisSerif → Times New Roman (the registration form)
+#   OfisSerif → Times New Roman (registration + СФЕРА body); plus Bold / Italic /
+#              BoldItalic serif variants for the СФЕРА certificate.
 # On Windows the real system fonts are used; elsewhere metric-compatible open
 # clones (Carlito, Liberation Serif) that look identical.
 _DEFAULT_FAMILY = "OfisSans"
 _FONT_FAMILIES: dict[str, dict[str, object]] = {
     "OfisSans": {"nt": ("calibrib.ttf", "calibri.ttf"), "bundled": "OfisSans-Bold.ttf"},
-    "OfisSerif": {"nt": ("times.ttf", "timesbd.ttf"), "bundled": "OfisSerif-Regular.ttf"},
+    "OfisSerif": {"nt": ("times.ttf",), "bundled": "OfisSerif-Regular.ttf"},
+    "OfisSerifBold": {"nt": ("timesbd.ttf",), "bundled": "OfisSerif-Bold.ttf"},
+    "OfisSerifItalic": {"nt": ("timesi.ttf",), "bundled": "OfisSerif-Italic.ttf"},
+    "OfisSerifBoldItalic": {"nt": ("timesbi.ttf",), "bundled": "OfisSerif-BoldItalic.ttf"},
+}
+
+# Internal PDF font name PyMuPDF registers each family under (must be unique).
+_FONT_IDS = {
+    "OfisSans": "ofis_sans",
+    "OfisSerif": "ofis_serif",
+    "OfisSerifBold": "ofis_serif_b",
+    "OfisSerifItalic": "ofis_serif_i",
+    "OfisSerifBoldItalic": "ofis_serif_bi",
 }
 
 
 def _fontname(family: str) -> str:
     """The internal PDF font name PyMuPDF registers this family under."""
-    return "ofis_serif" if family == "OfisSerif" else "ofis_sans"
+    return _FONT_IDS.get(family, "ofis_sans")
 
 
 def _font_file(family: str) -> "Path":
@@ -85,6 +98,13 @@ def _clear_region(page: fitz.Page, field: Field_) -> None:
     else:
         left = (field.x or 0)
         page.draw_rect(fitz.Rect(left, top, left + (field.width or 0), bottom), color=None, fill=(1, 1, 1))
+
+
+def _clear_rects(page: fitz.Page, field: Field_) -> None:
+    """Whiteout arbitrary rectangles before drawing (e.g. cover a pre-printed
+    phrase that will be re-typeset). ``clear_rects`` = list of [x0,y0,x1,y1]."""
+    for r in (field.model_extra or {}).get("clear_rects", []) or []:
+        page.draw_rect(fitz.Rect(*r), color=None, fill=(1, 1, 1))
 
 
 def _visible(field: Field_, values: dict[str, object]) -> bool:
@@ -139,10 +159,17 @@ def fill(
             if field.type == "mark":
                 render_mark(page, field, fname)
                 continue
+            if field.type == "image":
+                src = values.get(field.id)
+                if src:
+                    _clear_rects(page, field)
+                    render_image(page, field, str(src))
+                continue
             value = _resolve(field, values)
             if not value:
                 continue
             _clear_region(page, field)
+            _clear_rects(page, field)
             if field.type == "grid":
                 render_grid(page, field, value, fonts[fam], fname)
             elif field.type == "text":

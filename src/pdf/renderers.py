@@ -89,6 +89,13 @@ def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
     x = field.x if field.x is not None else field.x0
     if x is None or field.y is None:
         return
+    extra = field.model_extra or {}
+    # A wrapping paragraph: break on spaces to `width`, stacking lines by
+    # `line_height`. `\n` in the value forces a hard break. Used by the СФЕРА
+    # certificate for long professions / multi-line ФИО.
+    if extra.get("wrap_width") and field.width:
+        _render_paragraph(page, field, value, font, fontname, float(extra["wrap_width"]))
+        return
     size = field.size
     if field.overflow == "shrink" and field.width:
         size = _fit_size(value, field.width, size, font)
@@ -96,6 +103,48 @@ def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
         w = font.text_length(value, fontsize=size)
         x = x + (field.width - w) / 2 if field.align == "center" else x + field.width - w
     page.insert_text((x, field.y), value, fontname=fontname, fontsize=size)
+
+
+def _render_paragraph(
+    page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str, width: float
+) -> None:
+    extra = field.model_extra or {}
+    size = field.size
+    line_h = float(extra.get("line_height", size * 1.25))
+    x0 = field.x if field.x is not None else field.x0
+    if x0 is None or field.y is None:
+        return
+    lines: list[str] = []
+    for para in value.split("\n"):
+        words = para.split()
+        cur = ""
+        for w in words:
+            cand = f"{cur} {w}".strip()
+            if cur and font.text_length(cand, fontsize=size) > width:
+                lines.append(cur)
+                cur = w
+            else:
+                cur = cand
+        lines.append(cur)
+    y = field.y
+    for line in lines:
+        x = x0
+        if field.align in ("center", "right"):
+            lw = font.text_length(line, fontsize=size)
+            x = x0 + (width - lw) / 2 if field.align == "center" else x0 + width - lw
+        page.insert_text((x, y), line, fontname=fontname, fontsize=size)
+        y += line_h
+
+
+def render_image(page: fitz.Page, field: Field_, path: str) -> None:
+    """Place a photo inside the field's box (x, y, width, height)."""
+    if field.x is None or field.y is None or not field.width or not field.height:
+        return
+    rect = fitz.Rect(field.x, field.y, field.x + field.width, field.y + field.height)
+    try:
+        page.insert_image(rect, filename=path, keep_proportion=True)
+    except (RuntimeError, ValueError, FileNotFoundError):
+        pass
 
 
 def render_mark(page: fitz.Page, field: Field_, fontname: str) -> None:

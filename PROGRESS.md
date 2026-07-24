@@ -8,17 +8,25 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
   passport + patent photos automatically.
 - All **16 fill-in fields** land correctly on pages 2/3/5 (incl. patent +1yr,
   reg-number auto-increment, ФИО+гражданство, должность whiteout).
-- 7 screens: Dashboard, Process, **Registration**, Companies, Archive, Search,
-  Settings.
+- 8 screens: Dashboard, Process, **Registration**, **СФЕРА**, Companies,
+  Archive, Search, Settings.
 - **Registration form** (Уведомление о прибытии, Times New Roman): pick an
   address, upload passport+patent, enter registration-expiry → PDF. Add new
   addresses like companies (address + host ФИО pre-printed per template). Names
   from patent, dates/gender from passport, expiry on both pages. All 23 fields
   calibrated via contour detection; see docs/REGISTRATION.md.
-- Saves `output/<company>/<SURNAME>.pdf` (and `output/registration/<address>/`);
-  every doc logged for Archive/Search.
+- **СФЕРА module** (training-centre Удостоверение + Протокол, 2-page PDF): pick a
+  profession (сфера) + date, upload student photo + passport → PDF named by
+  surname under `output/svera/`. Certificate ФИО is auto-declined to the **dative
+  case** («Расулову Азизу Анваровичу»; «угли» patronymics left as-is); protocol
+  ФИО stays nominative. Three auto-incrementing counters: удостоверение №, a
+  4-digit ПО number shared by both pages, and a 13-digit protocol reg number.
+  5 professions seeded; add more inline. Photo embedded; long profession names
+  wrap. Serif Bold/Italic fonts added to the engine.
+- Saves `output/<company>/<SURNAME>.pdf` (+ `output/registration/<address>/`,
+  `output/svera/`); every doc logged for Archive/Search.
 - Run on Windows: `python -m src.app` (see docs/RUN_WINDOWS.md); EXE via
-  build/ofis.spec. Tests: **32/32**.
+  build/ofis.spec. Tests: **37/37**.
 
 ### Next (needs owner input / Windows)
 - Gemini key → verify real OCR accuracy on live passport/patent photos.

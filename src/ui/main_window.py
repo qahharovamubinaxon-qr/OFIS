@@ -27,8 +27,10 @@ from src.database.repositories.generated_repo import GeneratedRepository
 from src.ocr.service import OcrService
 from src.services.company_service import CompanyService
 from src.services.generation_service import GenerationService
+from src.services.profession_service import ProfessionService
 from src.services.registration_address_service import RegistrationAddressService
 from src.services.registration_service import RegistrationService
+from src.services.svera_service import SveraService
 from src.ui.i18n import Translator
 from src.ui.views.archive_view import ArchiveView
 from src.ui.views.companies_view import CompaniesView
@@ -36,11 +38,13 @@ from src.ui.views.dashboard_view import DashboardView
 from src.ui.views.process_view import ProcessView
 from src.ui.views.registration_view import RegistrationView
 from src.ui.views.settings_view import SettingsView
+from src.ui.views.svera_view import SveraView
 
 _NAV = [
     ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts"),
     ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF"),
     ("nav.registration", "Registration", "Уведомление о прибытии → PDF"),
+    ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF"),
     ("nav.companies", "Companies", "Templates, logos and company data"),
     ("nav.archive", "Archive", "Every generated package, by year and company"),
     ("nav.search", "Search", "Find an employee by passport, patent or name"),
@@ -104,6 +108,15 @@ class MainWindow(QMainWindow):
                 self._container.resolve(RegistrationService),
             )
             return RegistrationView(reg_controller, reg_addresses)
+        if key == "nav.svera":
+            from src.controllers.svera_controller import SveraController
+
+            svera_controller = SveraController(
+                self._container.resolve(ProfessionService),
+                self._container.resolve(OcrService),
+                self._container.resolve(SveraService),
+            )
+            return SveraView(svera_controller)
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":

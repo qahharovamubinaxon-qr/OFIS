@@ -1,0 +1,231 @@
+{
+  "template": "svera",
+  "template_version": "1",
+  "mapping_version": "1",
+  "page_size": [
+    595.3,
+    822.1
+  ],
+  "fields": [
+    {
+      "id": "svera.po_protocol",
+      "type": "text",
+      "page": 1,
+      "x": 347,
+      "y": 145,
+      "font": "OfisSerifBold",
+      "size": 12,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.date_short",
+      "type": "text",
+      "page": 1,
+      "x": 300,
+      "y": 163,
+      "font": "OfisSerifBold",
+      "size": 11,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.date_long_top",
+      "type": "text",
+      "page": 1,
+      "x": 448,
+      "y": 208,
+      "font": "OfisSerifBold",
+      "size": 12,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.date_long_prikaz",
+      "type": "text",
+      "page": 1,
+      "x": 318,
+      "y": 223,
+      "font": "OfisSerifBold",
+      "size": 12,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.proverka",
+      "type": "text",
+      "page": 1,
+      "x": 90,
+      "y": 325,
+      "font": "OfisSerifBold",
+      "size": 12,
+      "align": "left",
+      "_calibrated": true,
+      "width": 475,
+      "wrap_width": 475,
+      "line_height": 13.5,
+      "clear_rects": [
+        [
+          80,
+          314,
+          585,
+          329
+        ],
+        [
+          80,
+          329,
+          585,
+          344
+        ]
+      ]
+    },
+    {
+      "id": "svera.fio_protocol",
+      "type": "text",
+      "page": 1,
+      "x": 95,
+      "y": 400,
+      "font": "OfisSerifBold",
+      "size": 11,
+      "align": "center",
+      "_calibrated": true,
+      "width": 90,
+      "wrap_width": 90,
+      "line_height": 17.5
+    },
+    {
+      "id": "svera.reg13",
+      "type": "text",
+      "page": 1,
+      "x": 300,
+      "y": 440,
+      "font": "OfisSerifBold",
+      "size": 11,
+      "align": "center",
+      "_calibrated": true,
+      "width": 105
+    },
+    {
+      "id": "svera.zaklyuchenie",
+      "type": "text",
+      "page": 1,
+      "x": 408,
+      "y": 405,
+      "font": "OfisSerifBold",
+      "size": 11,
+      "align": "center",
+      "_calibrated": true,
+      "width": 135,
+      "wrap_width": 135,
+      "line_height": 15
+    },
+    {
+      "id": "svera.udo_number",
+      "type": "text",
+      "page": 2,
+      "x": 300,
+      "y": 120,
+      "font": "OfisSerifBoldItalic",
+      "size": 13,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.photo",
+      "type": "image",
+      "page": 2,
+      "x": 120,
+      "y": 126,
+      "width": 84,
+      "height": 88,
+      "_calibrated": true
+    },
+    {
+      "id": "svera.fio_udo_left",
+      "type": "text",
+      "page": 2,
+      "x": 298,
+      "y": 124,
+      "font": "OfisSerifBoldItalic",
+      "size": 15,
+      "align": "left",
+      "_calibrated": true,
+      "width": 160,
+      "wrap_width": 160,
+      "line_height": 26
+    },
+    {
+      "id": "svera.prof_udo_left",
+      "type": "text",
+      "page": 2,
+      "x": 205,
+      "y": 192,
+      "font": "OfisSerifBoldItalic",
+      "size": 13,
+      "align": "center",
+      "_calibrated": true,
+      "width": 160,
+      "wrap_width": 160,
+      "line_height": 15
+    },
+    {
+      "id": "svera.date_udo",
+      "type": "text",
+      "page": 2,
+      "x": 240,
+      "y": 232,
+      "font": "OfisSerifBoldItalic",
+      "size": 11,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.fio_udo_right",
+      "type": "text",
+      "page": 2,
+      "x": 375,
+      "y": 115,
+      "font": "OfisSerifBoldItalic",
+      "size": 14,
+      "align": "center",
+      "_calibrated": true,
+      "width": 215
+    },
+    {
+      "id": "svera.qual_udo_right",
+      "type": "text",
+      "page": 2,
+      "x": 378,
+      "y": 152,
+      "font": "OfisSerifBold",
+      "size": 13,
+      "align": "center",
+      "_calibrated": true,
+      "width": 210,
+      "wrap_width": 210,
+      "line_height": 16
+    },
+    {
+      "id": "svera.po_udo",
+      "type": "text",
+      "page": 2,
+      "x": 450,
+      "y": 210,
+      "font": "OfisSerif",
+      "size": 12,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "svera.date_udo_right",
+      "type": "text",
+      "page": 2,
+      "x": 512,
+      "y": 210,
+      "font": "OfisSerif",
+      "size": 10,
+      "align": "left",
+      "_calibrated": true
+    }
+  ]
+}
