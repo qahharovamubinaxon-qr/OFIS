@@ -14,6 +14,7 @@ from src.ai.prompts import patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType
+from src.ocr.translit import to_cyrillic
 
 log = get_logger(__name__)
 
@@ -42,15 +43,15 @@ class OcrService:
     def read_passport(self, image: bytes) -> Passport:
         f = self._ai.extract(image, DocType.PASSPORT, prompt_for(DocType.PASSPORT)).fields
         return Passport(
-            surname=f.get("surname", ""),
-            name=f.get("name", ""),
-            patronymic=f.get("patronymic") or None,
-            nationality=f.get("nationality") or None,
-            series=f.get("series") or None,
+            surname=to_cyrillic(f.get("surname", "")),
+            name=to_cyrillic(f.get("name", "")),
+            patronymic=to_cyrillic(f.get("patronymic", "")) or None,
+            nationality=to_cyrillic(f.get("nationality", "")) or None,
+            series=f.get("series") or None,  # series/number stay as printed
             number=f.get("number", ""),
             birth_date=_parse_date(f.get("birth_date", "")),
             issue_date=_parse_date(f.get("issue_date", "")),
-            issued_by=f.get("issued_by") or None,
+            issued_by=to_cyrillic(f.get("issued_by", "")) or None,
         )
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
@@ -68,6 +69,6 @@ class OcrService:
             series=f.get("series") or None,
             number=f.get("number", ""),
             issue_date=issue_date,
-            issued_by=issued_by,
-            profession=f.get("profession", "") or "ПОДСОБНЫЙ РАБОЧИЙ",
+            issued_by=to_cyrillic(issued_by or "") or None,
+            profession=to_cyrillic(f.get("profession", "")) or "ПОДСОБНЫЙ РАБОЧИЙ",
         )

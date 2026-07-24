@@ -66,7 +66,7 @@ GRID_TARGETS: list[Target] = [
     Target("employee.passport.series", 2, 630, 82.4),
     Target("employee.passport.number", 2, 630, 220.0),
     # ---- mark 7: passport issue date число/месяц/год ----
-    Target("employee.passport.issue.d", 2, 630, 427.0, formatter="dd", cells=2),
+    # (day handled in MANUAL_GRID — detection snaps to the wrong left box)
     Target("employee.passport.issue.m", 2, 630, 468.3, formatter="mm", cells=2),
     Target("employee.passport.issue.y", 2, 630, 509.7, formatter="yyyy", cells=4),
     # ---- mark 8: passport issued_by (first row; long text) ----
@@ -108,6 +108,14 @@ MANUAL_GRID: list[dict] = [
         "pitch": 15.84, "max_cells": 34, "font": "OfisSans", "size": SIZE,
         "align": "center", "transform": "uppercase", "_calibrated": True,
         "clear": True, "clear_top": 472.5, "clear_bottom": 495.5,
+    },
+    {
+        # Passport «Дата выдачи» day — measured box centers at 300 dpi
+        # (lines 419.0 / 434.9 / 450.7 → first cell center ≈ 427.0).
+        "id": "employee.passport.issue.d",
+        "type": "grid", "page": 2, "x0": 427.0, "y": 630.39,
+        "pitch": 15.85, "max_cells": 2, "font": "OfisSans", "size": SIZE,
+        "align": "center", "formatter": "date_dd", "_calibrated": True,
     },
 ]
 

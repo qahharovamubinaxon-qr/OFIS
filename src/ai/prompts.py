@@ -11,7 +11,10 @@ _COMMON = (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
     "Use empty string for anything you cannot read. Dates as YYYY-MM-DD. "
-    "Keep Cyrillic text exactly as printed, uppercased.\n"
+    "IMPORTANT: output all names and words in RUSSIAN CYRILLIC, uppercased. If the "
+    "document is printed in Latin (e.g. KHUDAYBERDIEV JASUR), TRANSLITERATE to "
+    "Cyrillic (ХУДАЙБЕРДИЕВ ЖАСУР; UZBEKISTAN→УЗБЕКИСТАН, KH→Х, ZH/J→Ж, SH→Ш, "
+    "CH→Ч, YU→Ю, YA→Я). Never output Latin letters in name/place fields.\n"
 )
 
 _PASSPORT = _COMMON + (
