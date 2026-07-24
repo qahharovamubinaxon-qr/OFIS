@@ -94,8 +94,11 @@ class ProcessView(QWidget):
         self._run.clicked.connect(self._run_ai)
         self._manual = QPushButton("✎  Qo'lda to'ldirish")
         self._manual.clicked.connect(self._run_manual)
+        self._batch = QPushButton("📦  ZIP (ko'p ishchi)")
+        self._batch.clicked.connect(self._run_batch)
         actions.addWidget(self._run)
         actions.addWidget(self._manual)
+        actions.addWidget(self._batch)
         actions.addStretch(1)
         root.addLayout(actions)
 
@@ -200,15 +203,56 @@ class ProcessView(QWidget):
             on_success=self._done, on_error=self._failed,
         )
 
+    def _run_batch(self) -> None:
+        company = self._selected_company()
+        if company is None:
+            self._warn("Avval firma tanlang.")
+            return
+        if not self._c.ai_available():
+            self._warn("ZIP paket rejimi AI bilan ishlaydi. Sozlamalarga Gemini kalitini kiriting.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Ishchilar ZIP fayli", "", "ZIP (*.zip)")
+        if not path:
+            return
+        profession = self._profession.text().strip() or None
+        form_date = self._form_date()
+        self._busy("ZIP ochilyapti, har bir ishchi uchun PDF yaratyapti… (biroz kutiladi)")
+        run_async(
+            self._c.process_zip, Path(path), company,
+            form_date=form_date, profession=profession,
+            on_success=self._batch_done, on_error=self._failed,
+        )
+
+    def _batch_done(self, summary) -> None:
+        self._enable()
+        self._status.setText(f"✅ Paket tayyor: {summary.ok_count}/{summary.total}  →  {summary.output_dir}")
+        failed = [i for i in summary.items if not i.ok]
+        detail = ""
+        if failed:
+            detail = "\n\nBajarilmadi:\n" + "\n".join(f"• {i.folder}: {i.error}" for i in failed[:12])
+        box = QMessageBox(self)
+        box.setWindowTitle("Paket tayyor")
+        box.setText(f"{summary.ok_count}/{summary.total} ta PDF yaratildi.\n{summary.output_dir}{detail}")
+        open_btn = box.addButton("Papkani ochish", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("OK", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            self._open_folder(summary.output_dir)
+
     # ------------------------------------------------------------------
+    def _enable(self) -> None:
+        self._run.setEnabled(True)
+        self._manual.setEnabled(True)
+        self._batch.setEnabled(True)
+
     def _busy(self, msg: str) -> None:
         self._run.setEnabled(False)
         self._manual.setEnabled(False)
+        self._batch.setEnabled(False)
         self._status.setText("⏳ " + msg)
 
     def _done(self, result: GenerationResult) -> None:
-        self._run.setEnabled(True)
-        self._manual.setEnabled(True)
+        self._enable()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
@@ -220,8 +264,7 @@ class ProcessView(QWidget):
             self._open_folder(result.pdf_path.parent)
 
     def _failed(self, error: Exception) -> None:
-        self._run.setEnabled(True)
-        self._manual.setEnabled(True)
+        self._enable()
         msg = error.message if isinstance(error, OfisError) else str(error)
         self._status.setText("❌ " + msg)
         self._warn(msg)

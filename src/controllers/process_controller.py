@@ -80,6 +80,23 @@ class ProcessController:
             employee, company, form_date=form_date, profession=profession or employee.profession
         )
 
+    # -- Bulk mode: a ZIP of per-worker folders → one PDF each ------------
+    def process_zip(
+        self,
+        zip_path: Path,
+        company: Company,
+        *,
+        form_date: date,
+        profession: str | None,
+        on_progress=None,
+    ):
+        from src.services.batch_service import BatchService
+
+        batch = BatchService(self._ocr, self._generation)
+        return batch.process_zip(
+            zip_path, company, form_date=form_date, profession=profession, on_progress=on_progress
+        )
+
     @staticmethod
     def read_image(path: Path) -> bytes:
         return path.read_bytes()

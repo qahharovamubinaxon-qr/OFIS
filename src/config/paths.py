@@ -75,6 +75,16 @@ def archive_dir() -> Path:
     return _sub("archive")
 
 
+def desktop_dir() -> Path:
+    """The user's Desktop (handles OneDrive-redirected Desktop on Windows).
+    Falls back to the writable data dir if none is found."""
+    home = Path.home()
+    for candidate in (home / "Desktop", home / "OneDrive" / "Desktop", home / "Рабочий стол"):
+        if candidate.exists():
+            return candidate
+    return data_dir()
+
+
 def database_path() -> Path:
     return data_dir() / "ofis.db"
 

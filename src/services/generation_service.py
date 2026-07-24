@@ -62,13 +62,14 @@ class GenerationService:
         *,
         form_date: date,
         profession: str | None = None,
+        output_dir: Path | None = None,
     ) -> GenerationResult:
         reg_number = self._advance_reg_number()
         values = build_values(
             employee, company, form_date=form_date, reg_number=reg_number, profession=profession
         )
         mapping = FieldMapping.load(_MAPPING_PATH)
-        out_path = self._unique_output_path(company, employee)
+        out_path = self._unique_output_path(company, employee, output_dir)
         fill(company.template_path, mapping, values, out_path)
 
         if self._repo is not None:
@@ -81,8 +82,10 @@ class GenerationService:
         log.info("Generated %s (reg %s) for %s", out_path.name, reg_number, company.name)
         return GenerationResult(pdf_path=out_path, reg_number=reg_number, surname=employee.passport.surname)
 
-    def _unique_output_path(self, company: Company, employee: Employee) -> Path:
-        folder = paths.output_dir() / _safe(company.name)
+    def _unique_output_path(
+        self, company: Company, employee: Employee, base: Path | None = None
+    ) -> Path:
+        folder = base if base is not None else paths.output_dir() / _safe(company.name)
         folder.mkdir(parents=True, exist_ok=True)
         stem = employee.output_basename()
         candidate = folder / f"{stem}.pdf"
