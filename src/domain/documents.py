@@ -59,8 +59,13 @@ class Patent(BaseModel):
     valid_to: date | None = None
     issued_by: str | None = None
     profession: str  # ПОДСОБНЫЙ РАБОЧИЙ
+    # The worker's ФИО as printed in Russian on the patent — the authoritative
+    # name source when the passport uses a non-Cyrillic script.
+    holder_surname: str | None = None
+    holder_name: str | None = None
+    holder_patronymic: str | None = None
 
-    @field_validator("profession", "issued_by")
+    @field_validator("profession", "issued_by", "holder_surname", "holder_name", "holder_patronymic")
     @classmethod
     def _clean(cls, v: str | None) -> str | None:
         return _collapse(v) if v else v

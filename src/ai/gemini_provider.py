@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 from collections.abc import Callable
 
 from src.ai.base import AiRawResult, IAiProvider
@@ -85,17 +87,24 @@ class GeminiProvider(IAiProvider):
         genai.configure(api_key=api_key)
         last_exc: Exception | None = None
         for model_name in self._models(genai):
-            try:
-                model = genai.GenerativeModel(model_name)
-                resp = model.generate_content(
-                    [prompt, {"mime_type": "image/jpeg", "data": image}]
-                )
-                text = (resp.text or "").strip()
-                log.info("Gemini OK via %s", model_name)
-                return _parse(text, doc_type, self.name)
-            except Exception as exc:  # noqa: BLE001 - provider boundary → typed error
-                log.warning("Gemini model %s failed: %s", model_name, str(exc)[:120])
-                last_exc = exc
+            for attempt in range(3):  # retry rate-limits before giving up on a model
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    resp = model.generate_content(
+                        [prompt, {"mime_type": "image/jpeg", "data": image}]
+                    )
+                    log.info("Gemini OK via %s", model_name)
+                    return _parse((resp.text or "").strip(), doc_type, self.name)
+                except Exception as exc:  # noqa: BLE001 - provider boundary → typed error
+                    last_exc = exc
+                    text = str(exc)
+                    if _is_rate_limit(text) and attempt < 2:
+                        delay = min(_retry_after(text), 30.0)
+                        log.warning("Gemini %s rate-limited; retry in %.0fs", model_name, delay)
+                        time.sleep(delay)
+                        continue
+                    log.warning("Gemini model %s failed: %s", model_name, text[:120])
+                    break  # non-retryable (or out of retries) → try next model
         raise AiError(_friendly(last_exc)) from last_exc
 
     def _models(self, genai) -> list[str]:
@@ -118,6 +127,17 @@ class GeminiProvider(IAiProvider):
         if self._model and self._model != "auto":
             candidates = [self._model, *[c for c in candidates if c != self._model]]
         return candidates
+
+
+def _is_rate_limit(text: str) -> bool:
+    low = text.lower()
+    return "429" in text or "rate" in low or ("quota" in low and "limit: 0" not in low)
+
+
+def _retry_after(text: str) -> float:
+    """Seconds to wait, parsed from 'retry in 10.85s' when present, else 15s."""
+    m = re.search(r"retry in ([0-9.]+)s", text, re.IGNORECASE)
+    return float(m.group(1)) + 1.0 if m else 15.0
 
 
 def _friendly(exc: Exception | None) -> str:

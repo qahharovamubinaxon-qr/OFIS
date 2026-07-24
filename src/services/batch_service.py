@@ -126,11 +126,11 @@ class BatchService:
         if slots["passport"] is None:
             return BatchItem(folder=folder.name, ok=False, error="pasport rasmi topilmadi")
 
-        passport = self._ocr.read_passport(slots["passport"].read_bytes())
-        patent = None
-        if slots["patent"] is not None:
-            back = slots["patent_back"].read_bytes() if slots["patent_back"] else None
-            patent = self._ocr.read_patent(slots["patent"].read_bytes(), back)
+        patent_front = slots["patent"].read_bytes() if slots["patent"] else None
+        patent_back = slots["patent_back"].read_bytes() if slots["patent_back"] else None
+        passport, patent = self._ocr.read_documents(
+            slots["passport"].read_bytes(), patent_front, patent_back
+        )
 
         employee = Employee(
             company_id=company.id, passport=passport, patent=patent,

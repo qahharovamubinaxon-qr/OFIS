@@ -71,4 +71,28 @@ class OcrService:
             issue_date=issue_date,
             issued_by=to_cyrillic(issued_by or "") or None,
             profession=to_cyrillic(f.get("profession", "")) or "ПОДСОБНЫЙ РАБОЧИЙ",
+            holder_surname=to_cyrillic(f.get("surname", "")) or None,
+            holder_name=to_cyrillic(f.get("name", "")) or None,
+            holder_patronymic=to_cyrillic(f.get("patronymic", "")) or None,
         )
+
+    def read_documents(
+        self, passport_image: bytes, patent_front: bytes | None = None, patent_back: bytes | None = None
+    ) -> tuple[Passport, Patent | None]:
+        """Read passport + patent and return a consistent (Passport, Patent).
+
+        Names come from the PATENT when it carries them (it prints ФИО in Russian,
+        so it is reliable even for non-Cyrillic passports); the passport still
+        supplies citizenship, birth date, series, number, issue date and issuer.
+        """
+        passport = self.read_passport(passport_image)
+        patent = self.read_patent(patent_front, patent_back) if patent_front else None
+        if patent is not None and patent.holder_surname:
+            passport = passport.model_copy(
+                update={
+                    "surname": patent.holder_surname,
+                    "name": patent.holder_name or passport.name,
+                    "patronymic": patent.holder_patronymic or passport.patronymic,
+                }
+            )
+        return passport, patent
