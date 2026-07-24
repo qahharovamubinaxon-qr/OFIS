@@ -74,6 +74,7 @@ class OcrService:
             holder_surname=to_cyrillic(f.get("surname", "")) or None,
             holder_name=to_cyrillic(f.get("name", "")) or None,
             holder_patronymic=to_cyrillic(f.get("patronymic", "")) or None,
+            holder_citizenship=to_cyrillic(f.get("citizenship", "")) or None,
         )
 
     def read_documents(
@@ -93,6 +94,7 @@ class OcrService:
                     "surname": patent.holder_surname,
                     "name": patent.holder_name or passport.name,
                     "patronymic": patent.holder_patronymic or passport.patronymic,
+                    "nationality": patent.holder_citizenship or passport.nationality,
                 }
             )
         return passport, patent

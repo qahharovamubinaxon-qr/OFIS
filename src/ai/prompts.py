@@ -26,9 +26,10 @@ _PASSPORT = _COMMON + (
 # source), plus series, number, profession. Issue date + issuing org are on the BACK.
 _PATENT = _COMMON + (
     'This is the FRONT of a Russian work patent (патент). The holder full name '
-    '(Фамилия, Имя, Отчество) is printed here in Russian — read it exactly. '
-    'Keys: {"document_type":"patent","surname","name","patronymic","series",'
-    '"number","profession"}'
+    '(Фамилия, Имя, Отчество) and citizenship (Гражданство) are printed here in '
+    'Russian — read them exactly. '
+    'Keys: {"document_type":"patent","surname","name","patronymic","citizenship",'
+    '"series","number","profession"}'
 )
 
 # Patent BACK: the issuing organization ("Кем выдан") and the issue date.

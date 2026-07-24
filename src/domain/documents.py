@@ -64,8 +64,10 @@ class Patent(BaseModel):
     holder_surname: str | None = None
     holder_name: str | None = None
     holder_patronymic: str | None = None
+    holder_citizenship: str | None = None
 
-    @field_validator("profession", "issued_by", "holder_surname", "holder_name", "holder_patronymic")
+    @field_validator("profession", "issued_by", "holder_surname", "holder_name",
+                     "holder_patronymic", "holder_citizenship")
     @classmethod
     def _clean(cls, v: str | None) -> str | None:
         return _collapse(v) if v else v
