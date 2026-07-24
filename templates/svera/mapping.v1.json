@@ -63,17 +63,11 @@
       "_calibrated": true,
       "width": 475,
       "wrap_width": 475,
-      "line_height": 13.5,
+      "line_height": 14.5,
       "clear_rects": [
         [
           80,
-          314,
-          585,
-          329
-        ],
-        [
-          80,
-          329,
+          315,
           585,
           344
         ]
@@ -172,12 +166,20 @@
       "id": "svera.date_udo",
       "type": "text",
       "page": 2,
-      "x": 240,
-      "y": 232,
+      "x": 200,
+      "y": 235,
       "font": "OfisSerifBoldItalic",
       "size": 11,
       "align": "left",
-      "_calibrated": true
+      "_calibrated": true,
+      "clear_rects": [
+        [
+          222,
+          225,
+          241,
+          239
+        ]
+      ]
     },
     {
       "id": "svera.fio_udo_right",
@@ -209,10 +211,10 @@
       "id": "svera.po_udo",
       "type": "text",
       "page": 2,
-      "x": 450,
-      "y": 210,
+      "x": 448,
+      "y": 214,
       "font": "OfisSerif",
-      "size": 12,
+      "size": 11,
       "align": "left",
       "_calibrated": true
     },
@@ -220,8 +222,8 @@
       "id": "svera.date_udo_right",
       "type": "text",
       "page": 2,
-      "x": 512,
-      "y": 210,
+      "x": 495,
+      "y": 214,
       "font": "OfisSerif",
       "size": 10,
       "align": "left",

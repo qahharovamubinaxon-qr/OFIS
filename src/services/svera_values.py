@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from src.domain.profession import Profession
-from src.pdf.formatters import _date_dmy, _date_long_g
+from src.pdf.formatters import _date_dmy, _date_dmy_g, _date_long_g
 from src.utils.ru_names import to_dative_parts
 
 _PROVERKA = (
@@ -60,7 +60,7 @@ def build_svera_values(
         "svera.udo_number": str(udo_number),
         "svera.fio_udo_left": "\n".join(dative),
         "svera.prof_udo_left": note(profession.quoted),
-        "svera.date_udo": _date_dmy(issue_date),
+        "svera.date_udo": _date_dmy_g(issue_date),
         "svera.fio_udo_right": " ".join(dative),
         "svera.qual_udo_right": note(profession.qualification_full),
         "svera.po_udo": str(po_number),

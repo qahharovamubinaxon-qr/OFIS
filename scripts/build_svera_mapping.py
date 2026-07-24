@@ -44,11 +44,11 @@ FIELDS = [
     t("svera.date_long_top", 1, 448, 208, font=SB, size=12),
     # [3] long date + re-typeset "№ 4 комиссия…" (printed tail whited out)
     t("svera.date_long_prikaz", 1, 318, 223, font=SB, size=12),
-    # [7] проверка sentence — whiteout the printed two lines (label above ends at
-    # y≈315), re-typeset with wrap so «profession» flows inline
+    # [7] проверка sentence — whiteout the printed two lines (baselines ≈325/340;
+    # the "(ФИО, должность)" label sits just above at ≈313), re-typeset with wrap
     t("svera.proverka", 1, 90, 325, font=SB, size=12, width=475, wrap_width=475,
-      line_height=13.5,
-      clear_rects=[[80, 314, 585, 329], [80, 329, 585, 344]]),
+      line_height=14.5,
+      clear_rects=[[80, 315, 585, 344]]),
     # [2] ФИО (nominative) — three centred lines in the ФИО column
     t("svera.fio_protocol", 1, 95, 400, font=SB, size=11, align="center", width=90,
       wrap_width=90, line_height=17.5),
@@ -70,18 +70,19 @@ FIELDS = [
     # [7] profession left, «name» centred (wraps for long names)
     t("svera.prof_udo_left", 2, 205, 192, font=SBI, size=13, align="center", width=160,
       wrap_width=160, line_height=15),
-    # [3] Дата выдачи (in the blank after printed "Дата выдачи:"; the printed
-    # "г." follows, so no "г." here)
-    t("svera.date_udo", 2, 240, 232, font=SBI, size=11),
+    # [3] Дата выдачи — printed "г." (at x≈225) whited out; render "dd.mm.yyyy г."
+    # right after "Дата выдачи:" (ends ≈195)
+    t("svera.date_udo", 2, 200, 235, font=SBI, size=11,
+      clear_rects=[[222, 225, 241, 239]]),
     # [2] ФИО dative — right panel, single centred line
     t("svera.fio_udo_right", 2, 375, 115, font=SBI, size=14, align="center", width=215),
     # [7] qualification right — "name 5 (пятого) разряда", centred & wrapped
     t("svera.qual_udo_right", 2, 378, 152, font=SB, size=13, align="center", width=210,
       wrap_width=210, line_height=16),
-    # [6] ПО number (after printed "№ ПО"), regular weight on this line
-    t("svera.po_udo", 2, 450, 210, font=SR, size=12),
-    # [3] date after printed "от" on the ООО УЦ line (printed "г." follows)
-    t("svera.date_udo_right", 2, 512, 210, font=SR, size=10),
+    # [6] ПО number (after printed "№ ПО" ≈448, before "от" ≈475)
+    t("svera.po_udo", 2, 448, 214, font=SR, size=11),
+    # [3] date after printed "от" (≈490), before printed "г." (≈555)
+    t("svera.date_udo_right", 2, 495, 214, font=SR, size=10),
 ]
 
 
