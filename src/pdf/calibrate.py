@@ -108,14 +108,25 @@ def detect_all_runs(
     min_cell_px: int = 14,
     pitch_lo: float = 15.0,
     pitch_hi: float = 16.5,
+    threshold: int | None = None,
+    kernel_px: int | None = None,
 ) -> list[GridRow]:
     """Every evenly-spaced cell run on a page (a band may hold several: a date
     band yields три runs — число/месяц/год). Filtered to the form's true box
     pitch so label lettering is ignored. Used to calibrate multi-group rows.
+
+    ``threshold``: when set, binarize with a fixed cutoff (``gray < threshold``)
+    instead of OTSU — needed for very light forms (the registration blank prints
+    its boxes in faint gray that OTSU discards). ``kernel_px`` overrides the
+    vertical-stroke morphology height.
     """
     gray, scale = _render_gray(page, dpi)
-    inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(12, min_cell_px)))
+    if threshold is not None:
+        inv = ((gray < threshold).astype(np.uint8)) * 255
+    else:
+        inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    kh = kernel_px if kernel_px is not None else max(12, min_cell_px)
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kh))
     vertical = cv2.morphologyEx(inv, cv2.MORPH_OPEN, v_kernel)
     bands = _contiguous_bands(vertical.sum(axis=1) > (min_cell_px * 255), min_height=min_cell_px)
 
@@ -146,6 +157,90 @@ def detect_all_runs(
                         )
                     )
             i = j + 1
+    return out
+
+
+def detect_cell_runs(
+    page: fitz.Page,
+    page_index: int,
+    *,
+    dpi: int = 200,
+    threshold: int = 200,
+    box_lo_px: int = 22,
+    box_hi_px: int = 48,
+    row_tol_px: int = 12,
+    min_cells: int = 2,
+) -> list[GridRow]:
+    """Detect character-box runs by finding each box outline (contours), not by
+    projecting strokes. Robust on faint forms (registration blank) where the box
+    lines are too light for OTSU. A row is split into runs wherever the x-gap
+    jumps well above the local pitch, so a date band yields separate
+    число/месяц/год runs.
+    """
+    gray, scale = _render_gray(page, dpi)
+    binv = ((gray < threshold).astype(np.uint8)) * 255
+    cnts, _ = cv2.findContours(binv, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    boxes = []
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if box_lo_px <= w <= box_hi_px and box_lo_px <= h <= box_hi_px:
+            boxes.append((x + w / 2.0, y + h / 2.0, w, h))
+    if not boxes:
+        return []
+
+    # Cluster into rows by y-center.
+    boxes.sort(key=lambda b: b[1])
+    rows_px: list[list[tuple[float, float, float, float]]] = []
+    for b in boxes:
+        placed = False
+        for row in rows_px:
+            if abs(row[0][1] - b[1]) <= row_tol_px:
+                row.append(b)
+                placed = True
+                break
+        if not placed:
+            rows_px.append([b])
+
+    out: list[GridRow] = []
+    box_w = float(np.median([b[2] for b in boxes]))
+    box_h = float(np.median([b[3] for b in boxes]))
+    dedup_gap = box_w * 0.5  # a box border yields inner+outer contours → merge
+    for row in rows_px:
+        row.sort(key=lambda b: b[0])
+        # Merge near-duplicate x-centers (double contour per box outline).
+        xs: list[float] = []
+        for b in row:
+            if xs and b[0] - xs[-1] < dedup_gap:
+                xs[-1] = (xs[-1] + b[0]) / 2.0
+            else:
+                xs.append(b[0])
+        yc = float(np.median([b[1] for b in row]))
+        # Split into contiguous evenly-spaced runs (a big x-gap ends a run).
+        i = 0
+        while i < len(xs):
+            j = i
+            while j + 1 < len(xs):
+                gap = xs[j + 1] - xs[j]
+                base = xs[i + 1] - xs[i]  # this run's pitch (first gap)
+                if gap > base * 1.6:
+                    break
+                j += 1
+            ncells = j - i + 1
+            if ncells >= min_cells:
+                run_xs = xs[i : j + 1]
+                pitch_px = float(np.median(np.diff(run_xs)))
+                out.append(
+                    GridRow(
+                        page=page_index,
+                        y_top=round((yc - box_h / 2) * scale, 2),
+                        y_bottom=round((yc + box_h / 2) * scale, 2),
+                        x0=round(run_xs[0] * scale, 2),
+                        pitch=round(pitch_px * scale, 2),
+                        max_cells=int(ncells),
+                    )
+                )
+            i = j + 1
+    out.sort(key=lambda r: (r.y_top, r.x0))
     return out
 
 

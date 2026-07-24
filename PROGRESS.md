@@ -8,16 +8,24 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
   passport + patent photos automatically.
 - All **16 fill-in fields** land correctly on pages 2/3/5 (incl. patent +1yr,
   reg-number auto-increment, ФИО+гражданство, должность whiteout).
-- 6 screens: Dashboard, Process, Companies, Archive, Search, Settings.
-- Saves `output/<company>/<SURNAME>.pdf`; every doc logged for Archive/Search.
+- 7 screens: Dashboard, Process, **Registration**, Companies, Archive, Search,
+  Settings.
+- **Registration form** (Уведомление о прибытии, Times New Roman): pick an
+  address, upload passport+patent, enter registration-expiry → PDF. Add new
+  addresses like companies (address + host ФИО pre-printed per template). Names
+  from patent, dates/gender from passport, expiry on both pages. All 23 fields
+  calibrated via contour detection; see docs/REGISTRATION.md.
+- Saves `output/<company>/<SURNAME>.pdf` (and `output/registration/<address>/`);
+  every doc logged for Archive/Search.
 - Run on Windows: `python -m src.app` (see docs/RUN_WINDOWS.md); EXE via
-  build/ofis.spec. Tests: **24/24**.
+  build/ofis.spec. Tests: **32/32**.
 
 ### Next (needs owner input / Windows)
 - Gemini key → verify real OCR accuracy on live passport/patent photos.
 - Optional OCR image preprocessing (deskew/contrast) once accuracy is measured.
 - Add the remaining company templates (5–6) via Companies → + Yangi firma.
-- Later forms (регистрация, трудовой договор): new templates/<name>/ only.
+- Add real registration addresses via Регистрация → + Yangi manzil.
+- Later forms (трудовой договор): new templates/<name>/ only.
 
 ## Roadmap phase
 **Phases 1–10 substantially delivered** (foundation → DB → UI → OCR → AI → PDF →

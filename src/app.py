@@ -18,11 +18,15 @@ from src.config.settings_service import SettingsService
 from src.database.connection import Database
 from src.database.repositories.company_repo import CompanyRepository
 from src.database.repositories.generated_repo import GeneratedRepository
+from src.database.repositories.registration_address_repo import RegistrationAddressRepository
 from src.database.repositories.settings_repo import SettingsRepository
 from src.domain.company import Company
 from src.domain.enums import EmployerType
+from src.domain.registration_address import RegistrationAddress
 from src.services.company_service import CompanyService
 from src.services.generation_service import GenerationService
+from src.services.registration_address_service import RegistrationAddressService
+from src.services.registration_service import RegistrationService
 
 log = get_logger(__name__)
 
@@ -52,6 +56,12 @@ def build_container() -> Container:
 
     container.register_instance(GenerationService, GenerationService(settings, generated_repo))
 
+    reg_addr_repo = RegistrationAddressRepository(db)
+    container.register_instance(RegistrationAddressRepository, reg_addr_repo)
+    reg_addr_service = RegistrationAddressService(reg_addr_repo)
+    container.register_instance(RegistrationAddressService, reg_addr_service)
+    container.register_instance(RegistrationService, RegistrationService())
+
     # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
     # service degrades to "use manual fill" when no key is present.
     from src.ai.gemini_provider import GeminiProvider
@@ -64,6 +74,7 @@ def build_container() -> Container:
     container.register_instance(OcrService, OcrService(ai_manager))
 
     _seed_default_company(company_service)
+    _seed_default_address(reg_addr_service)
 
     return container
 
@@ -94,6 +105,29 @@ def _seed_default_company(companies: CompanyService) -> None:
         log.info("Seeded default company ГОРДИЕНКО")
     except OfisError as exc:
         log.warning("Seed skipped: %s", exc.message)
+
+
+def _seed_default_address(addresses: RegistrationAddressService) -> None:
+    """First-run seed: the sample registration template that ships in
+    templates/registration/ (Г МОСКВА 5-Я ПАРКОВАЯ 55, host ПОПОВ). Idempotent."""
+    if addresses.count() > 0:
+        return
+    template = paths.templates_dir() / "registration" / "template.pdf"
+    if not template.exists():
+        return
+    try:
+        addresses.create(
+            RegistrationAddress(
+                label="5-Я ПАРКОВАЯ 55-55",
+                internal_code="parkovaya55",
+                address_text="Г МОСКВА, 5-Я ПАРКОВАЯ, ДОМ 55, КОРПУС 1, КВ. 55",
+                host_fio="ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ",
+                template_path=template,
+            )
+        )
+        log.info("Seeded default registration address ПАРКОВАЯ")
+    except OfisError as exc:
+        log.warning("Registration seed skipped: %s", exc.message)
 
 
 def main() -> int:

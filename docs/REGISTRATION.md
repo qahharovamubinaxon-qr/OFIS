@@ -32,20 +32,27 @@ A `Регистрация` section lets the operator add addresses (each = a bla
 with the address + host pre-filled), exactly like adding a company. One shared
 field mapping fills any address's template.
 
-## Status
-- ✅ Passport model/prompt/OCR now read **gender** and **expiry_date**.
+## Status — DONE
+- ✅ Passport model/prompt/OCR read **gender** and **expiry_date**.
 - ✅ Engine supports two fonts (OfisSans = Calibri, **OfisSerif = Times**),
   chosen per field via the mapping's `font` key.
 - ✅ Template + meta installed at `templates/registration/`.
-- ⏳ Field calibration: this form's boxes are faint/small; auto-detection needs a
-  fixed-threshold pass + per-row measurement (in progress — will be tuned against
-  a filled sample like the МВД form was).
-- ⏳ `RegistrationAddress` entity + `Регистрация` nav screen (add/list) + fill
-  flow (asks the registration-expiry date), reusing the engine and OCR.
+- ✅ Calibration: the faint boxes are found by the new contour-based
+  `detect_cell_runs` (fixed threshold, not OTSU). `mapping.v1.json` has all 23
+  serif fields; `scripts/calibrate_registration.py` regenerates it. Verified
+  aligned on both pages against a rendered fill.
+- ✅ `registration_values.py` builder — names/citizenship from patent, dates &
+  gender from passport, registration expiry → «Заявленный срок» (p1) +
+  «Поставлен на учет до» (p2), gender → checkbox mark.
+- ✅ `RegistrationAddress` entity + repo + migration `0003` + service (copies a
+  blank template per address, like a company).
+- ✅ `Регистрация` nav screen: address picker + **add new address**, upload
+  passport/patent (drag&drop), registration-expiry date, RUN → PDF named by
+  surname under `output/registration/<address>/`.
+- ✅ Seeded first address (Г МОСКВА 5-Я ПАРКОВАЯ 55, host ПОПОВ) from the
+  shipped template. Tests in `tests/unit/test_registration.py`.
 
-## Next steps
-1. Calibrate `templates/registration/mapping.v1.json` (grid + mark fields, serif).
-2. `registration_values.py` builder (names from patent, dates from passport,
-   gender→mark, registration expiry → both pages).
-3. `RegistrationAddress` repo/service/migration + `Регистрация` view + process
-   flow, then iterate on alignment from the operator's screenshots.
+## How a new address is added (operator)
+Регистрация → «+ Yangi manzil» → fill label/code/address/host ФИО → pick that
+address's filled-blank PDF (address + host already printed) → Save. One shared
+mapping fills any address; no code change.
