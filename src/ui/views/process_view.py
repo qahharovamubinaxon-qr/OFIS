@@ -33,6 +33,7 @@ from src.services.generation_service import GenerationResult
 from src.services.manual_entry import DEFAULT_PROFESSION
 from src.ui.i18n import Translator
 from src.ui.views.manual_dialog import ManualFillDialog
+from src.ui.widgets.drop_zone import DropZone
 
 log = get_logger(__name__)
 
@@ -42,9 +43,6 @@ class ProcessView(QWidget):
         super().__init__()
         self._c = controller
         self._tr = translator
-        self._passport_path: Path | None = None
-        self._patent_path: Path | None = None
-        self._patent_back_path: Path | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
@@ -73,18 +71,14 @@ class ProcessView(QWidget):
         row.addWidget(self._profession, stretch=1)
         root.addLayout(row)
 
-        # -- AI upload --------------------------------------------------
+        # -- AI upload: big drag & drop tiles ---------------------------
         up = QHBoxLayout()
-        self._passport_btn = QPushButton("📷 Паспорт")
-        self._passport_btn.clicked.connect(self._pick_passport)
-        self._patent_btn = QPushButton("📷 Патент (олд)")
-        self._patent_btn.clicked.connect(self._pick_patent)
-        self._patent_back_btn = QPushButton("📷 Патент (орқа)")
-        self._patent_back_btn.clicked.connect(self._pick_patent_back)
-        up.addWidget(self._passport_btn)
-        up.addWidget(self._patent_btn)
-        up.addWidget(self._patent_back_btn)
-        up.addStretch(1)
+        up.setSpacing(12)
+        self._dz_passport = DropZone("🛂", "Паспорт")
+        self._dz_patent = DropZone("📄", "Патент (олд)")
+        self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
+        for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
+            up.addWidget(dz, stretch=1)
         root.addLayout(up)
 
         # -- actions ----------------------------------------------------
@@ -142,24 +136,6 @@ class ProcessView(QWidget):
         return ("AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting yoki "
                 f"«Qo'lda to'ldirish» dan foydalaning. Keyingi raqam: {self._c.next_reg_number()}.")
 
-    def _pick_passport(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Паспорт", "", "Images (*.jpg *.jpeg *.png *.webp)")
-        if path:
-            self._passport_path = Path(path)
-            self._passport_btn.setText(f"✓ Паспорт: {Path(path).name}")
-
-    def _pick_patent(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Патент (олд томон)", "", "Images (*.jpg *.jpeg *.png *.webp)")
-        if path:
-            self._patent_path = Path(path)
-            self._patent_btn.setText(f"✓ Патент олд: {Path(path).name}")
-
-    def _pick_patent_back(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Патент (орқа томон)", "", "Images (*.jpg *.jpeg *.png *.webp)")
-        if path:
-            self._patent_back_path = Path(path)
-            self._patent_back_btn.setText(f"✓ Патент орқа: {Path(path).name}")
-
     # ------------------------------------------------------------------
     def _run_ai(self) -> None:
         company = self._selected_company()
@@ -169,13 +145,13 @@ class ProcessView(QWidget):
         if not self._c.ai_available():
             self._warn("AI kaliti yo'q. «Qo'lda to'ldirish» dan foydalaning yoki Sozlamalarga kalit kiriting.")
             return
-        if self._passport_path is None:
+        if self._dz_passport.path is None:
             self._warn("Pasport rasmini yuklang.")
             return
 
-        passport = self._c.read_image(self._passport_path)
-        patent = self._c.read_image(self._patent_path) if self._patent_path else None
-        patent_back = self._c.read_image(self._patent_back_path) if self._patent_back_path else None
+        passport = self._c.read_image(self._dz_passport.path)
+        patent = self._c.read_image(self._dz_patent.path) if self._dz_patent.path else None
+        patent_back = self._c.read_image(self._dz_patent_back.path) if self._dz_patent_back.path else None
         profession = self._profession.text().strip() or None
         form_date = self._form_date()
         self._busy("AI o'qiyapti va PDF yaratyapti…")
@@ -253,6 +229,8 @@ class ProcessView(QWidget):
 
     def _done(self, result: GenerationResult) -> None:
         self._enable()
+        for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
+            dz.clear()  # ready for the next worker
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")

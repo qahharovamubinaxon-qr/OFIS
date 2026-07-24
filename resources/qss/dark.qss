@@ -26,3 +26,10 @@ QLineEdit, QComboBox, QDateEdit { background:#0f1216; border:1px solid #263041; 
 QPushButton { background:#1a2029; border:1px solid #263041; border-radius:8px; padding:8px 14px; color:#e6e9ef; }
 QPushButton:hover { background:#222a35; }
 QListWidget { background:#12161c; border:1px solid #1e242d; border-radius:8px; }
+
+#dropZone { background:#12161c; border:2px dashed #2b3646; border-radius:14px; }
+#dropZone[filled="true"] { border:2px solid #1d6fff; background:#131b28; }
+#dropZone[hover="true"] { border:2px solid #4c8dff; background:#16202e; }
+#dzIcon { font-size:26px; }
+#dzTitle { font-size:14px; font-weight:700; color:#e6e9ef; }
+#dzHint { font-size:11px; color:#8a94a3; }
