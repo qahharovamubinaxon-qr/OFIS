@@ -17,7 +17,7 @@ a = Analysis(  # noqa: F821
         (str(ROOT / "resources"), "resources"),
         (str(ROOT / "templates"), "templates"),
     ],
-    hiddenimports=["google.generativeai"],
+    hiddenimports=["google.generativeai", "PIL", "PIL.Image", "PIL.ImageOps"],
     hookspath=[],
     excludes=["cv2", "matplotlib", "tkinter"],  # OpenCV is calibration-only
     noarchive=False,

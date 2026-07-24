@@ -64,6 +64,8 @@ class GeminiProvider(IAiProvider):
         self._static = api_key
         self._key_getter = key_getter
         self._model = model
+        self._chosen: str | None = None  # first model that works, reused after
+        self._discovered: list[str] | None = None  # list_models() cache
 
     def _key(self) -> str:
         if self._key_getter:
@@ -86,47 +88,76 @@ class GeminiProvider(IAiProvider):
 
         genai.configure(api_key=api_key)
         last_exc: Exception | None = None
-        for model_name in self._models(genai):
-            for attempt in range(3):  # retry rate-limits before giving up on a model
+
+        # Fast path: a model already proved itself this session — use it directly
+        # (one retry on a transient rate-limit), never re-discovering.
+        if self._chosen:
+            try:
+                return self._call(genai, self._chosen, image, prompt, doc_type, retries=1)
+            except Exception as exc:  # noqa: BLE001 - fall back to a full search
+                last_exc = exc
+                self._chosen = None
+
+        # Try the known-good names first (no network call). Only if every one of
+        # them fails do we spend a list_models() call to discover others.
+        tried: set[str] = set()
+
+        def _try(names: list[str]) -> AiRawResult | None:
+            nonlocal last_exc
+            for model_name in names:
+                if model_name in tried:
+                    continue
+                tried.add(model_name)
                 try:
-                    model = genai.GenerativeModel(model_name)
-                    resp = model.generate_content(
-                        [prompt, {"mime_type": "image/jpeg", "data": image}]
-                    )
-                    log.info("Gemini OK via %s", model_name)
-                    return _parse((resp.text or "").strip(), doc_type, self.name)
-                except Exception as exc:  # noqa: BLE001 - provider boundary → typed error
+                    result = self._call(genai, model_name, image, prompt, doc_type, retries=1)
+                    self._chosen = model_name  # remember the winner for next time
+                    return result
+                except Exception as exc:  # noqa: BLE001 - provider boundary
                     last_exc = exc
-                    text = str(exc)
-                    if _is_rate_limit(text) and attempt < 2:
-                        delay = min(_retry_after(text), 30.0)
-                        log.warning("Gemini %s rate-limited; retry in %.0fs", model_name, delay)
-                        time.sleep(delay)
-                        continue
-                    log.warning("Gemini model %s failed: %s", model_name, text[:120])
-                    break  # non-retryable (or out of retries) → try next model
+                    log.warning("Gemini model %s failed: %s", model_name, str(exc)[:120])
+            return None
+
+        result = _try(self._candidates())
+        if result is None:
+            result = _try(self._discover(genai))  # last resort — costs one API call
+        if result is not None:
+            return result
         raise AiError(_friendly(last_exc)) from last_exc
 
-    def _models(self, genai) -> list[str]:
-        """Candidate models, best free-tier-friendly first. If the operator
-        pinned one (self._model != 'auto') try it first."""
-        discovered: list[str] = []
-        try:
-            for m in genai.list_models():
-                methods = getattr(m, "supported_generation_methods", []) or []
-                if "generateContent" not in methods:
+    def _call(self, genai, model_name, image, prompt, doc_type, *, retries: int) -> AiRawResult:
+        for attempt in range(retries + 1):
+            try:
+                model = genai.GenerativeModel(model_name)
+                resp = model.generate_content([prompt, {"mime_type": "image/jpeg", "data": image}])
+                log.info("Gemini OK via %s", model_name)
+                return _parse((resp.text or "").strip(), doc_type, self.name)
+            except Exception as exc:  # noqa: BLE001
+                if _is_rate_limit(str(exc)) and attempt < retries:
+                    time.sleep(min(_retry_after(str(exc)), 8.0))
                     continue
-                short = m.name.split("/")[-1]
-                if any(x in short for x in _EXCLUDE):
-                    continue
-                discovered.append(short)
-        except Exception as exc:  # noqa: BLE001 - discovery is best-effort
-            log.warning("Gemini list_models failed: %s", str(exc)[:120])
-        candidates = discovered or list(_PREFERRED)
-        candidates = sorted(dict.fromkeys(candidates), key=_rank)
+                raise
+
+    def _candidates(self) -> list[str]:
+        """The fixed known-good list (no network call). Pinned model wins."""
         if self._model and self._model != "auto":
-            candidates = [self._model, *[c for c in candidates if c != self._model]]
-        return candidates
+            return [self._model, *[c for c in _PREFERRED if c != self._model]]
+        return list(_PREFERRED)
+
+    def _discover(self, genai) -> list[str]:
+        """list_models() results, computed once and cached, used only when every
+        known model already failed."""
+        if self._discovered is None:
+            discovered: list[str] = []
+            try:
+                for m in genai.list_models():
+                    methods = getattr(m, "supported_generation_methods", []) or []
+                    short = m.name.split("/")[-1]
+                    if "generateContent" in methods and not any(x in short for x in _EXCLUDE):
+                        discovered.append(short)
+            except Exception as exc:  # noqa: BLE001 - discovery is best-effort
+                log.warning("Gemini list_models failed: %s", str(exc)[:120])
+            self._discovered = sorted(dict.fromkeys(discovered), key=_rank)
+        return self._discovered
 
 
 def _is_rate_limit(text: str) -> bool:

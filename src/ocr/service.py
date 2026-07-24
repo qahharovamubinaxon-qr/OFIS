@@ -14,6 +14,7 @@ from src.ai.prompts import patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType
+from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic
 
 log = get_logger(__name__)
@@ -41,6 +42,7 @@ class OcrService:
         return self._ai.available()
 
     def read_passport(self, image: bytes) -> Passport:
+        image = prepare_image(image)
         f = self._ai.extract(image, DocType.PASSPORT, prompt_for(DocType.PASSPORT)).fields
         return Passport(
             surname=to_cyrillic(f.get("surname", "")),
@@ -58,11 +60,12 @@ class OcrService:
         """Read the patent. The FRONT gives серия/номер/профессия; the BACK (if
         supplied) gives дата выдачи + кем выдан — which is where they are printed.
         """
+        front = prepare_image(front)
         f = self._ai.extract(front, DocType.PATENT, prompt_for(DocType.PATENT)).fields
         issue_date = _parse_date(f.get("issue_date", ""))
         issued_by = f.get("issued_by") or None
         if back is not None:
-            b = self._ai.extract(back, DocType.PATENT, patent_back_prompt()).fields
+            b = self._ai.extract(prepare_image(back), DocType.PATENT, patent_back_prompt()).fields
             issue_date = _parse_date(b.get("issue_date", "")) or issue_date
             issued_by = (b.get("issued_by") or "").strip() or issued_by
         return Patent(
