@@ -54,7 +54,55 @@ def _encode_png(rgb) -> bytes:
     return buf.getvalue()
 
 
+_STUDIO_PROMPT = (
+    "Сделай студийное профессиональное фото на документы в формате 3:4. "
+    "Фон чисто белый. Человек одет в чёрную футболку. Человек смотрит прямо "
+    "в камеру, голова ровно, плечи ровные. Освещение мягкое студийное. "
+    "Лицо человека не менять — сохранить полное сходство."
+)
+
+
 class PhotoService:
+    def __init__(self, key_getter=None) -> None:
+        self._key_getter = key_getter
+
+    # -- AI studio edit (Gemini image model); falls back to local pipeline --
+    def _ai_studio(self, data: bytes) -> bytes | None:
+        key = (self._key_getter() if self._key_getter else "") or ""
+        if not key.strip():
+            return None
+        import base64
+        import json
+        import urllib.request
+
+        img_b64 = base64.b64encode(data).decode()
+        body = json.dumps({
+            "contents": [{"parts": [
+                {"text": _STUDIO_PROMPT},
+                {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}},
+            ]}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+        }).encode()
+        for model in ("gemini-2.5-flash-image", "gemini-2.5-flash-image-preview",
+                      "gemini-2.0-flash-preview-image-generation"):
+            url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{model}:generateContent?key={key.strip()}")
+            req = urllib.request.Request(
+                url, data=body, headers={"Content-Type": "application/json"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    payload = json.loads(resp.read().decode())
+                for cand in payload.get("candidates", []):
+                    for part in cand.get("content", {}).get("parts", []):
+                        inline = part.get("inlineData") or part.get("inline_data")
+                        if inline and inline.get("data"):
+                            log.info("Studio photo via %s", model)
+                            return base64.b64decode(inline["data"])
+            except Exception as exc:  # noqa: BLE001 - try next model
+                log.info("Studio model %s unavailable: %s", model, exc)
+        return None
+
     def _detector(self, cv2, w: int, h: int):
         model = paths.resources_dir() / "models" / "face_detection_yunet.onnx"
         if not model.exists():
@@ -86,6 +134,21 @@ class PhotoService:
 
     def process(self, data: bytes) -> PhotoResult:
         import cv2
+
+        # 1) AI studio edit when a Gemini key is available — professional
+        #    quality; the local pipeline stays as offline fallback.
+        studio = self._ai_studio(data)
+        if studio is not None:
+            rgb = _load_rgb(studio)
+            found = self._detect_face(cv2, rgb)
+            if found is not None:
+                x, y, w, h, *_ = found
+                crop = self._document_crop(cv2, rgb, x, y, w, h)
+            else:
+                crop = self._center_crop(cv2, rgb)
+                return PhotoResult(png=_encode_png(crop), face_found=True)
+            crop = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
+            return PhotoResult(png=_encode_png(crop), face_found=True)
 
         rgb = _load_rgb(data)
         found = self._detect_face(cv2, rgb)

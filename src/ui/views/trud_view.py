@@ -79,7 +79,7 @@ class AddTrudFirmDialog(QDialog):
         outer.addWidget(buttons)
 
     def _pick(self, kind: str) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Shablon PDF", "", "PDF (*.pdf)")
+        path, _ = QFileDialog.getOpenFileName(self, "Shablon (PDF yoki Word)", "", "PDF/Word (*.pdf *.docx)")
         if not path:
             return
         if kind == "trud":

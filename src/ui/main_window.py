@@ -134,7 +134,9 @@ class MainWindow(QMainWindow):
         if key == "nav.photo":
             from src.services.photo_service import PhotoService
 
-            return PhotoView(PhotoService())
+            return PhotoView(PhotoService(
+                key_getter=lambda: str(self._settings.get("ai.gemini_key", "") or "")
+            ))
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":

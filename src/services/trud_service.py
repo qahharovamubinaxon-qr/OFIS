@@ -79,8 +79,8 @@ class TrudFirmService:
             raise ValidationError("Internal code already exists", context={"code": code})
         dest = paths.templates_dir() / f"trud_{code.lower()}"
         dest.mkdir(parents=True, exist_ok=True)
-        trud = dest / "trudovoy.pdf"
-        uved = dest / "uvedomlenie.pdf"
+        trud = dest / f"trudovoy{trud_source.suffix.lower()}"
+        uved = dest / f"uvedomlenie{uved_source.suffix.lower()}"
         shutil.copyfile(trud_source, trud)
         shutil.copyfile(uved_source, uved)
         firm = TrudFirm(name=name, internal_code=code,
@@ -111,19 +111,64 @@ class TrudService:
         folder.mkdir(parents=True, exist_ok=True)
         stem = _safe(f"{passport.surname}_{passport.name}".upper()) or "WORKER"
 
-        trud_path = _unique(folder / f"{stem}_ТРУДОВОЙ.pdf")
-        self._editor.fill(
-            firm.trud_template_path, trud_path,
-            date_text=_date_dmy(form_date),
-            worker_block=self._worker_block(passport),
-            profession=prof,
-        )
+        if firm.trud_template_path.suffix.lower() == ".docx":
+            from src.services.docx_editor import TrudDocxEditor, docx_to_pdf
+            from src.services.field_extractor import plus_one_year
 
-        uved_path = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.pdf")
-        mapping = FieldMapping.load(_UVED_MAPPING)
-        fill(firm.uved_template_path, mapping, self._uved_values(
-            passport, patent, form_date=form_date, profession=prof,
-        ), uved_path)
+            fio_u = " ".join(x for x in (passport.surname, passport.name,
+                                         passport.patronymic or "") if x).upper()
+            initials = "".join(w[0] + "." for w in
+                               f"{passport.name} {passport.patronymic or ''}".split()[:2])
+            docx_path = _unique(folder / f"{stem}_ТРУДОВОЙ.docx")
+            TrudDocxEditor().fill_trudovoy(
+                firm.trud_template_path, docx_path,
+                form_date=form_date, fio_upper=fio_u,
+                citizenship_upper=(passport.nationality or "").upper(),
+                sign_abbr=f"{passport.surname.upper()} {initials}",
+                contract_end=(plus_one_year(patent.issue_date)
+                              if patent and patent.issue_date else None),
+                profession=prof,
+            )
+            trud_path = docx_to_pdf(docx_path) or docx_path
+        else:
+            trud_path = _unique(folder / f"{stem}_ТРУДОВОЙ.pdf")
+            self._editor.fill(
+                firm.trud_template_path, trud_path,
+                date_text=_date_dmy(form_date),
+                worker_block=self._worker_block(passport),
+                profession=prof,
+            )
+
+        if firm.uved_template_path.suffix.lower() == ".docx":
+            from src.services.docx_editor import TrudDocxEditor, docx_to_pdf
+
+            uv = self._uved_values(passport, patent, form_date=form_date, profession=prof)
+            docx_uv = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.docx")
+            TrudDocxEditor().fill_uvedomlenie(firm.uved_template_path, docx_uv, {
+                "surname": uv.get("uved.surname", ""), "name": uv.get("uved.name", ""),
+                "patronymic": uv.get("uved.patronymic", ""),
+                "birth_date": uv.get("uved.birth_date", ""),
+                "gender": uv.get("uved.gender", ""),
+                "citizenship": uv.get("uved.citizenship", ""),
+                "birth_place": uv.get("uved.birth_place", ""),
+                "pass_series": uv.get("uved.passport.series", ""),
+                "pass_number": uv.get("uved.passport.number", ""),
+                "pass_issue_date": uv.get("uved.passport.issue_date", ""),
+                "pass_issued_by": uv.get("uved.passport.issued_by", ""),
+                "pat_series": uv.get("uved.patent.series", ""),
+                "pat_number": uv.get("uved.patent.number", ""),
+                "region": uv.get("uved.patent.region", ""),
+                "blank_series": uv.get("uved.patent.blank_series", ""),
+                "blank_number": uv.get("uved.patent.blank_number", ""),
+                "profession": prof, "contract_date": uv.get("uved.contract_date", ""),
+            })
+            uved_path = docx_to_pdf(docx_uv) or docx_uv
+        else:
+            uved_path = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.pdf")
+            mapping = FieldMapping.load(_UVED_MAPPING)
+            fill(firm.uved_template_path, mapping, self._uved_values(
+                passport, patent, form_date=form_date, profession=prof,
+            ), uved_path)
 
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
         return TrudResult(trud_path=trud_path, uved_path=uved_path, surname=passport.surname)

@@ -15,7 +15,7 @@ from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
 from src.ocr.preprocess import prepare_image
-from src.ocr.translit import to_cyrillic
+from src.ocr.translit import to_cyrillic, translate_issuer
 
 log = get_logger(__name__)
 
@@ -65,7 +65,7 @@ class OcrService:
             birth_place=to_cyrillic(f.get("birth_place", "")) or None,
             issue_date=_parse_date(f.get("issue_date", "")),
             expiry_date=_parse_date(f.get("expiry_date", "")),
-            issued_by=to_cyrillic(f.get("issued_by", "")) or None,
+            issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
         )
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
