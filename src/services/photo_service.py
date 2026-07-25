@@ -116,8 +116,8 @@ class PhotoService:
                     with urllib.request.urlopen(req, timeout=90) as resp:
                         payload = json.loads(resp.read().decode())
                 except urllib.error.HTTPError as he:
-                    if he.code == 429:  # free-tier rate limit — wait and retry once
-                        time.sleep(25)
+                    if he.code == 429:  # free-tier rate limit — wait and retry
+                        time.sleep(35)
                         with urllib.request.urlopen(
                             urllib.request.Request(url, data=body,
                                 headers={"Content-Type": "application/json"}),

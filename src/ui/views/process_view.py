@@ -239,6 +239,9 @@ class ProcessView(QWidget):
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()  # ready for the next worker
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
+        from src.ui.widgets.save_to import ask_save_dir
+
+        ask_save_dir(self, [result.pdf_path])
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
         box.setText(f"PDF yaratildi:\n{result.pdf_path}")

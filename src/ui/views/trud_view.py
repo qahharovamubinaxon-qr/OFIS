@@ -271,6 +271,10 @@ class TrudView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
+        from src.ui.widgets.save_to import ask_save_dir
+
+        ask_save_dir(self, [x for x in (result.trud_path, result.uved_path,
+                                        result.hod_path) if x])
         extra = f" + {result.hod_path.name}" if result.hod_path else ""
         self._status.setText(
             f"✅ Tayyor: {result.trud_path.name} + {result.uved_path.name}{extra}")

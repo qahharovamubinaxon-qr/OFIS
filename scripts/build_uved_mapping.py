@@ -22,7 +22,7 @@ def t(id, page, y, *, size=10.0, clear=None):
     # уведомление as its template — the old worker's value is erased.
     f = {"id": id, "type": "text", "page": page, "x": 102, "y": y,
          "font": F, "size": size, "align": "left", "_calibrated": True,
-         "clear_rects": clear or [[100, y - 9.5, 500, y + 3]]}
+         "clear_rects": clear or [[100, y - 9.0, 470, y + 1.5]]}
     return f
 
 

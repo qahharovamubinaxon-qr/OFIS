@@ -312,6 +312,9 @@ class RegistrationView(QWidget):
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}")
+        from src.ui.widgets.save_to import ask_save_dir
+
+        ask_save_dir(self, [result.pdf_path])
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
         box.setText(f"Registratsiya PDF yaratildi:\n{result.pdf_path}")

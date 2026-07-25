@@ -51,6 +51,7 @@ _NAV = [
     ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF"),
     ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш"),
     ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF"),
+    ("nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш"),
     ("nav.companies", "Companies", "Templates, logos and company data"),
     ("nav.archive", "Archive", "Every generated package, by year and company"),
     ("nav.search", "Search", "Find an employee by passport, patent or name"),
@@ -147,6 +148,10 @@ class MainWindow(QMainWindow):
                 DoverService(key_getter=lambda: str(
                     self._settings.get("ai.gemini_key", "") or "")),
             )
+        if key == "nav.jpg2pdf":
+            from src.ui.views.jpg2pdf_view import Jpg2PdfView
+
+            return Jpg2PdfView()
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":

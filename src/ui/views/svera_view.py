@@ -210,6 +210,9 @@ class SveraView(QWidget):
         for dz in (self._dz_photo, self._dz_passport):
             dz.clear()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (ПО{result.po_number})")
+        from src.ui.widgets.save_to import ask_save_dir
+
+        ask_save_dir(self, [result.pdf_path])
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
         box.setText(f"СФЕРА PDF yaratildi:\n{result.pdf_path}")
