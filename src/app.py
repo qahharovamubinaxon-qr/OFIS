@@ -21,6 +21,7 @@ from src.database.repositories.generated_repo import GeneratedRepository
 from src.database.repositories.profession_repo import ProfessionRepository
 from src.database.repositories.registration_address_repo import RegistrationAddressRepository
 from src.database.repositories.settings_repo import SettingsRepository
+from src.database.repositories.trud_firm_repo import TrudFirmRepository
 from src.domain.company import Company
 from src.domain.enums import EmployerType
 from src.domain.registration_address import RegistrationAddress
@@ -30,6 +31,7 @@ from src.services.profession_service import ProfessionService
 from src.services.registration_address_service import RegistrationAddressService
 from src.services.registration_service import RegistrationService
 from src.services.svera_service import SveraService
+from src.services.trud_service import TrudFirmService, TrudService
 
 log = get_logger(__name__)
 
@@ -70,6 +72,11 @@ def build_container() -> Container:
     profession_service = ProfessionService(profession_repo)
     container.register_instance(ProfessionService, profession_service)
     container.register_instance(SveraService, SveraService(settings))
+
+    trud_firm_repo = TrudFirmRepository(db)
+    container.register_instance(TrudFirmRepository, trud_firm_repo)
+    container.register_instance(TrudFirmService, TrudFirmService(trud_firm_repo))
+    container.register_instance(TrudService, TrudService())
 
     # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
     # service degrades to "use manual fill" when no key is present.

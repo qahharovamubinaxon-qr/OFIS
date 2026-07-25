@@ -81,5 +81,13 @@ class CompanyRepository:
         ).fetchall()
         return [_row_to_company(r) for r in rows]
 
+    def archive(self, company_id: UUID) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE companies SET status=?, updated_at=? WHERE id=?",
+                (CompanyStatus.ARCHIVED.value, now, str(company_id)),
+            )
+
     def count(self) -> int:
         return int(self._conn.execute("SELECT COUNT(*) AS n FROM companies").fetchone()["n"])

@@ -33,6 +33,11 @@ class RegistrationAddressService:
     def count(self) -> int:
         return self._repo.count()
 
+    def archive(self, address_id: UUID) -> None:
+        """Remove from the picker (soft delete — nothing on disk is lost)."""
+        self._repo.archive(address_id)
+        log.info("Registration address archived: %s", address_id)
+
     def create(
         self,
         address: RegistrationAddress,

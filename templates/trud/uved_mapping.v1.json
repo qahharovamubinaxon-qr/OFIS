@@ -1,0 +1,217 @@
+{
+  "template": "trud_uvedomlenie",
+  "template_version": "1",
+  "mapping_version": "1",
+  "page_size": [
+    595.3,
+    871.0
+  ],
+  "fields": [
+    {
+      "id": "uved.surname",
+      "type": "text",
+      "page": 1,
+      "x": 102,
+      "y": 679.8,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.name",
+      "type": "text",
+      "page": 1,
+      "x": 102,
+      "y": 719.7,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patronymic",
+      "type": "text",
+      "page": 1,
+      "x": 102,
+      "y": 758.8,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.birth_date",
+      "type": "text",
+      "page": 1,
+      "x": 102,
+      "y": 798.1,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.gender",
+      "type": "text",
+      "page": 1,
+      "x": 102,
+      "y": 838.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.citizenship",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 31.7,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.birth_place",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 71.3,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.passport.series",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 197.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.passport.number",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 237.3,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.passport.issue_date",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 277.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.passport.issued_by",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 317.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patent.series",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 425.1,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patent.number",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 465.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patent.region",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 505.1,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patent.blank_series",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 544.8,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.patent.blank_number",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 584.7,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    },
+    {
+      "id": "uved.profession",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 664.7,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true,
+      "clear_rects": [
+        [
+          100,
+          655,
+          420,
+          668.5
+        ]
+      ]
+    },
+    {
+      "id": "uved.contract_date",
+      "type": "text",
+      "page": 2,
+      "x": 102,
+      "y": 784.2,
+      "font": "OfisSansRegular",
+      "size": 10.0,
+      "align": "left",
+      "_calibrated": true
+    }
+  ]
+}

@@ -21,9 +21,18 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
   address grids on page 1, владелец ФИО on page 2 (3 grid rows + «Владелец:»
   line in the госуслуги box) and «№ …» under «Уведомления зарегистрированго».
   Uploading a ready-made template PDF still works as before.
-- **Live progress**: Process/Registration/СФЕРА show a modern animated percent
-  bar (`RunProgress`) while the PDF is generated; green→100% on success, red on
-  error.
+- **Live progress**: Process/Registration/СФЕРА/Трудовой show a modern animated
+  percent bar (`RunProgress`) while the PDF is generated; green→100% on
+  success, red on error.
+- **Трудовой-Уведомления module**: firms with TWO templates each (трудовой
+  договор text-PDF + уведомление госуслуги blank). RUN with passport + patent
+  photos + date + должность → two PDFs: the договор with the old worker's
+  block/date/profession replaced in-place (redaction-based, pattern-matched, no
+  fixed coordinates) and the уведомление filled under its labels (Title-case,
+  patent blank series/number OCR'd, region derived from the patent's issuer).
+  Firm add/delete inline; migration 0006; see src/pdf/trud_editor.py.
+- **Delete buttons**: Компании list, Регистрация address picker and Трудовой
+  firm picker each have a 🗑 remove (soft archive — nothing on disk is lost).
 - **СФЕРА module** (training-centre Удостоверение + Протокол, 2-page PDF): pick a
   profession (сфера) + date, upload student photo + passport → PDF named by
   surname under `output/svera/`. Certificate ФИО is auto-declined to the **dative
@@ -35,7 +44,7 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
 - Saves `output/<company>/<SURNAME>.pdf` (+ `output/registration/<address>/`,
   `output/svera/`); every doc logged for Archive/Search.
 - Run on Windows: `python -m src.app` (see docs/RUN_WINDOWS.md); EXE via
-  build/ofis.spec. Tests: **37/37**.
+  build/ofis.spec. Tests: **41/41**.
 
 ### Next (needs owner input / Windows)
 - Gemini key → verify real OCR accuracy on live passport/patent photos.

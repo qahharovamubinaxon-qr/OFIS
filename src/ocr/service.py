@@ -62,6 +62,7 @@ class OcrService:
             series=f.get("series") or None,  # series/number stay as printed
             number=f.get("number", ""),
             birth_date=_parse_date(f.get("birth_date", "")),
+            birth_place=to_cyrillic(f.get("birth_place", "")) or None,
             issue_date=_parse_date(f.get("issue_date", "")),
             expiry_date=_parse_date(f.get("expiry_date", "")),
             issued_by=to_cyrillic(f.get("issued_by", "")) or None,
@@ -82,6 +83,8 @@ class OcrService:
         return Patent(
             series=f.get("series") or None,
             number=f.get("number", ""),
+            blank_series=to_cyrillic(f.get("blank_series", "")) or None,
+            blank_number=f.get("blank_number") or None,
             issue_date=issue_date,
             issued_by=to_cyrillic(issued_by or "") or None,
             profession=to_cyrillic(f.get("profession", "")) or "ПОДСОБНЫЙ РАБОЧИЙ",

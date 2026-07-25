@@ -105,6 +105,10 @@ class CompaniesView(QWidget):
         add = QPushButton("+ Yangi firma")
         add.clicked.connect(self._add)
         header.addWidget(add)
+        rm = QPushButton("🗑 O'chirish")
+        rm.setToolTip("Tanlangan firmani ro'yxatdan o'chirish")
+        rm.clicked.connect(self._remove)
+        header.addWidget(rm)
         root.addLayout(header)
 
         self._list = QListWidget()
@@ -113,8 +117,22 @@ class CompaniesView(QWidget):
 
     def refresh(self) -> None:
         self._list.clear()
-        for c in self._service.list():
+        self._companies = self._service.list()
+        for c in self._companies:
             self._list.addItem(f"{c.name}   ·   ИНН {c.inn}   ·   {c.internal_code}")
+
+    def _remove(self) -> None:
+        idx = self._list.currentRow()
+        if idx < 0 or idx >= len(self._companies):
+            QMessageBox.information(self, "Diqqat", "Avval ro'yxatdan firma tanlang.")
+            return
+        company = self._companies[idx]
+        if QMessageBox.question(
+            self, "O'chirish", f"«{company.name}» ro'yxatdan o'chirilsinmi?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._service.archive(company.id)
+        self.refresh()
 
     def _add(self) -> None:
         dialog = AddCompanyDialog(self)

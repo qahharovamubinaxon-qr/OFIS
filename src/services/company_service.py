@@ -45,6 +45,11 @@ class CompanyService:
         log.info("Company created: %s (%s)", company.name, company.internal_code)
         return company
 
+    def archive(self, company_id: UUID) -> None:
+        """Remove from the pickers (soft delete — data and PDFs are kept)."""
+        self._repo.archive(company_id)
+        log.info("Company archived: %s", company_id)
+
     def update(self, company: Company) -> Company:
         self._repo.upsert(company)
         return company

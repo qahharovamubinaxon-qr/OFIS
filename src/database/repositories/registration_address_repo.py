@@ -83,6 +83,14 @@ class RegistrationAddressRepository:
         ).fetchall()
         return [_row_to_address(r) for r in rows]
 
+    def archive(self, address_id: UUID) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE registration_addresses SET status=?, updated_at=? WHERE id=?",
+                (CompanyStatus.ARCHIVED.value, now, str(address_id)),
+            )
+
     def count(self) -> int:
         return int(
             self._conn.execute("SELECT COUNT(*) AS n FROM registration_addresses").fetchone()["n"]

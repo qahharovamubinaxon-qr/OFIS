@@ -18,9 +18,10 @@ _COMMON = (
 )
 
 _PASSPORT = _COMMON + (
-    'Also read gender ("male" or "female") and the passport expiry date. '
+    'Also read gender ("male" or "female"), the passport expiry date and the '
+    'birth place ("birth_place"). '
     'Keys: {"document_type":"passport","surname","name","patronymic",'
-    '"nationality","birth_date","gender","series","number","issue_date",'
+    '"nationality","birth_date","birth_place","gender","series","number","issue_date",'
     '"expiry_date","issued_by"}'
 )
 
@@ -30,8 +31,9 @@ _PATENT = _COMMON + (
     'This is the FRONT of a Russian work patent (патент). The holder full name '
     '(Фамилия, Имя, Отчество) and citizenship (Гражданство) are printed here in '
     'Russian — read them exactly. '
+    'Also read the blank series/number printed at the card bottom (e.g. ПР 6164274). '
     'Keys: {"document_type":"patent","surname","name","patronymic","citizenship",'
-    '"series","number","profession"}'
+    '"series","number","profession","blank_series","blank_number"}'
 )
 
 # Patent BACK: the issuing organization ("Кем выдан") and the issue date.

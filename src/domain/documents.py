@@ -55,6 +55,8 @@ class Patent(BaseModel):
     doc_name: str = "ПАТЕНТ"
     series: str | None = None  # 77
     number: str  # 26003 14661 (spacing preserved as printed if meaningful)
+    blank_series: str | None = None  # серия бланка, e.g. ПР
+    blank_number: str | None = None  # номер бланка, e.g. 6164274
     issue_date: date | None = None
     valid_from: date | None = None
     valid_to: date | None = None

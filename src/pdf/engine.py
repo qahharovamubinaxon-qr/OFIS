@@ -35,6 +35,7 @@ log = get_logger(__name__)
 _DEFAULT_FAMILY = "OfisSans"
 _FONT_FAMILIES: dict[str, dict[str, object]] = {
     "OfisSans": {"nt": ("calibrib.ttf", "calibri.ttf"), "bundled": "OfisSans-Bold.ttf"},
+    "OfisSansRegular": {"nt": ("calibri.ttf",), "bundled": "OfisSans-Regular.ttf"},
     "OfisSerif": {"nt": ("times.ttf",), "bundled": "OfisSerif-Regular.ttf"},
     "OfisSerifBold": {"nt": ("timesbd.ttf",), "bundled": "OfisSerif-Bold.ttf"},
     "OfisSerifItalic": {"nt": ("timesi.ttf",), "bundled": "OfisSerif-Italic.ttf"},
@@ -44,6 +45,7 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
 _FONT_IDS = {
     "OfisSans": "ofis_sans",
+    "OfisSansRegular": "ofis_sans_r",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",

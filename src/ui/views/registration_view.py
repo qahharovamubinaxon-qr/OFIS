@@ -161,6 +161,11 @@ class RegistrationView(QWidget):
         add = QPushButton("+ Yangi manzil")
         add.clicked.connect(self._add_address)
         row.addWidget(add)
+        rm = QPushButton("🗑")
+        rm.setToolTip("Tanlangan manzilni ro'yxatdan o'chirish")
+        rm.setFixedWidth(40)
+        rm.clicked.connect(self._remove_address)
+        row.addWidget(rm)
 
         self._expiry = QDateEdit()
         self._expiry.setDisplayFormat("dd.MM.yyyy")
@@ -258,6 +263,17 @@ class RegistrationView(QWidget):
             QMessageBox.warning(self, "Xato", exc.message)
         except Exception as exc:  # noqa: BLE001 - surface validation errors to the user
             QMessageBox.warning(self, "Xato", str(exc))
+
+    def _remove_address(self) -> None:
+        address = self._selected_address()
+        if address is None:
+            return
+        if QMessageBox.question(
+            self, "O'chirish", f"«{address.label}» ro'yxatdan o'chirilsinmi?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._addresses_service.archive(address.id)
+        self.refresh()
 
     def _run_ai(self) -> None:
         address = self._selected_address()

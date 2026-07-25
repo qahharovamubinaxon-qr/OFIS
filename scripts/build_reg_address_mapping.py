@@ -43,7 +43,7 @@ FIELDS = [
     grid("addr.gorod", 1, 65.0, 391.8, 31),       # 3 город (населенный пункт)
     grid("addr.ulitsa", 1, 65.0, 427.9, 31),      # 4 улица (улично-дорожная сеть)
     text("addr.dom", 1, 103, 461),        # 5 дом — vertically centred in its box
-    text("addr.korpus", 1, 228, 461),     # 6 корпус
+    text("addr.korpus", 1, 255, 461),     # 6 корпус — nearer its box centre
     text("addr.stroenie", 1, 421, 461),   # 7 строение
     text("addr.kvartira", 1, 103, 497),   # 8 квартира
     # ---- page 2: принимающая сторона (mark 9) ----
@@ -52,7 +52,7 @@ FIELDS = [
     grid("addr.host_patronymic", 2, 192.1, 179.8, 23),
     # «Владелец:» in the госуслуги box — on the same line as the printed label
     # (label baseline ≈330), same small size as its surroundings
-    text("addr.host_line", 2, 101, 330, size=9.0),
+    text("addr.host_line", 2, 101, 332, size=9.0),
     # 10 — regional number right under «Уведомления зарегистрированго»
     # (heading baseline ≈471), same size as the heading
     {"id": "addr.regional_number", "type": "text", "page": 2, "x": 327, "y": 486,
