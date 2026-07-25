@@ -37,36 +37,60 @@ from src.domain.registration_address import RegistrationAddress
 from src.services.registration_address_service import RegistrationAddressService
 from src.services.registration_service import RegistrationResult
 from src.ui.widgets.drop_zone import DropZone
+from src.ui.widgets.run_progress import RunProgress
 
 log = get_logger(__name__)
 
-_FIELDS = [
-    ("label", "Nomi / Название (masalan: 5-Я ПАРКОВАЯ 55-55)"),
+_MAIN_FIELDS = [
+    ("label", "Nomi (ro'yxatda ko'rinadi, masalan: ПАРКОВАЯ 55)"),
     ("internal_code", "Kod (unikal, masalan: parkovaya55)"),
-    ("address_text", "Manzil (ro'yxatda ko'rinadi)"),
-    ("host_fio", "Qabul qiluvchi FIO (ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ)"),
+]
+
+# The 10-field address table (owner's numbering). Program prints these onto the
+# blank «Уведомление о прибытии» to make this address's template.
+_ADDR_FIELDS = [
+    ("oblast", "1 · Область (субъект РФ, masalan: Г МОСКВА)"),
+    ("raion", "2 · Район (поселение)"),
+    ("gorod", "3 · Город (населенный пункт)"),
+    ("ulitsa", "4 · Улица"),
+    ("dom", "5 · Дом"),
+    ("korpus", "6 · Корпус"),
+    ("stroenie", "7 · Строение"),
+    ("kvartira", "8 · Квартира"),
+    ("host_fio", "9 · Хозяин / Владелец (ФИО)"),
+    ("regional_number", "10 · Региональный номер (02/770-…)"),
 ]
 
 
 class AddAddressDialog(QDialog):
+    """New address: fill the 10-field table (template built from the blank
+    automatically) — or upload a ready-made pre-filled template instead."""
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Yangi manzil / Новый адрес")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(560)
         self._template: Path | None = None
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
         self._edits: dict[str, QLineEdit] = {}
-        for key, label in _FIELDS:
+        for key, label in _MAIN_FIELDS + _ADDR_FIELDS:
             e = QLineEdit()
             form.addRow(label, e)
             self._edits[key] = e
         outer.addLayout(form)
 
+        hint = QLabel(
+            "Jadvalni to'ldirsangiz — shablon avtomatik yasaladi (Times New Roman).\n"
+            "Yoki tayyor to'ldirilgan shablon PDF yuklang (jadval shart emas):"
+        )
+        hint.setStyleSheet("color:#8a94a3;")
+        outer.addWidget(hint)
+
         pick = QHBoxLayout()
-        self._tpl_label = QLabel("Shablon (to'ldirilgan bo'sh PDF) tanlanmagan")
-        btn = QPushButton("Shablon tanlash…")
+        self._tpl_label = QLabel("Tayyor shablon tanlanmagan (ixtiyoriy)")
+        btn = QPushButton("Tayyor shablon…")
         btn.clicked.connect(self._pick_template)
         pick.addWidget(self._tpl_label, stretch=1)
         pick.addWidget(btn)
@@ -87,11 +111,25 @@ class AddAddressDialog(QDialog):
 
     def build(self) -> tuple[RegistrationAddress, Path | None]:
         v = {k: e.text().strip() for k, e in self._edits.items()}
+        summary = ", ".join(
+            x for x in (
+                v["oblast"], v["raion"], v["gorod"], v["ulitsa"],
+                f"д. {v['dom']}" if v["dom"] else "",
+                f"к. {v['korpus']}" if v["korpus"] else "",
+                f"стр. {v['stroenie']}" if v["stroenie"] else "",
+                f"кв. {v['kvartira']}" if v["kvartira"] else "",
+            ) if x
+        )
         address = RegistrationAddress(
-            label=v["label"] or "Manzil",
+            label=v["label"] or summary or "Manzil",
             internal_code=v["internal_code"] or "addr",
-            address_text=v["address_text"] or "-",
+            address_text=summary or "-",
             host_fio=v["host_fio"] or "-",
+            oblast=v["oblast"] or None, raion=v["raion"] or None,
+            gorod=v["gorod"] or None, ulitsa=v["ulitsa"] or None,
+            dom=v["dom"] or None, korpus=v["korpus"] or None,
+            stroenie=v["stroenie"] or None, kvartira=v["kvartira"] or None,
+            regional_number=v["regional_number"] or None,
             template_path=self._template or Path("missing.pdf"),
         )
         return address, self._template
@@ -151,6 +189,9 @@ class RegistrationView(QWidget):
         actions.addStretch(1)
         root.addLayout(actions)
 
+        self._progress = RunProgress()
+        root.addWidget(self._progress)
+
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(line)
@@ -198,10 +239,19 @@ class RegistrationView(QWidget):
             return
         try:
             address, template = dialog.build()
-            if template is None:
-                QMessageBox.warning(self, "Diqqat", "Shablon PDF tanlang.")
+            has_data = any(
+                (address.oblast, address.raion, address.gorod, address.ulitsa,
+                 address.dom, address.kvartira)
+            )
+            if template is None and not has_data:
+                QMessageBox.warning(
+                    self, "Diqqat",
+                    "Manzil jadvalini to'ldiring yoki tayyor shablon PDF tanlang.",
+                )
                 return
-            self._addresses_service.create(address, template_source=template)
+            self._addresses_service.create(
+                address, template_source=template, build_from_blank=template is None
+            )
             self.refresh()
             QMessageBox.information(self, "OK", f"Manzil qo'shildi: {address.label}")
         except OfisError as exc:
@@ -238,9 +288,11 @@ class RegistrationView(QWidget):
     def _busy(self, msg: str) -> None:
         self._run.setEnabled(False)
         self._status.setText("⏳ " + msg)
+        self._progress.start(msg)
 
     def _done(self, result: RegistrationResult) -> None:
         self._run.setEnabled(True)
+        self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}")
@@ -255,6 +307,7 @@ class RegistrationView(QWidget):
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)
+        self._progress.fail()
         msg = error.message if isinstance(error, OfisError) else str(error)
         self._status.setText("❌ " + msg)
         self._warn(msg)

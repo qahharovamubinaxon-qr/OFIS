@@ -34,8 +34,15 @@ class RegistrationAddressService:
         return self._repo.count()
 
     def create(
-        self, address: RegistrationAddress, template_source: Path | None = None
+        self,
+        address: RegistrationAddress,
+        template_source: Path | None = None,
+        *,
+        build_from_blank: bool = False,
     ) -> RegistrationAddress:
+        """Register an address. Its template comes from either an uploaded
+        ready-made PDF (``template_source``) or, when ``build_from_blank`` is
+        set, is generated from the blank with the address data printed in."""
         if self._repo.by_internal_code(address.internal_code):
             raise ValidationError(
                 "Internal code already exists", context={"code": address.internal_code}
@@ -44,6 +51,19 @@ class RegistrationAddressService:
             address = address.model_copy(
                 update={"template_path": self._import_template(address, template_source)}
             )
+        elif build_from_blank:
+            from src.services.address_template_builder import AddressTemplateBuilder
+
+            dest_dir = paths.templates_dir() / f"registration_{address.internal_code.lower()}"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            built = AddressTemplateBuilder().build(
+                dest_dir / "template.pdf",
+                oblast=address.oblast, raion=address.raion, gorod=address.gorod,
+                ulitsa=address.ulitsa, dom=address.dom, korpus=address.korpus,
+                stroenie=address.stroenie, kvartira=address.kvartira,
+                host_fio=address.host_fio, regional_number=address.regional_number,
+            )
+            address = address.model_copy(update={"template_path": built})
         if not address.template_path.exists():
             raise ValidationError(
                 "Template file not found", context={"path": str(address.template_path)}

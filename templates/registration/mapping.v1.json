@@ -16,7 +16,7 @@
       "pitch": 16.02,
       "max_cells": 28,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "transform": "uppercase"
@@ -30,7 +30,7 @@
       "pitch": 16.02,
       "max_cells": 28,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "transform": "uppercase"
@@ -44,7 +44,7 @@
       "pitch": 16.02,
       "max_cells": 23,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "transform": "uppercase"
@@ -58,7 +58,7 @@
       "pitch": 16.02,
       "max_cells": 27,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "transform": "uppercase"
@@ -72,7 +72,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_dd"
@@ -86,7 +86,7 @@
       "pitch": 15.93,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_mm"
@@ -100,7 +100,7 @@
       "pitch": 16.02,
       "max_cells": 4,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_yyyy"
@@ -114,7 +114,7 @@
       "pitch": 63.99,
       "max_cells": 1,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true
     },
@@ -127,7 +127,7 @@
       "pitch": 63.99,
       "max_cells": 1,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true
     },
@@ -140,7 +140,7 @@
       "pitch": 16.02,
       "max_cells": 6,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true
     },
@@ -153,7 +153,7 @@
       "pitch": 16.02,
       "max_cells": 10,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true
     },
@@ -166,7 +166,7 @@
       "pitch": 15.03,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_dd"
@@ -180,7 +180,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_mm"
@@ -194,7 +194,7 @@
       "pitch": 16.02,
       "max_cells": 4,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_yyyy"
@@ -208,7 +208,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_dd"
@@ -222,7 +222,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_mm"
@@ -236,7 +236,7 @@
       "pitch": 16.02,
       "max_cells": 4,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_yyyy"
@@ -250,7 +250,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_dd"
@@ -264,7 +264,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_mm"
@@ -278,7 +278,7 @@
       "pitch": 16.02,
       "max_cells": 4,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_yyyy"
@@ -292,7 +292,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_dd"
@@ -306,7 +306,7 @@
       "pitch": 16.02,
       "max_cells": 2,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_mm"
@@ -320,7 +320,7 @@
       "pitch": 16.02,
       "max_cells": 4,
       "font": "OfisSerif",
-      "size": 12.0,
+      "size": 11.0,
       "align": "center",
       "_calibrated": true,
       "formatter": "date_yyyy"

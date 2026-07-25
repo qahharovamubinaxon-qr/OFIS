@@ -26,6 +26,18 @@ class RegistrationAddress(BaseModel):
     address_text: str  # human summary of the printed address (for the list)
     host_fio: str  # ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ — the принимающая сторона (printed)
 
+    # Structured address parts (present when the template was built from the
+    # blank; empty when a ready-made template PDF was uploaded instead).
+    oblast: str | None = None       # область / субъект РФ
+    raion: str | None = None        # район / поселение
+    gorod: str | None = None        # город / населенный пункт
+    ulitsa: str | None = None       # улица
+    dom: str | None = None
+    korpus: str | None = None
+    stroenie: str | None = None
+    kvartira: str | None = None
+    regional_number: str | None = None  # «Уведомления зарегистрированго №…»
+
     template_path: Path
     template_version: str = "1"
 

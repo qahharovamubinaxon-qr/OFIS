@@ -34,6 +34,7 @@ from src.services.manual_entry import DEFAULT_PROFESSION
 from src.ui.i18n import Translator
 from src.ui.views.manual_dialog import ManualFillDialog
 from src.ui.widgets.drop_zone import DropZone
+from src.ui.widgets.run_progress import RunProgress
 
 log = get_logger(__name__)
 
@@ -95,6 +96,9 @@ class ProcessView(QWidget):
         actions.addWidget(self._batch)
         actions.addStretch(1)
         root.addLayout(actions)
+
+        self._progress = RunProgress()
+        root.addWidget(self._progress)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
@@ -201,6 +205,7 @@ class ProcessView(QWidget):
 
     def _batch_done(self, summary) -> None:
         self._enable()
+        self._progress.finish()
         self._status.setText(f"✅ Paket tayyor: {summary.ok_count}/{summary.total}  →  {summary.output_dir}")
         failed = [i for i in summary.items if not i.ok]
         detail = ""
@@ -226,9 +231,11 @@ class ProcessView(QWidget):
         self._manual.setEnabled(False)
         self._batch.setEnabled(False)
         self._status.setText("⏳ " + msg)
+        self._progress.start(msg)
 
     def _done(self, result: GenerationResult) -> None:
         self._enable()
+        self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()  # ready for the next worker
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
@@ -243,6 +250,7 @@ class ProcessView(QWidget):
 
     def _failed(self, error: Exception) -> None:
         self._enable()
+        self._progress.fail()
         msg = error.message if isinstance(error, OfisError) else str(error)
         self._status.setText("❌ " + msg)
         self._warn(msg)

@@ -56,20 +56,20 @@
       "type": "text",
       "page": 1,
       "x": 78,
-      "y": 328,
+      "y": 338,
       "font": "OfisSerifBold",
       "size": 12,
       "align": "left",
       "_calibrated": true,
       "width": 490,
       "wrap_width": 490,
-      "line_height": 15,
+      "line_height": 13,
       "clear_rects": [
         [
           55,
-          313,
+          322,
           585,
-          348
+          350
         ]
       ]
     },
@@ -139,14 +139,14 @@
       "type": "text",
       "page": 2,
       "x": 298,
-      "y": 124,
+      "y": 128,
       "font": "OfisSerifBoldItalic",
-      "size": 15,
+      "size": 13,
       "align": "left",
       "_calibrated": true,
       "width": 160,
       "wrap_width": 160,
-      "line_height": 26
+      "line_height": 16.5
     },
     {
       "id": "svera.prof_udo_left",

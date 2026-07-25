@@ -34,6 +34,7 @@ from src.common.threading import run_async
 from src.controllers.svera_controller import SveraController
 from src.services.svera_service import SveraResult
 from src.ui.widgets.drop_zone import DropZone
+from src.ui.widgets.run_progress import RunProgress
 
 log = get_logger(__name__)
 
@@ -113,6 +114,9 @@ class SveraView(QWidget):
         actions.addWidget(self._run)
         actions.addStretch(1)
         root.addLayout(actions)
+
+        self._progress = RunProgress()
+        root.addWidget(self._progress)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
@@ -198,9 +202,11 @@ class SveraView(QWidget):
     def _busy(self, msg: str) -> None:
         self._run.setEnabled(False)
         self._status.setText("⏳ " + msg)
+        self._progress.start(msg)
 
     def _done(self, result: SveraResult) -> None:
         self._run.setEnabled(True)
+        self._progress.finish()
         for dz in (self._dz_photo, self._dz_passport):
             dz.clear()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (ПО{result.po_number})")
@@ -215,6 +221,7 @@ class SveraView(QWidget):
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)
+        self._progress.fail()
         msg = error.message if isinstance(error, OfisError) else str(error)
         self._status.setText("❌ " + msg)
         self._warn(msg)

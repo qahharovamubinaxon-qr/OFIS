@@ -44,11 +44,12 @@ FIELDS = [
     t("svera.date_long_top", 1, 448, 208, font=SB, size=12),
     # [3] long date + re-typeset "№ 4 комиссия…" (printed tail whited out)
     t("svera.date_long_prikaz", 1, 318, 223, font=SB, size=12),
-    # [7] проверка sentence — whiteout the printed two lines (baselines ≈328/344;
-    # the "(ФИО, должность)" label sits just above at ≈308), re-typeset with wrap
-    t("svera.proverka", 1, 78, 328, font=SB, size=12, width=490, wrap_width=490,
-      line_height=15,
-      clear_rects=[[55, 313, 585, 348]]),
+    # [7] проверка line 2 — line 1 («провела проверку … обучения») stays printed;
+    # only the printed «в объёме 160 ч.» (baseline ≈344) is whited out and
+    # replaced with «Профессия» (note) в объёме 160 ч. (wraps if very long)
+    t("svera.proverka", 1, 78, 338, font=SB, size=12, width=490, wrap_width=490,
+      line_height=13,
+      clear_rects=[[55, 322, 585, 350]]),
     # [2] ФИО (nominative) — three centred lines in the ФИО column
     t("svera.fio_protocol", 1, 95, 400, font=SB, size=11, align="center", width=90,
       wrap_width=90, line_height=17.5),
@@ -64,9 +65,9 @@ FIELDS = [
     # [1] student photo — the box is x≈50-120, y≈128-208
     {"id": "svera.photo", "type": "image", "page": 2, "x": 52, "y": 130,
      "width": 66, "height": 76, "_calibrated": True},
-    # [2] ФИО dative — left panel, 3 lines
-    t("svera.fio_udo_left", 2, 298, 124, font=SBI, size=15, wrap_width=160, width=160,
-      line_height=26),
+    # [2] ФИО dative — left panel, 3 tight lines (reference: ~13pt, lh≈16)
+    t("svera.fio_udo_left", 2, 298, 128, font=SBI, size=13, wrap_width=160, width=160,
+      line_height=16.5),
     # [7] profession left, «name» centred (wraps for long names)
     t("svera.prof_udo_left", 2, 205, 192, font=SBI, size=13, align="center", width=160,
       wrap_width=160, line_height=15),

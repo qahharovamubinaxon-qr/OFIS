@@ -24,7 +24,7 @@ from src.pdf.calibrate import GridRow, detect_cell_runs
 TEMPLATE = Path("templates/registration/template.pdf")
 OUT = Path("templates/registration/mapping.v1.json")
 
-SIZE = 12.0
+SIZE = 11.0  # Times New Roman, one size smaller (owner request)
 FONT = "OfisSerif"
 FORMATTER_MAP = {"dd": "date_dd", "mm": "date_mm", "yyyy": "date_yyyy"}
 

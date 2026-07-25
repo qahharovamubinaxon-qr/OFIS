@@ -10,11 +10,20 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
   reg-number auto-increment, ФИО+гражданство, должность whiteout).
 - 8 screens: Dashboard, Process, **Registration**, **СФЕРА**, Companies,
   Archive, Search, Settings.
-- **Registration form** (Уведомление о прибытии, Times New Roman): pick an
-  address, upload passport+patent, enter registration-expiry → PDF. Add new
-  addresses like companies (address + host ФИО pre-printed per template). Names
-  from patent, dates/gender from passport, expiry on both pages. All 23 fields
-  calibrated via contour detection; see docs/REGISTRATION.md.
+- **Registration form** (Уведомление о прибытии, Times New Roman, size 11):
+  pick an address, upload passport+patent, enter registration-expiry → PDF.
+  Names from patent, dates/gender from passport, expiry on both pages. All 23
+  fields calibrated via contour detection; see docs/REGISTRATION.md.
+- **Professional address builder**: «+ Yangi manzil» opens a 10-field table
+  (область/район/город/улица/дом/корпус/строение/квартира/владелец/рег.номер) —
+  the program prints it onto the bundled blank (`templates/registration/
+  blank.pdf` + `address_mapping.v1.json`) to make that address's template:
+  address grids on page 1, владелец ФИО on page 2 (3 grid rows + «Владелец:»
+  line in the госуслуги box) and «№ …» under «Уведомления зарегистрированго».
+  Uploading a ready-made template PDF still works as before.
+- **Live progress**: Process/Registration/СФЕРА show a modern animated percent
+  bar (`RunProgress`) while the PDF is generated; green→100% on success, red on
+  error.
 - **СФЕРА module** (training-centre Удостоверение + Протокол, 2-page PDF): pick a
   profession (сфера) + date, upload student photo + passport → PDF named by
   surname under `output/svera/`. Certificate ФИО is auto-declined to the **dative

@@ -13,10 +13,10 @@ from src.domain.profession import Profession
 from src.pdf.formatters import _date_dmy, _date_dmy_g, _date_long_g
 from src.utils.ru_names import to_dative_parts
 
-_PROVERKA = (
-    "провела проверку знаний по программе профессионального обучения "
-    "{quoted} в объёме 160 ч."
-)
+# Line 1 («провела проверку знаний по программе профессионального обучения»)
+# stays printed; only line 2 is re-typeset: «Профессия» (note) в объёме 160 ч.
+# — exactly how the centre's real protocols look.
+_PROVERKA_L2 = "{quoted}{note} в объёме 160 ч."
 
 
 def _title(s: str) -> str:
@@ -52,7 +52,10 @@ def build_svera_values(
         "svera.date_short": _date_dmy(issue_date),
         "svera.date_long_top": _date_long_g(issue_date),
         "svera.date_long_prikaz": _date_long_g(issue_date),
-        "svera.proverka": _PROVERKA.format(quoted=profession.quoted),
+        "svera.proverka": _PROVERKA_L2.format(
+            quoted=profession.quoted,
+            note=f" ({profession.note})" if profession.note else "",
+        ),
         "svera.fio_protocol": fio_nom,
         "svera.reg13": format_reg13(reg13),
         "svera.zaklyuchenie": note(profession.qualification_short),
