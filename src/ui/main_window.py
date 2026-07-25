@@ -50,6 +50,7 @@ _NAV = [
     ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF"),
     ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF"),
     ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш"),
+    ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF"),
     ("nav.companies", "Companies", "Templates, logos and company data"),
     ("nav.archive", "Archive", "Every generated package, by year and company"),
     ("nav.search", "Search", "Find an employee by passport, patent or name"),
@@ -137,6 +138,15 @@ class MainWindow(QMainWindow):
             return PhotoView(PhotoService(
                 key_getter=lambda: str(self._settings.get("ai.gemini_key", "") or "")
             ))
+        if key == "nav.dover":
+            from src.services.dover_service import DoverService
+            from src.ui.views.dover_view import DoverView
+
+            return DoverView(
+                self._container.resolve(OcrService),
+                DoverService(key_getter=lambda: str(
+                    self._settings.get("ai.gemini_key", "") or "")),
+            )
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":

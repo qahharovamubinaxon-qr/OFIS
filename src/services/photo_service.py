@@ -32,6 +32,7 @@ OUT_W, OUT_H = 600, 800  # 3:4
 class PhotoResult:
     png: bytes
     face_found: bool
+    note: str = ""
 
 
 def _load_rgb(data: bytes):
@@ -83,8 +84,25 @@ class PhotoService:
             ]}],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         }).encode()
-        for model in ("gemini-2.5-flash-image", "gemini-2.5-flash-image-preview",
-                      "gemini-2.0-flash-preview-image-generation"):
+        models = ["gemini-2.5-flash-image", "gemini-2.5-flash-image-preview",
+                  "gemini-2.0-flash-preview-image-generation"]
+        # discover any image-capable model this key actually has
+        try:
+            with urllib.request.urlopen(
+                "https://generativelanguage.googleapis.com/v1beta/models?key="
+                + key.strip(), timeout=20
+            ) as resp:
+                listing = json.loads(resp.read().decode())
+            for m in listing.get("models", []):
+                name = m.get("name", "").split("/")[-1]
+                if "image" in name and "generateContent" in m.get(
+                    "supportedGenerationMethods", []
+                ) and name not in models:
+                    models.append(name)
+        except Exception:  # noqa: BLE001
+            pass
+        self._last_error = ""
+        for model in models:
             url = ("https://generativelanguage.googleapis.com/v1beta/models/"
                    f"{model}:generateContent?key={key.strip()}")
             req = urllib.request.Request(
@@ -100,6 +118,7 @@ class PhotoService:
                             log.info("Studio photo via %s", model)
                             return base64.b64decode(inline["data"])
             except Exception as exc:  # noqa: BLE001 - try next model
+                self._last_error = str(exc)[:120]
                 log.info("Studio model %s unavailable: %s", model, exc)
         return None
 
@@ -146,9 +165,9 @@ class PhotoService:
                 crop = self._document_crop(cv2, rgb, x, y, w, h)
             else:
                 crop = self._center_crop(cv2, rgb)
-                return PhotoResult(png=_encode_png(crop), face_found=True)
+                return PhotoResult(png=_encode_png(crop), face_found=True, note="AI studio")
             crop = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
-            return PhotoResult(png=_encode_png(crop), face_found=True)
+            return PhotoResult(png=_encode_png(crop), face_found=True, note="AI studio")
 
         rgb = _load_rgb(data)
         found = self._detect_face(cv2, rgb)
@@ -174,7 +193,8 @@ class PhotoService:
         crop = self._document_crop(cv2, rgb, x, y, w, h)
         crop = self._whiten_background(cv2, crop)
         crop = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
-        return PhotoResult(png=_encode_png(crop), face_found=True)
+        note = "Lokal usul" + (f" (AI: {self._last_error})" if getattr(self, "_last_error", "") else "")
+        return PhotoResult(png=_encode_png(crop), face_found=True, note=note)
 
     # ------------------------------------------------------------------
     @staticmethod

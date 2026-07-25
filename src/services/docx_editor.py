@@ -177,11 +177,26 @@ class TrudDocxEditor:
 def docx_to_pdf(docx_path: Path) -> Path | None:
     """Convert via MS Word when available (Windows); else return None and the
     .docx itself is the deliverable."""
+    pdf = docx_path.with_suffix(".pdf")
     try:
         from docx2pdf import convert  # type: ignore
 
-        pdf = docx_path.with_suffix(".pdf")
         convert(str(docx_path), str(pdf))
-        return pdf if pdf.exists() else None
+        if pdf.exists():
+            return pdf
     except Exception:  # noqa: BLE001 - no Word / not Windows
-        return None
+        pass
+    # LibreOffice fallback (soffice on PATH)
+    try:
+        import subprocess
+
+        subprocess.run(
+            ["soffice", "--headless", "--convert-to", "pdf",
+             "--outdir", str(docx_path.parent), str(docx_path)],
+            capture_output=True, timeout=120, check=True,
+        )
+        if pdf.exists():
+            return pdf
+    except Exception:  # noqa: BLE001
+        pass
+    return None

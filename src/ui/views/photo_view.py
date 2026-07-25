@@ -116,7 +116,8 @@ class PhotoView(QWidget):
         self._save.setEnabled(True)
         self._copy.setEnabled(True)
         if result.face_found:
-            self._status.setText("✅ Tayyor: 3×4, fon oq, bosh tekislangan. Saqlang yoki Copy qiling.")
+            extra = f"  [{result.note}]" if result.note else ""
+            self._status.setText("✅ Tayyor: 3×4. Saqlang yoki Copy qiling." + extra)
         else:
             self._status.setText("⚠️ Yuz topilmadi — rasm faqat 3×4 qilib kesildi.")
 
