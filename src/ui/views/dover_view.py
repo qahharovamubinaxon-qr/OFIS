@@ -21,7 +21,6 @@ from src.common.errors import OfisError
 from src.common.threading import run_async
 from src.ocr.service import OcrService
 from src.services.dover_service import DOVER_TYPES, DoverResult, DoverService
-from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
 
@@ -53,11 +52,17 @@ class DoverView(QWidget):
         root.addLayout(row)
 
         up = QHBoxLayout()
-        up.setSpacing(12)
-        self._dz_principal = DropZone("🛂", "Доверитель паспорти")
-        self._dz_agent = DropZone("🛂", "Поверенный паспорти (ихтиёрий)")
-        up.addWidget(self._dz_principal, stretch=1)
-        up.addWidget(self._dz_agent, stretch=1)
+        self._files: list[Path] = []
+        pick = QPushButton("🖼️  Rasmlar tanlash (10-15 tagacha)")
+        pick.clicked.connect(self._pick_files)
+        self._files_label = QLabel("Hech narsa tanlanmagan")
+        self._files_label.setStyleSheet("color:#8a94a3;")
+        clear = QPushButton("✖")
+        clear.setFixedWidth(36)
+        clear.clicked.connect(self._clear_files)
+        up.addWidget(pick)
+        up.addWidget(self._files_label, stretch=1)
+        up.addWidget(clear)
         root.addLayout(up)
 
         self._desc = QTextEdit()
@@ -92,26 +97,37 @@ class DoverView(QWidget):
         root.addStretch(1)
 
     # ------------------------------------------------------------------
+    def _pick_files(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Hujjat rasmlari (pasport, СТС, ...)", "",
+            "Rasmlar (*.jpg *.jpeg *.png *.webp)")
+        if files:
+            self._files = [Path(f) for f in files[:15]]
+            self._files_label.setText(f"✓ {len(self._files)} ta rasm tanlandi")
+
+    def _clear_files(self) -> None:
+        self._files = []
+        self._files_label.setText("Hech narsa tanlanmagan")
+
     def _run_ai(self) -> None:
-        if self._dz_principal.path is None:
-            QMessageBox.warning(self, "Diqqat", "Доверитель паспортини юкланг.")
+        if not self._files:
+            QMessageBox.warning(self, "Diqqat", "Kamida bitta hujjat rasmini tanlang.")
             return
         if not self._ocr.available():
             QMessageBox.warning(self, "Diqqat", "AI kaliti yo'q — Sozlamalarga kiriting.")
             return
-        principal_img = Path(self._dz_principal.path).read_bytes()
-        agent_img = (Path(self._dz_agent.path).read_bytes()
-                     if self._dz_agent.path else None)
+        images = [f.read_bytes() for f in self._files]
         q = self._date.date()
         form_date = date(q.year(), q.month(), q.day())
         doc_type = self._type.currentText()
         description = self._desc.toPlainText().strip()
 
         def work():
-            principal = self._ocr.read_passport(principal_img)
-            agent = self._ocr.read_passport(agent_img) if agent_img else None
-            return self._svc.generate(principal, agent, doc_type=doc_type,
-                                      description=description, form_date=form_date)
+            return self._svc.generate_from_images(
+                images, doc_type=doc_type, description=description,
+                form_date=form_date)
 
         self._run.setEnabled(False)
         self._status.setText("⏳ AI ҳужжат матнини тузяпти…")
@@ -121,8 +137,7 @@ class DoverView(QWidget):
     def _done(self, result: DoverResult) -> None:
         self._run.setEnabled(True)
         self._progress.finish()
-        for dz in (self._dz_principal, self._dz_agent):
-            dz.clear()
+        self._clear_files()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name} + Word нусхаси")
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")

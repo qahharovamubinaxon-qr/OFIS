@@ -74,6 +74,7 @@ class PhotoService:
             return None
         import base64
         import json
+        import urllib.error
         import urllib.request
 
         img_b64 = base64.b64encode(data).decode()
@@ -84,7 +85,8 @@ class PhotoService:
             ]}],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         }).encode()
-        models = ["gemini-2.5-flash-image", "gemini-2.5-flash-image-preview",
+        models = ["gemini-3-pro-image-preview", "gemini-2.5-flash-image",
+                  "gemini-2.5-flash-image-preview",
                   "gemini-2.0-flash-preview-image-generation"]
         # discover any image-capable model this key actually has
         try:
@@ -109,8 +111,21 @@ class PhotoService:
                 url, data=body, headers={"Content-Type": "application/json"}
             )
             try:
-                with urllib.request.urlopen(req, timeout=90) as resp:
-                    payload = json.loads(resp.read().decode())
+                import time
+                try:
+                    with urllib.request.urlopen(req, timeout=90) as resp:
+                        payload = json.loads(resp.read().decode())
+                except urllib.error.HTTPError as he:
+                    if he.code == 429:  # free-tier rate limit — wait and retry once
+                        time.sleep(25)
+                        with urllib.request.urlopen(
+                            urllib.request.Request(url, data=body,
+                                headers={"Content-Type": "application/json"}),
+                            timeout=90,
+                        ) as resp:
+                            payload = json.loads(resp.read().decode())
+                    else:
+                        raise
                 for cand in payload.get("candidates", []):
                     for part in cand.get("content", {}).get("parts", []):
                         inline = part.get("inlineData") or part.get("inline_data")

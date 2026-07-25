@@ -86,6 +86,74 @@ class DoverService:
     def __init__(self, key_getter) -> None:
         self._key_getter = key_getter
 
+    def generate_from_images(
+        self,
+        images: list[bytes],
+        *,
+        doc_type: str,
+        description: str,
+        form_date: date,
+        output_dir: Path | None = None,
+    ) -> DoverResult:
+        """Compose straight from the dropped document photos (10-15 allowed:
+        passports, СТС front/back, …) — Gemini reads them itself."""
+        text = self._compose_images(images, doc_type=doc_type,
+                                    description=description, form_date=form_date)
+        return self._save(text, "DOVER", output_dir)
+
+    def _compose_images(self, images, *, doc_type, description, form_date) -> str:
+        import base64
+
+        key = (self._key_getter() or "").strip()
+        if not key:
+            raise OfisError("AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting.")
+        from src.ocr.preprocess import prepare_image
+
+        chosen = "" if doc_type.startswith("Авто") else f"Вид документа: {doc_type}. "
+        user = (
+            f"{chosen}Дата составления: {_date_dmy(form_date)}. "
+            "Данные сторон и объекта (авто и т.п.) возьми из приложенных фото "
+            "документов (паспорта, СТС и др.); нечитаемое оставь как «________». "
+            f"Задание от оператора (кто, кому, для чего): {description or 'не указано'}"
+        )
+        parts = [{"text": _SYSTEM + "\n\n" + user}]
+        for img in images[:15]:
+            parts.append({"inline_data": {
+                "mime_type": "image/jpeg",
+                "data": base64.b64encode(prepare_image(img)).decode(),
+            }})
+        return self._call(key, parts)
+
+    def _save(self, text: str, stem: str, output_dir: Path | None) -> DoverResult:
+        folder = output_dir if output_dir is not None else paths.output_dir() / "dover"
+        folder.mkdir(parents=True, exist_ok=True)
+        base = folder / f"{stem}_ДОВЕРЕННОСТЬ"
+        i = 1
+        while base.with_suffix(".pdf").exists():
+            base = folder / f"{stem}_ДОВЕРЕННОСТЬ_{i:03d}"
+            i += 1
+        return DoverResult(docx_path=self._to_docx(text, base.with_suffix(".docx")),
+                           pdf_path=self._to_pdf(text, base.with_suffix(".pdf")))
+
+    def _call(self, key: str, parts: list) -> str:
+        body = json.dumps({"contents": [{"parts": parts}]}).encode()
+        last = ""
+        for model in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"):
+            url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{model}:generateContent?key={key}")
+            req = urllib.request.Request(url, data=body,
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    payload = json.loads(resp.read().decode())
+                out = "\n".join(p.get("text", "") for p in
+                                payload["candidates"][0]["content"]["parts"]).strip()
+                if out:
+                    return out
+            except Exception as exc:  # noqa: BLE001
+                last = str(exc)[:150]
+        raise OfisError(f"AI javob bermadi: {last}")
+
     def generate(
         self,
         principal: Passport,
