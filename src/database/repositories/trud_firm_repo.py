@@ -17,6 +17,8 @@ def _row(r: sqlite3.Row) -> TrudFirm:
         id=UUID(r["id"]), name=r["name"], internal_code=r["internal_code"],
         trud_template_path=Path(r["trud_template_path"]),
         uved_template_path=Path(r["uved_template_path"]),
+        hod_template_path=(Path(r["hod_template_path"])
+                           if "hod_template_path" in r.keys() and r["hod_template_path"] else None),
         status=CompanyStatus(r["status"]), notes=r["notes"],
     )
 
@@ -31,16 +33,19 @@ class TrudFirmRepository:
             self._conn.execute(
                 """
                 INSERT INTO trud_firms (id, name, internal_code, trud_template_path,
-                    uved_template_path, status, notes, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                    uved_template_path, hod_template_path, status, notes, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, internal_code=excluded.internal_code,
                     trud_template_path=excluded.trud_template_path,
                     uved_template_path=excluded.uved_template_path,
+                    hod_template_path=excluded.hod_template_path,
                     status=excluded.status, notes=excluded.notes, updated_at=excluded.updated_at
                 """,
                 (str(f.id), f.name, f.internal_code, str(f.trud_template_path),
-                 str(f.uved_template_path), f.status.value, f.notes, now, now),
+                 str(f.uved_template_path),
+                 str(f.hod_template_path) if f.hod_template_path else None,
+                 f.status.value, f.notes, now, now),
             )
 
     def by_internal_code(self, code: str) -> TrudFirm | None:

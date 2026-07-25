@@ -25,24 +25,35 @@ _SIGN_ABBR = re.compile(r"^[А-ЯЁ]{2,}\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.$")
 
 
 def _set_text(paragraph, text: str) -> None:
-    """Replace a paragraph's text, keeping the first run's formatting."""
-    if paragraph.runs:
-        paragraph.runs[0].text = text
-        for run in paragraph.runs[1:]:
-            run.text = ""
+    """Replace a paragraph's text, keeping the first run's formatting.
+
+    Removes EVERY inline child (runs inside hyperlinks/smartTags included —
+    some templates wrap the worker's name in them, which ``paragraph.runs``
+    does not expose), then rewrites via the first plain run."""
+    first_run = paragraph.runs[0] if paragraph.runs else None
+    for child in list(paragraph._p):
+        if not child.tag.endswith("}pPr") and (first_run is None or child is not first_run._r):
+            paragraph._p.remove(child)
+    if first_run is not None:
+        first_run.text = text
     else:
         paragraph.add_run(text)
 
 
 def _iter_paragraphs(doc):
     yield from doc.paragraphs
-    seen = set()
+    # Merged cells repeat the same underlying element; keep hard references so
+    # id() values stay unique (a GC'd element's id can be reused otherwise).
+    seen_ids: set[int] = set()
+    keep: list = []
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                if id(cell._tc) in seen:
+                tc = cell._tc
+                if id(tc) in seen_ids:
                     continue
-                seen.add(id(cell._tc))
+                seen_ids.add(id(tc))
+                keep.append(tc)
                 yield from cell.paragraphs
 
 
@@ -58,12 +69,17 @@ class TrudDocxEditor:
         sign_abbr: str,          # ШОДИЕВ Б.З.
         contract_end: date | None,
         profession: str,
+        fio_title: str = "",         # Рахимов Бадриддин Нормуродович
+        birth_date: date | None = None,
+        passport_number: str = "",
+        passport_issue: date | None = None,
     ) -> Path:
         import docx
 
         doc = docx.Document(str(template))
         long_date = _date_long_g(form_date)
         srok_done = False
+        bare_dates = 0  # 1st bare dd.mm.yyyy cell = start, 2nd = contract end
         for p in _iter_paragraphs(doc):
             text = p.text
             stripped = text.strip()
@@ -83,8 +99,24 @@ class TrudDocxEditor:
                 _set_text(p, _DMY.sub(lambda m: next(it, m.group(0)), text))
                 srok_done = True
                 continue
+            if stripped.startswith("Работник:") and fio_title:
+                _set_text(p, "Работник:\t" + fio_title)
+                continue
+            if stripped.startswith("Дата рожд") and birth_date:
+                _set_text(p, _DMY.sub(_date_dmy(birth_date), text.rstrip()))
+                continue
+            if stripped.startswith("Паспорт") and passport_number:
+                out_t = re.sub(r"\d{6,12}", passport_number, text.rstrip(), count=1)
+                if passport_issue:
+                    out_t = _DMY.sub(_date_dmy(passport_issue), out_t)
+                _set_text(p, out_t)
+                continue
             if "Срок договора" not in text and _DMY.fullmatch(stripped):
-                _set_text(p, _date_dmy(form_date))
+                bare_dates += 1
+                if bare_dates == 2 and contract_end:
+                    _set_text(p, _date_dmy(contract_end))
+                else:
+                    _set_text(p, _date_dmy(form_date))
                 continue
             if _LONG_DATE.match(stripped) and "г" in stripped and len(stripped) > 8:
                 _set_text(p, long_date)
@@ -169,6 +201,41 @@ class TrudDocxEditor:
                     _set_text(p, f"{label} {values[key]}")
             else:
                 pending = key
+        out.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(out))
+        return out
+
+
+_FIO_TITLE = re.compile(r"^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(\s+[А-ЯЁ][а-яё]+)*(\s+[Уу]гли)?$")
+
+
+class HodDocxEditor:
+    """Ходатайство о переоформлении патента (firm-specific .docx form)."""
+
+    def fill(self, template: Path, out: Path, *, fio_title: str,
+             citizenship_upper: str, pat_series: str, pat_number: str,
+             passport_line: str, form_date: date) -> Path:
+        import docx
+
+        doc = docx.Document(str(template))
+        pat_number_done = False
+        for p in _iter_paragraphs(doc):
+            stripped = p.text.strip()
+            if not stripped:
+                continue
+            if re.fullmatch(r"\d{2}", stripped) and pat_series:
+                _set_text(p, pat_series)
+            elif re.fullmatch(r"\d{9,11}", stripped) and not pat_number_done:
+                _set_text(p, pat_number)
+                pat_number_done = True  # the later ИНН cell stays untouched
+            elif re.fullmatch(r"[А-ЯЁ]{4,}", stripped) and citizenship_upper:
+                _set_text(p, citizenship_upper)
+            elif "выдан" in stripped and re.search(r"\d{6,}", stripped):
+                _set_text(p, passport_line)
+            elif _FIO_TITLE.fullmatch(stripped) and len(stripped.split()) >= 3:
+                _set_text(p, fio_title)
+            elif _DMY.fullmatch(stripped):
+                _set_text(p, _date_dmy(form_date))
         out.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out))
         return out

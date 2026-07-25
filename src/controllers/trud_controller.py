@@ -23,8 +23,9 @@ class TrudController:
     def firms(self) -> list[TrudFirm]:
         return self._firms.list()
 
-    def add_firm(self, name: str, code: str, trud_tpl: Path, uved_tpl: Path) -> TrudFirm:
-        return self._firms.create(name, code, trud_tpl, uved_tpl)
+    def add_firm(self, name: str, code: str, trud_tpl: Path, uved_tpl: Path,
+                 hod_tpl: Path | None = None) -> TrudFirm:
+        return self._firms.create(name, code, trud_tpl, uved_tpl, hod_tpl)
 
     def archive_firm(self, firm_id: UUID) -> None:
         self._firms.archive(firm_id)

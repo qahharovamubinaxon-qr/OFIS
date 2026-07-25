@@ -25,6 +25,7 @@ class TrudFirm(BaseModel):
 
     trud_template_path: Path  # трудовой договор (text PDF)
     uved_template_path: Path  # уведомление blank (госуслуги form)
+    hod_template_path: Path | None = None  # ходатайство (optional, .docx)
 
     status: CompanyStatus = CompanyStatus.ACTIVE
     notes: str | None = None

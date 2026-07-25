@@ -120,6 +120,7 @@ def test_firm_crud(container, tmp_path, monkeypatch) -> None:
     svc = TrudFirmService(container.resolve(TrudFirmRepository))
     firm = svc.create("ООО СЕРВИС", "servis", trud_tpl, uved_tpl)
     assert firm.trud_template_path.exists() and firm.uved_template_path.exists()
-    assert len(svc.list()) == 1
+    codes = [f.internal_code for f in svc.list()]
+    assert "servis" in codes  # (СТРОЙИНВЕСТ may be bundle-seeded alongside)
     svc.archive(firm.id)
-    assert svc.list() == []
+    assert "servis" not in [f.internal_code for f in svc.list()]

@@ -46,6 +46,7 @@ class AddTrudFirmDialog(QDialog):
         self.setMinimumWidth(520)
         self._trud_tpl: Path | None = None
         self._uved_tpl: Path | None = None
+        self._hod_tpl: Path | None = None
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
@@ -71,6 +72,14 @@ class AddTrudFirmDialog(QDialog):
         row2.addWidget(btn2)
         outer.addLayout(row2)
 
+        self._hod_label = QLabel("Ходатайство шаблон (ixtiyoriy)")
+        btn3 = QPushButton("Ходатайство шаблон…")
+        btn3.clicked.connect(lambda: self._pick("hod"))
+        row3 = QHBoxLayout()
+        row3.addWidget(self._hod_label, stretch=1)
+        row3.addWidget(btn3)
+        outer.addLayout(row3)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -85,13 +94,16 @@ class AddTrudFirmDialog(QDialog):
         if kind == "trud":
             self._trud_tpl = Path(path)
             self._trud_label.setText(f"✓ {Path(path).name}")
+        elif kind == "hod":
+            self._hod_tpl = Path(path)
+            self._hod_label.setText(f"✓ {Path(path).name}")
         else:
             self._uved_tpl = Path(path)
             self._uved_label.setText(f"✓ {Path(path).name}")
 
-    def values(self) -> tuple[str, str, Path | None, Path | None]:
+    def values(self):
         return (self._name.text().strip(), self._code.text().strip(),
-                self._trud_tpl, self._uved_tpl)
+                self._trud_tpl, self._uved_tpl, self._hod_tpl)
 
 
 class TrudView(QWidget):
@@ -200,13 +212,13 @@ class TrudView(QWidget):
         dialog = AddTrudFirmDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        name, code, trud_tpl, uved_tpl = dialog.values()
+        name, code, trud_tpl, uved_tpl, hod_tpl = dialog.values()
         if not name or not code or trud_tpl is None or uved_tpl is None:
             QMessageBox.warning(self, "Diqqat",
                                 "Nomi, kod va IKKALA shablon PDF ham kerak.")
             return
         try:
-            self._c.add_firm(name, code, trud_tpl, uved_tpl)
+            self._c.add_firm(name, code, trud_tpl, uved_tpl, hod_tpl)
             self.refresh()
         except OfisError as exc:
             QMessageBox.warning(self, "Xato", exc.message)
@@ -259,7 +271,9 @@ class TrudView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
-        self._status.setText(f"✅ Tayyor: {result.trud_path.name} + {result.uved_path.name}")
+        extra = f" + {result.hod_path.name}" if result.hod_path else ""
+        self._status.setText(
+            f"✅ Tayyor: {result.trud_path.name} + {result.uved_path.name}{extra}")
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
         box.setText(f"2 ta PDF yaratildi:\n{result.trud_path.name}\n{result.uved_path.name}")

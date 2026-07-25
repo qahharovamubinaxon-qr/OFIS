@@ -89,6 +89,7 @@ def build_container() -> Container:
     container.register_instance(AiManager, ai_manager)
     container.register_instance(OcrService, OcrService(ai_manager))
 
+    _seed_stroyinvest(TrudFirmService(trud_firm_repo))
     _seed_default_company(company_service)
     _seed_default_address(reg_addr_service)
     profession_service.seed_defaults()
@@ -122,6 +123,22 @@ def _seed_default_company(companies: CompanyService) -> None:
         log.info("Seeded default company ГОРДИЕНКО")
     except OfisError as exc:
         log.warning("Seed skipped: %s", exc.message)
+
+
+def _seed_stroyinvest(firms: TrudFirmService) -> None:
+    """Bundle-seed ООО «СТРОЙИНВЕСТ» with its 3 templates. Idempotent."""
+    if firms._repo.by_internal_code("stroyinvest"):
+        return
+    src = paths.templates_dir() / "trud_seed_stroyinvest"
+    trud, uved, hod = src / "trudovoy.docx", src / "uvedomlenie.pdf", src / "hodataystvo.docx"
+    if not (trud.exists() and uved.exists()):
+        return
+    try:
+        firms.create('ООО "СТРОЙИНВЕСТ"', "stroyinvest", trud, uved,
+                     hod if hod.exists() else None)
+        log.info("Seeded trud firm СТРОЙИНВЕСТ")
+    except OfisError as exc:
+        log.warning("Stroyinvest seed skipped: %s", exc.message)
 
 
 def _seed_default_address(addresses: RegistrationAddressService) -> None:

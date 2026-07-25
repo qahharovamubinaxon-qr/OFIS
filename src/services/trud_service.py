@@ -59,6 +59,7 @@ class TrudResult:
     trud_path: Path
     uved_path: Path
     surname: str
+    hod_path: Path | None = None
 
 
 class TrudFirmService:
@@ -74,7 +75,8 @@ class TrudFirmService:
         self._repo.archive(firm_id)
         log.info("Trud firm archived: %s", firm_id)
 
-    def create(self, name: str, code: str, trud_source: Path, uved_source: Path) -> TrudFirm:
+    def create(self, name: str, code: str, trud_source: Path, uved_source: Path,
+               hod_source: Path | None = None) -> TrudFirm:
         if self._repo.by_internal_code(code):
             raise ValidationError("Internal code already exists", context={"code": code})
         dest = paths.templates_dir() / f"trud_{code.lower()}"
@@ -83,8 +85,13 @@ class TrudFirmService:
         uved = dest / f"uvedomlenie{uved_source.suffix.lower()}"
         shutil.copyfile(trud_source, trud)
         shutil.copyfile(uved_source, uved)
+        hod = None
+        if hod_source is not None:
+            hod = dest / f"hodataystvo{hod_source.suffix.lower()}"
+            shutil.copyfile(hod_source, hod)
         firm = TrudFirm(name=name, internal_code=code,
-                        trud_template_path=trud, uved_template_path=uved)
+                        trud_template_path=trud, uved_template_path=uved,
+                        hod_template_path=hod)
         self._repo.upsert(firm)
         log.info("Trud firm created: %s (%s)", name, code)
         return firm
@@ -128,6 +135,10 @@ class TrudService:
                 contract_end=(plus_one_year(patent.issue_date)
                               if patent and patent.issue_date else None),
                 profession=prof,
+                fio_title=_title(fio_u),
+                birth_date=passport.birth_date,
+                passport_number=f"{passport.series or ''}{passport.number}".strip(),
+                passport_issue=passport.issue_date,
             )
             trud_path = docx_to_pdf(docx_path) or docx_path
         else:
@@ -170,8 +181,29 @@ class TrudService:
                 passport, patent, form_date=form_date, profession=prof,
             ), uved_path)
 
+        hod_path = None
+        if firm.hod_template_path and firm.hod_template_path.exists():
+            from src.services.docx_editor import HodDocxEditor, docx_to_pdf
+
+            issue = (f"выдан {_date_dmy(passport.issue_date)}"
+                     if passport.issue_date else "выдан ________")
+            passport_line = (f"{passport.series or ''}{passport.number}".strip()
+                             + f", {issue} {(passport.issued_by or '').upper()}").strip()
+            hod_docx = _unique(folder / f"{stem}_ХОДАТАЙСТВО.docx")
+            HodDocxEditor().fill(
+                firm.hod_template_path, hod_docx,
+                fio_title=_title(" ".join(x for x in (passport.surname, passport.name,
+                                                      passport.patronymic or "") if x)),
+                citizenship_upper=(passport.nationality or "").upper(),
+                pat_series=(patent.series if patent else "") or "",
+                pat_number=(patent.number if patent else "") or "",
+                passport_line=passport_line, form_date=form_date,
+            )
+            hod_path = docx_to_pdf(hod_docx) or hod_docx
+
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
-        return TrudResult(trud_path=trud_path, uved_path=uved_path, surname=passport.surname)
+        return TrudResult(trud_path=trud_path, uved_path=uved_path,
+                          surname=passport.surname, hod_path=hod_path)
 
     @staticmethod
     def _worker_block(p: Passport) -> str:
