@@ -21,7 +21,7 @@ a = Analysis(  # noqa: F821
     ],
     hiddenimports=["google.generativeai", "PIL", "PIL.Image", "PIL.ImageOps"],
     hookspath=[],
-    excludes=["cv2", "matplotlib", "tkinter"],  # OpenCV is calibration-only
+    excludes=["matplotlib", "tkinter"],  # cv2 IS bundled — РАСМ-ФОТО needs it
     noarchive=False,
 )
 pyz = PYZ(a.pure)  # noqa: F821

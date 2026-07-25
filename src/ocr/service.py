@@ -76,15 +76,20 @@ class OcrService:
         f = self._ai.extract(front, DocType.PATENT, prompt_for(DocType.PATENT)).fields
         issue_date = _parse_date(f.get("issue_date", ""))
         issued_by = f.get("issued_by") or None
+        blank_series = f.get("blank_series") or None
+        blank_number = f.get("blank_number") or None
         if back is not None:
             b = self._ai.extract(prepare_image(back), DocType.PATENT, patent_back_prompt()).fields
             issue_date = _parse_date(b.get("issue_date", "")) or issue_date
             issued_by = (b.get("issued_by") or "").strip() or issued_by
+            # the blank «ПР 8074980» is printed on the back bottom — prefer it
+            blank_series = (b.get("blank_series") or "").strip() or blank_series
+            blank_number = (b.get("blank_number") or "").strip() or blank_number
         return Patent(
             series=f.get("series") or None,
             number=f.get("number", ""),
-            blank_series=to_cyrillic(f.get("blank_series", "")) or None,
-            blank_number=f.get("blank_number") or None,
+            blank_series=to_cyrillic(blank_series or "") or None,
+            blank_number=blank_number,
             issue_date=issue_date,
             issued_by=to_cyrillic(issued_by or "") or None,
             profession=to_cyrillic(f.get("profession", "")) or "ПОДСОБНЫЙ РАБОЧИЙ",

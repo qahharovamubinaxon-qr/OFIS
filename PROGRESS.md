@@ -33,6 +33,10 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
   Firm add/delete inline; migration 0006; see src/pdf/trud_editor.py.
 - **Delete buttons**: Компании list, Регистрация address picker and Трудовой
   firm picker each have a 🗑 remove (soft archive — nothing on disk is lost).
+- **РАСМ-ФОТО module**: drop any worker photo → YuNet face detection (bundled
+  ONNX, offline), eye-line deskew, document 3:4 crop (head ≈60%), GrabCut
+  background → pure white, 600×800 PNG preview with Save / Copy-to-clipboard.
+  No face → plain 3:4 centre crop. cv2 now ships in the EXE.
 - **СФЕРА module** (training-centre Удостоверение + Протокол, 2-page PDF): pick a
   profession (сфера) + date, upload student photo + passport → PDF named by
   surname under `output/svera/`. Certificate ФИО is auto-declined to the **dative
@@ -44,7 +48,7 @@ The app runs end-to-end and produces correct МВД Приложение № 7 P
 - Saves `output/<company>/<SURNAME>.pdf` (+ `output/registration/<address>/`,
   `output/svera/`); every doc logged for Archive/Search.
 - Run on Windows: `python -m src.app` (see docs/RUN_WINDOWS.md); EXE via
-  build/ofis.spec. Tests: **41/41**.
+  build/ofis.spec. Tests: **43/43**.
 
 ### Next (needs owner input / Windows)
 - Gemini key → verify real OCR accuracy on live passport/patent photos.

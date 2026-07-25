@@ -29,6 +29,7 @@ from src.pdf.engine import fill
 from src.pdf.formatters import _date_dmy
 from src.pdf.mapping import FieldMapping
 from src.pdf.trud_editor import TrudDocEditor
+from src.utils.geo import birth_country
 
 log = get_logger(__name__)
 
@@ -156,7 +157,8 @@ class TrudService:
             "uved.gender": ("Мужской" if passport.gender == Gender.MALE
                             else "Женский" if passport.gender == Gender.FEMALE else ""),
             "uved.citizenship": citizenship,
-            "uved.birth_place": _title(passport.birth_place) or citizenship,
+            "uved.birth_place": birth_country(passport.birth_place, passport.nationality)
+                                or citizenship,
             "uved.passport.series": (passport.series or "").upper(),
             "uved.passport.number": passport.number,
             "uved.passport.issue_date": _date_dmy(passport.issue_date) if passport.issue_date else "",

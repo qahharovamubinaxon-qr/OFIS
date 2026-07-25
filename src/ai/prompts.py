@@ -19,7 +19,9 @@ _COMMON = (
 
 _PASSPORT = _COMMON + (
     'Also read gender ("male" or "female"), the passport expiry date and the '
-    'birth place ("birth_place"). '
+    'birth place. IMPORTANT: "birth_place" must be the COUNTRY the birth place '
+    'is in, never a city/region (ФЕРГАНСКАЯ ОБЛАСТЬ→УЗБЕКИСТАН, ДУШАНБЕ→'
+    'ТАДЖИКИСТАН, ОШ→КИРГИЗИЯ). '
     'Keys: {"document_type":"passport","surname","name","patronymic",'
     '"nationality","birth_date","birth_place","gender","series","number","issue_date",'
     '"expiry_date","issued_by"}'
@@ -39,9 +41,10 @@ _PATENT = _COMMON + (
 # Patent BACK: the issuing organization ("Кем выдан") and the issue date.
 _PATENT_BACK = _COMMON + (
     'This is the BACK of a Russian work patent (патент). Read the issuing '
-    'organization ("Кем выдан", e.g. "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ") and '
-    'the issue date ("Дата выдачи"). '
-    'Keys: {"issued_by","issue_date"}'
+    'organization ("Кем выдано", e.g. "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ"), '
+    'the issue date ("Дата выдачи"), and the blank series+number printed at the '
+    'card bottom (e.g. "ПР 8074980" → blank_series "ПР", blank_number "8074980"). '
+    'Keys: {"issued_by","issue_date","blank_series","blank_number"}'
 )
 
 _PROMPTS: dict[DocType, str] = {

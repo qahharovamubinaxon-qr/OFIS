@@ -40,6 +40,7 @@ from src.ui.views.process_view import ProcessView
 from src.ui.views.registration_view import RegistrationView
 from src.ui.views.settings_view import SettingsView
 from src.ui.views.svera_view import SveraView
+from src.ui.views.photo_view import PhotoView
 from src.ui.views.trud_view import TrudView
 
 _NAV = [
@@ -48,6 +49,7 @@ _NAV = [
     ("nav.registration", "Registration", "Уведомление о прибытии → PDF"),
     ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF"),
     ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF"),
+    ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш"),
     ("nav.companies", "Companies", "Templates, logos and company data"),
     ("nav.archive", "Archive", "Every generated package, by year and company"),
     ("nav.search", "Search", "Find an employee by passport, patent or name"),
@@ -129,6 +131,10 @@ class MainWindow(QMainWindow):
                 self._container.resolve(TrudService),
             )
             return TrudView(trud_controller)
+        if key == "nav.photo":
+            from src.services.photo_service import PhotoService
+
+            return PhotoView(PhotoService())
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":
