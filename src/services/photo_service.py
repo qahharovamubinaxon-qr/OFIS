@@ -217,9 +217,11 @@ class PhotoService:
         """Window around the face at ``aspect`` (w/h): head ≈60% of the height,
         with air above the hair — the document-photo proportions."""
         H, W = rgb.shape[:2]
-        crop_h = h * 2.4
+        # tighter than a passport booth shot: the head fills ~65% of the frame
+        # so the portrait reaches the edges of a document window
+        crop_h = h * 2.05
         crop_w = crop_h * aspect
-        top = y - 0.5 * h
+        top = y - 0.42 * h
         left = x + w / 2 - crop_w / 2
         pad = int(max(0.0, -left, -top, left + crop_w - W, top + crop_h - H)) + 1
         if pad > 1:

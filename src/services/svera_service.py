@@ -27,6 +27,8 @@ _TEMPLATE_PATH = paths.templates_dir() / "svera" / "template.pdf"
 # The centre's round stamp (transparent PNG) — printed over the photo on the
 # left card and over the qualification block on the right one.
 _STAMP_PATH = paths.templates_dir() / "svera" / "stamp.png"
+# the chairman's signature, printed across the «Председатель комиссии» rule
+_SIGNATURE_PATH = paths.templates_dir() / "svera" / "signature.png"
 
 _UDO_KEY, _UDO_START = "svera.udo_counter", 100
 _PO_KEY, _PO_START = "svera.po_counter", 1548
@@ -123,6 +125,7 @@ class SveraService:
                 basis=str(values["svera.osnovanie"]),
                 photo_path=photo,
                 stamp_path=stamp,
+                signature_path=(_SIGNATURE_PATH if _SIGNATURE_PATH.exists() else None),
             ))
             doc.saveIncr()
         finally:

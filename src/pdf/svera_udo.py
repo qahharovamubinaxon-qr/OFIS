@@ -44,6 +44,9 @@ _R_CENTRE = 439.9
 PHOTO_BOX = (51.0, 128.3, 121.3, 208.4)
 PHOTO_ASPECT = (PHOTO_BOX[2] - PHOTO_BOX[0]) / (PHOTO_BOX[3] - PHOTO_BOX[1])
 
+# the chairman's signature, drawn across the rule after «Председатель комиссии»
+SIGNATURE_BOX = (418.0, 220.0, 476.0, 242.0)
+
 
 @dataclass(frozen=True)
 class UdoData:
@@ -55,6 +58,7 @@ class UdoData:
     basis: str             # «ООО УЦ "СФЕРА" № ПО3355 от 04.08.2023 г.»
     photo_path: Path | None = None
     stamp_path: Path | None = None
+    signature_path: Path | None = None
 
 
 class _Pen:
@@ -167,6 +171,14 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
     pen.text(_R_LEFT, 234.8, "Председатель комиссии", font=_REG, size=body_size)
     pen.rule(432.0, 468.0, 235.6)
     pen.text(469.1, 234.3, CHAIRMAN, font=_REG, size=body_size)
+
+    # the chairman's signature sits across that rule
+    if data.signature_path and Path(data.signature_path).exists():
+        try:
+            page.insert_image(fitz.Rect(*SIGNATURE_BOX),
+                              filename=str(data.signature_path), overlay=True)
+        except (RuntimeError, ValueError):
+            pass
 
     # ---------------- photo, then the stamps on top ----------------
     if data.photo_path and Path(data.photo_path).exists():
