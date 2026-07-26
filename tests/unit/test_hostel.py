@@ -85,6 +85,41 @@ def test_generate_fills_worker_and_dates(container) -> None:
     assert "2026" in flat
 
 
+def test_values_land_inside_their_boxes(container) -> None:
+    """Regression: гражданство and паспорт серия must sit on their own box
+    centres (they were drawn below/left of the grid before)."""
+    import fitz
+
+    from src.services.hostel_service import HostelService
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    saved = svc.create_hostel(_hostel(), None)
+    # a passport whose серия is printed separately, so both fields are drawn
+    passport = _passport().model_copy(update={"series": "FA", "number": "7394930"})
+    result = HostelService().generate(
+        passport, None, saved, registration_expiry=date(2026, 7, 24)
+    )
+
+    centres: dict[str, list[tuple[float, float]]] = {}
+    for span in _spans(fitz.open(result.pdf_path)[0]):
+        cx = (span["bbox"][0] + span["bbox"][2]) / 2
+        centres.setdefault(span["text"], []).append((round(cx, 1), span["origin"][1]))
+
+    # citizenship: first letter «У» of УЗБЕКИСТАН on box-1 centre 124.5, y 92.2
+    assert any(abs(cx - 124.5) < 1.0 and abs(y - 92.2) < 1.0
+               for cx, y in centres.get("У", [])), "citizenship off its boxes"
+    # passport series «FA» starts on box-1 centre 285.6 of the серия run
+    assert any(abs(cx - 285.6) < 1.0 for cx, _y in centres.get("F", [])), \
+        "passport series off its boxes"
+
+
+def _spans(page):
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            yield from line["spans"]
+
+
 def test_never_reproduces_mvd_signature_or_reg_number(container) -> None:
     """Legality guard: the generated form is a blank application — it must not
     carry МВД's electronic-signature block or a registration number."""
