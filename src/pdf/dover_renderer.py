@@ -118,6 +118,58 @@ def _classify(lines: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+def _no_indent(content: str) -> bool:
+    return content.lower().startswith(("подпись", "зарегистрировано", "уплачено"))
+
+
+def _wrap_rows(words: list[str], font, size: float, width: float,
+               first_indent: float = 0.0) -> list[list[str]]:
+    rows: list[list[str]] = []
+    cur: list[str] = []
+    cur_w = 0.0
+    space = font.text_length(" ", fontsize=size)
+    for w in words:
+        ww = font.text_length(w, fontsize=size)
+        avail = width - (first_indent if not rows else 0.0)
+        if cur and cur_w + space + ww > avail:
+            rows.append(cur)
+            cur, cur_w = [w], ww
+        else:
+            cur_w += (space if cur else 0) + ww
+            cur.append(w)
+    if cur:
+        rows.append(cur)
+    return rows
+
+
+def _measure(roles: list[tuple[str, str]], serif, size: float,
+             width: float) -> float:
+    """Height the given lines occupy at ``size`` (mirrors the draw loop)."""
+    step = size * _LEADING
+    h = 0.0
+    for role, content in roles:
+        if not content:
+            h += step * 0.55
+        elif role == _TITLE:
+            h += _TITLE_SIZE * _LEADING + 4
+        elif role == _CENTER:
+            h += step
+        elif role == _NOTARY:
+            h += step * 1.6
+        else:
+            indent = 0.0 if _no_indent(content) else PARA_INDENT
+            rows = _wrap_rows(content.split(), serif, size, width, indent)
+            h += len(rows) * step
+    return h
+
+
+# «Подпись» + удостоверительная надпись must land on the BACK of the blank as
+# one whole block — never let 2-3 body lines spill over. The body is shrunk
+# (down to this size) until it fits the front side.
+_BODY_SIZES = (12.0, 11.5, 11.0, 10.5, 10.0, 9.5, 9.0)
+_TAIL_SIZE = 12.0
+
+
 def render_dover_pdf(text: str, out: Path, *, series: str | None) -> Path:
     import fitz
 
@@ -127,6 +179,23 @@ def render_dover_pdf(text: str, out: Path, *, series: str | None) -> Path:
 
     bg1, bg2 = blank_dir() / "page1.jpg", blank_dir() / "page2.jpg"
     have_blank = bg1.exists()
+
+    roles = _classify(text.strip().splitlines())
+    # split: everything from «Подпись» onward is the notarial tail (back side)
+    split = next((i for i, (_r, c) in enumerate(roles)
+                  if c.strip().lower().startswith("подпись")), None)
+    body = roles if split is None else roles[:split]
+    tail = [] if split is None else roles[split:]
+    while body and not body[-1][1].strip():
+        body.pop()
+
+    # pick the largest body size that fits the front side entirely
+    front_h = _BOTTOM - _PAGE1_TOP
+    body_size = _BODY_SIZES[-1]
+    for cand in _BODY_SIZES:
+        if _measure(body, serif, cand, width) <= front_h:
+            body_size = cand
+            break
 
     doc = fitz.open()
     page = None
@@ -150,79 +219,69 @@ def render_dover_pdf(text: str, out: Path, *, series: str | None) -> Path:
             stw.write_text(page)
         y = _PAGE1_TOP if first else _PAGE_TOP
 
-    def ensure_room(needed: float) -> None:
-        if page is None or y + needed > _BOTTOM:
-            new_page()
+    def draw(section: list[tuple[str, str]], size: float) -> None:
+        nonlocal y
+        step = size * _LEADING
 
-    def wrap(words: list[str], font, size: float,
-             first_indent: float = 0.0) -> list[list[str]]:
-        rows: list[list[str]] = []
-        cur: list[str] = []
-        cur_w = 0.0
-        space = font.text_length(" ", fontsize=size)
-        for w in words:
-            ww = font.text_length(w, fontsize=size)
-            avail = width - (first_indent if not rows else 0.0)
-            if cur and cur_w + space + ww > avail:
-                rows.append(cur)
-                cur, cur_w = [w], ww
-            else:
-                cur_w += (space if cur else 0) + ww
-                cur.append(w)
-        if cur:
-            rows.append(cur)
-        return rows
+        def ensure_room(needed: float) -> None:
+            if page is None or y + needed > _BOTTOM:
+                new_page()
 
-    step = _BODY_SIZE * _LEADING
-    for role, content in _classify(text.strip().splitlines()):
-        if not content:
-            y += step * 0.55
-            continue
-        if role == _TITLE:
-            ensure_room(_TITLE_SIZE * _LEADING + 6)
-            w = bold.text_length(content, fontsize=_TITLE_SIZE)
-            tw.append((_X0 + (width - w) / 2, y + _TITLE_SIZE), content,
-                      font=bold, fontsize=_TITLE_SIZE)
-            y += _TITLE_SIZE * _LEADING + 4
-            continue
-        if role == _CENTER:
-            ensure_room(step)
-            w = serif.text_length(content, fontsize=_BODY_SIZE)
-            tw.append((_X0 + (width - w) / 2, y + _BODY_SIZE), content,
-                      font=serif, fontsize=_BODY_SIZE)
-            y += step
-            continue
-        if role == _NOTARY:
-            ensure_room(step * 2)
-            y += step * 0.6
-            name = content.split(":", 1)[1].strip()
-            tw.append((_X0, y + _BODY_SIZE), "Нотариус:", font=serif, fontsize=_BODY_SIZE)
-            if name:
-                nw = serif.text_length(name, fontsize=_BODY_SIZE)
-                tw.append((_X1 - nw, y + _BODY_SIZE), name, font=serif, fontsize=_BODY_SIZE)
-            y += step
-            continue
-        # justified paragraph with красная строка on its first line
-        indent = 0.0 if content.lower().startswith(("подпись", "зарегистрировано",
-                                                    "уплачено")) else PARA_INDENT
-        words = content.split()
-        rows = wrap(words, serif, _BODY_SIZE, first_indent=indent)
-        for i, row in enumerate(rows):
-            ensure_room(step)
-            x_start = _X0 + (indent if i == 0 else 0.0)
-            row_width = _X1 - x_start
-            last = i == len(rows) - 1
-            if last or len(row) == 1:
-                tw.append((x_start, y + _BODY_SIZE), " ".join(row),
-                          font=serif, fontsize=_BODY_SIZE)
-            else:
-                total = sum(serif.text_length(w, fontsize=_BODY_SIZE) for w in row)
-                gap = (row_width - total) / (len(row) - 1)
-                x = x_start
-                for w in row:
-                    tw.append((x, y + _BODY_SIZE), w, font=serif, fontsize=_BODY_SIZE)
-                    x += serif.text_length(w, fontsize=_BODY_SIZE) + gap
-            y += step
+        for role, content in section:
+            if not content:
+                y += step * 0.55
+                continue
+            if role == _TITLE:
+                ensure_room(_TITLE_SIZE * _LEADING + 6)
+                w = bold.text_length(content, fontsize=_TITLE_SIZE)
+                tw.append((_X0 + (width - w) / 2, y + _TITLE_SIZE), content,
+                          font=bold, fontsize=_TITLE_SIZE)
+                y += _TITLE_SIZE * _LEADING + 4
+                continue
+            if role == _CENTER:
+                ensure_room(step)
+                w = serif.text_length(content, fontsize=size)
+                tw.append((_X0 + (width - w) / 2, y + size), content,
+                          font=serif, fontsize=size)
+                y += step
+                continue
+            if role == _NOTARY:
+                ensure_room(step * 2)
+                y += step * 0.6
+                name = content.split(":", 1)[1].strip()
+                tw.append((_X0, y + size), "Нотариус:", font=serif, fontsize=size)
+                if name:
+                    nw = serif.text_length(name, fontsize=size)
+                    tw.append((_X1 - nw, y + size), name, font=serif, fontsize=size)
+                y += step
+                continue
+            # justified paragraph with красная строка on its first line
+            indent = 0.0 if _no_indent(content) else PARA_INDENT
+            rows = _wrap_rows(content.split(), serif, size, width, indent)
+            for i, row in enumerate(rows):
+                ensure_room(step)
+                x_start = _X0 + (indent if i == 0 else 0.0)
+                row_width = _X1 - x_start
+                last = i == len(rows) - 1
+                if last or len(row) == 1:
+                    tw.append((x_start, y + size), " ".join(row),
+                              font=serif, fontsize=size)
+                else:
+                    total = sum(serif.text_length(w, fontsize=size) for w in row)
+                    gap = (row_width - total) / (len(row) - 1)
+                    x = x_start
+                    for w in row:
+                        tw.append((x, y + size), w, font=serif, fontsize=size)
+                        x += serif.text_length(w, fontsize=size) + gap
+                y += step
+
+    new_page()
+    draw(body, body_size)
+    if tail:
+        tail_h = _measure(tail, serif, _TAIL_SIZE, width)
+        if y + tail_h > _BOTTOM:
+            new_page()  # back side starts with «Подпись»
+        draw(tail, _TAIL_SIZE)
 
     if page is not None and tw is not None:
         tw.write_text(page)

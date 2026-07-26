@@ -60,3 +60,26 @@ def test_render_pdf_with_series(tmp_path: Path) -> None:
     assert "№ 12855" in full
     # blank background image present on page 1 (bundled scan)
     assert doc[0].get_images()
+    # front/back rule: with a back page, the front never carries «Подпись» and
+    # the back starts with the signature + notarial block; a document that
+    # fits one page keeps everything on the front
+    if doc.page_count > 1:
+        assert "Подпись" not in page_text
+        assert doc[1].get_text().strip().startswith("Подпись")
+
+
+def test_long_body_shrinks_to_front(tmp_path: Path) -> None:
+    import fitz
+
+    body = _SAMPLE.replace(
+        "настоящим даю согласие на выезд.",
+        "настоящим даю согласие на выезд. " +
+        "Дополнительно предоставляю право представлять мои интересы. " * 30)
+    final = finalize_notarial_text(body, reestr=1, tarif="1500",
+                                   notary_short="Друганова М.В.")
+    out = tmp_path / "long.pdf"
+    render_dover_pdf(final, out, series="77 АВ 1")
+    doc = fitz.open(out)
+    assert doc.page_count == 2
+    assert "Подпись" not in doc[0].get_text()
+    assert doc[1].get_text().strip().startswith("Подпись")
