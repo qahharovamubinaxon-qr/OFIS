@@ -47,6 +47,7 @@ _NAV = [
     ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts", "📊"),
     ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF", "🛂"),
     ("nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
+    ("nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
     ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
@@ -115,6 +116,16 @@ class MainWindow(QMainWindow):
                 self._container.resolve(RegistrationService),
             )
             return RegistrationView(reg_controller, reg_addresses)
+        if key == "nav.hostel":
+            from src.controllers.hostel_controller import HostelController
+            from src.services.hostel_service import HostelService
+            from src.ui.views.hostel_view import HostelView
+
+            return HostelView(HostelController(
+                self._container.resolve(RegistrationAddressService),
+                self._container.resolve(OcrService),
+                HostelService(),
+            ))
         if key == "nav.svera":
             from src.controllers.svera_controller import SveraController
 

@@ -24,8 +24,45 @@ class RegistrationAddressService:
     def __init__(self, repo: RegistrationAddressRepository) -> None:
         self._repo = repo
 
-    def list(self) -> list[RegistrationAddress]:
-        return self._repo.list_active()
+    def list(self, kind: str | None = None) -> list[RegistrationAddress]:
+        return self._repo.list_active(kind)
+
+    def create_hostel(
+        self,
+        address: RegistrationAddress,
+        template_source: Path | None = None,
+    ) -> RegistrationAddress:
+        """Register a hostel address (kind='hostel'). Its template is either an
+        uploaded ready PDF or built from the bundled hostel blank with the
+        address + host + organisation + ИНН printed on."""
+        if self._repo.by_internal_code(address.internal_code):
+            raise ValidationError(
+                "Internal code already exists", context={"code": address.internal_code}
+            )
+        address = address.model_copy(update={"kind": "hostel"})
+        if template_source is not None:
+            dest = self._hostel_dest(address)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template_source, dest)
+            address = address.model_copy(update={"template_path": dest})
+        else:
+            from src.services.hostel_service import HostelTemplateBuilder
+
+            dest = self._hostel_dest(address)
+            built = HostelTemplateBuilder().build(dest, address)
+            address = address.model_copy(update={"template_path": built})
+        if not address.template_path.exists():
+            raise ValidationError(
+                "Template file not found", context={"path": str(address.template_path)}
+            )
+        self._repo.upsert(address)
+        log.info("Hostel address created: %s (%s)", address.label, address.internal_code)
+        return address
+
+    @staticmethod
+    def _hostel_dest(address: RegistrationAddress) -> Path:
+        return (paths.user_templates_dir()
+                / f"hostel_{address.internal_code.lower()}" / "template.pdf")
 
     def get(self, address_id: UUID) -> RegistrationAddress | None:
         return self._repo.get(address_id)

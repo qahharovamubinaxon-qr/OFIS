@@ -12,7 +12,8 @@ from src.domain.enums import CompanyStatus
 from src.domain.registration_address import RegistrationAddress
 
 _ADDR_COLS = ("oblast", "raion", "gorod", "ulitsa", "dom", "korpus",
-              "stroenie", "kvartira", "regional_number")
+              "stroenie", "kvartira", "regional_number",
+              "kind", "organization_name", "inn", "komnata")
 
 
 def _row_to_address(row: sqlite3.Row) -> RegistrationAddress:
@@ -43,9 +44,10 @@ class RegistrationAddressRepository:
                 """
                 INSERT INTO registration_addresses (id, label, internal_code, address_text,
                     host_fio, oblast, raion, gorod, ulitsa, dom, korpus, stroenie, kvartira,
-                    regional_number, template_path, template_version, status, notes,
+                    regional_number, kind, organization_name, inn, komnata,
+                    template_path, template_version, status, notes,
                     created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     label=excluded.label, internal_code=excluded.internal_code,
                     address_text=excluded.address_text, host_fio=excluded.host_fio,
@@ -53,6 +55,8 @@ class RegistrationAddressRepository:
                     ulitsa=excluded.ulitsa, dom=excluded.dom, korpus=excluded.korpus,
                     stroenie=excluded.stroenie, kvartira=excluded.kvartira,
                     regional_number=excluded.regional_number,
+                    kind=excluded.kind, organization_name=excluded.organization_name,
+                    inn=excluded.inn, komnata=excluded.komnata,
                     template_path=excluded.template_path, template_version=excluded.template_version,
                     status=excluded.status, notes=excluded.notes, updated_at=excluded.updated_at
                 """,
@@ -60,6 +64,7 @@ class RegistrationAddressRepository:
                     str(a.id), a.label, a.internal_code, a.address_text, a.host_fio,
                     a.oblast, a.raion, a.gorod, a.ulitsa, a.dom, a.korpus, a.stroenie,
                     a.kvartira, a.regional_number,
+                    a.kind, a.organization_name, a.inn, a.komnata,
                     str(a.template_path), a.template_version, a.status.value, a.notes, now, now,
                 ),
             )
@@ -76,11 +81,18 @@ class RegistrationAddressRepository:
         ).fetchone()
         return _row_to_address(row) if row else None
 
-    def list_active(self) -> list[RegistrationAddress]:
-        rows = self._conn.execute(
-            "SELECT * FROM registration_addresses WHERE status = ? ORDER BY label",
-            (CompanyStatus.ACTIVE.value,),
-        ).fetchall()
+    def list_active(self, kind: str | None = None) -> list[RegistrationAddress]:
+        if kind is None:
+            rows = self._conn.execute(
+                "SELECT * FROM registration_addresses WHERE status = ? ORDER BY label",
+                (CompanyStatus.ACTIVE.value,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM registration_addresses WHERE status = ? AND kind = ? "
+                "ORDER BY label",
+                (CompanyStatus.ACTIVE.value, kind),
+            ).fetchall()
         return [_row_to_address(r) for r in rows]
 
     def archive(self, address_id: UUID) -> None:

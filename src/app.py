@@ -92,6 +92,7 @@ def build_container() -> Container:
     _seed_stroyinvest(TrudFirmService(trud_firm_repo))
     _seed_default_company(company_service)
     _seed_default_address(reg_addr_service)
+    _seed_default_hostel(reg_addr_service)
     profession_service.seed_defaults()
 
     return container
@@ -162,6 +163,35 @@ def _seed_default_address(addresses: RegistrationAddressService) -> None:
         log.info("Seeded default registration address ПАРКОВАЯ")
     except OfisError as exc:
         log.warning("Registration seed skipped: %s", exc.message)
+
+
+def _seed_default_hostel(addresses: RegistrationAddressService) -> None:
+    """First-run seed: the partner hostel on ЛУЖСКАЯ (ИП ДЯГИЛЕВА), built from
+    the bundled hostel blank. Idempotent."""
+    if addresses._repo.by_internal_code("luzhskaya10"):
+        return
+    if not (paths.templates_dir() / "hostel_blank" / "blank.pdf").exists():
+        return
+    try:
+        addresses.create_hostel(
+            RegistrationAddress(
+                label="ХОСТЕЛ ЛУЖСКАЯ 10",
+                internal_code="luzhskaya10",
+                address_text="САНКТ-ПЕТЕРБУРГ Г, ЛУЖСКАЯ УЛ, ДОМ 10, КОРПУС 1, ЛИТЕРА В",
+                host_fio="ДЯГИЛЕВА ЮЛИЯ ГЕННАДЬЕВНА",
+                kind="hostel",
+                oblast="САНКТ-ПЕТЕРБУРГ Г",
+                ulitsa="ЛУЖСКАЯ УЛ",
+                dom="10", korpus="1", stroenie="В",
+                organization_name="ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ ДЯГИЛЕВ",
+                inn="780401098145",
+                template_path=paths.templates_dir() / "hostel_blank" / "blank.pdf",
+            ),
+            None,
+        )
+        log.info("Seeded hostel ЛУЖСКАЯ 10")
+    except OfisError as exc:
+        log.warning("Hostel seed skipped: %s", exc.message)
 
 
 def main() -> int:

@@ -1,0 +1,179 @@
+{
+ "template": "hostel_blank/blank.pdf",
+ "template_version": "1",
+ "mapping_version": "1",
+ "page_size": [
+  595.28,
+  841.89
+ ],
+ "fields": [
+  {
+   "id": "host.addr.subject",
+   "type": "grid",
+   "page": 1,
+   "x0": 60.7,
+   "y": 199.2,
+   "pitch": 16.08,
+   "max_cells": 30,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.locality",
+   "type": "grid",
+   "page": 1,
+   "x0": 60.7,
+   "y": 233.0,
+   "pitch": 16.08,
+   "max_cells": 30,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.settlement",
+   "type": "grid",
+   "page": 1,
+   "x0": 60.7,
+   "y": 256.2,
+   "pitch": 16.08,
+   "max_cells": 30,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.street",
+   "type": "grid",
+   "page": 1,
+   "x0": 60.7,
+   "y": 268.2,
+   "pitch": 16.08,
+   "max_cells": 30,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.dom",
+   "type": "text",
+   "page": 1,
+   "x": 115.4,
+   "y": 292.2,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "left",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.korpus",
+   "type": "text",
+   "page": 1,
+   "x": 286.1,
+   "y": 292.2,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "left",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.litera",
+   "type": "text",
+   "page": 1,
+   "x": 455.0,
+   "y": 292.2,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "left",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.addr.komnata",
+   "type": "text",
+   "page": 1,
+   "x": 74.0,
+   "y": 324.6,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "left",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.surname",
+   "type": "grid",
+   "page": 2,
+   "x0": 108.9,
+   "y": 62.2,
+   "pitch": 16.08,
+   "max_cells": 28,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.name",
+   "type": "grid",
+   "page": 2,
+   "x0": 108.9,
+   "y": 79.2,
+   "pitch": 16.08,
+   "max_cells": 28,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.patronymic",
+   "type": "grid",
+   "page": 2,
+   "x0": 189.4,
+   "y": 96.2,
+   "pitch": 16.08,
+   "max_cells": 22,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase"
+  },
+  {
+   "id": "host.org",
+   "type": "grid",
+   "page": 2,
+   "x0": 205.5,
+   "y": 113.2,
+   "pitch": 16.08,
+   "max_cells": 21,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": "uppercase",
+   "wrap": [
+    {
+     "x0": 60.7,
+     "y": 131.2,
+     "max_cells": 16
+    }
+   ]
+  },
+  {
+   "id": "host.inn",
+   "type": "grid",
+   "page": 2,
+   "x0": 366.4,
+   "y": 131.2,
+   "pitch": 16.08,
+   "max_cells": 12,
+   "font": "OfisSerif",
+   "size": 10.0,
+   "align": "center",
+   "transform": null
+  }
+ ]
+}

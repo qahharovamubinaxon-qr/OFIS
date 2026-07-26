@@ -26,6 +26,13 @@ class RegistrationAddress(BaseModel):
     address_text: str  # human summary of the printed address (for the list)
     host_fio: str  # ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ — the принимающая сторона (printed)
 
+    # "regular" = private-host registration, "hostel" = hostel/hotel (гостиничные
+    # услуги) with an organisation name + ИНН printed on the отрывная часть.
+    kind: str = "regular"
+    organization_name: str | None = None  # ИП/ООО name for the hostel host block
+    inn: str | None = None                # host organisation ИНН
+    komnata: str | None = None            # room / помещение within the hostel
+
     # Structured address parts (present when the template was built from the
     # blank; empty when a ready-made template PDF was uploaded instead).
     oblast: str | None = None       # область / субъект РФ
