@@ -1,7 +1,7 @@
 {
  "template": "svera/template.pdf",
  "template_version": "2",
- "mapping_version": "2",
+ "mapping_version": "3",
  "page_size": [
   595.275634765625,
   822.1044311523438
@@ -122,110 +122,6 @@
    "width": 100,
    "wrap_width": 100,
    "line_height": 11.9
-  },
-  {
-   "id": "svera.udo_title",
-   "type": "text",
-   "page": 2,
-   "y": 126.5,
-   "font": "OfisSerifBoldItalic",
-   "size": 13,
-   "align": "center",
-   "x": 140.6,
-   "width": 118
-  },
-  {
-   "id": "svera.fio_udo_left",
-   "type": "text",
-   "page": 2,
-   "y": 136.5,
-   "font": "OfisSerifBoldItalic",
-   "size": 13,
-   "align": "left",
-   "x": 180.0,
-   "width": 126,
-   "wrap_width": 126,
-   "line_height": 13.0
-  },
-  {
-   "id": "svera.prof_udo_left",
-   "type": "text",
-   "page": 2,
-   "y": 191.7,
-   "font": "OfisSerifBoldItalic",
-   "size": 11,
-   "align": "center",
-   "x": 160.0,
-   "width": 100
-  },
-  {
-   "id": "svera.date_udo",
-   "type": "text",
-   "page": 2,
-   "y": 230.0,
-   "font": "OfisSerifBoldItalic",
-   "size": 11,
-   "align": "left",
-   "x": 140.6
-  },
-  {
-   "id": "svera.fio_udo_right",
-   "type": "text",
-   "page": 2,
-   "y": 118.8,
-   "font": "OfisSerifBoldItalic",
-   "size": 12,
-   "align": "center",
-   "x": 339.6,
-   "width": 205
-  },
-  {
-   "id": "svera.qual_udo_right",
-   "type": "text",
-   "page": 2,
-   "y": 157.8,
-   "font": "OfisSerifBold",
-   "size": 12,
-   "align": "center",
-   "x": 363.0,
-   "width": 167
-  },
-  {
-   "id": "svera.osnovanie",
-   "type": "text",
-   "page": 2,
-   "y": 211.7,
-   "font": "OfisSerif",
-   "size": 12,
-   "align": "left",
-   "x": 328.9
-  },
-  {
-   "id": "svera.photo",
-   "type": "image",
-   "page": 2,
-   "x": 51.8,
-   "y": 136.5,
-   "width": 69.5,
-   "height": 71.1
-  },
-  {
-   "id": "svera.stamp_left",
-   "type": "image",
-   "page": 2,
-   "x": 98.7,
-   "y": 118.0,
-   "width": 116.8,
-   "height": 111.8
-  },
-  {
-   "id": "svera.stamp_right",
-   "type": "image",
-   "page": 2,
-   "x": 381.5,
-   "y": 133.6,
-   "width": 108.9,
-   "height": 108.1
   }
  ]
 }

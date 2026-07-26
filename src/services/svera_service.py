@@ -74,12 +74,38 @@ class SveraService:
         mapping = FieldMapping.load(_MAPPING_PATH)
         out_path = self._unique_output_path(passport, output_dir)
         fill(_TEMPLATE_PATH, mapping, values, out_path)
+        # Page 2 (the certificate) is typeset in full — its blank is empty, so
+        # the labels, rules and stamps are drawn rather than mapped.
+        self._draw_certificate(out_path, values, photo_path, stamp)
 
         self._settings.set(_UDO_KEY, udo + 1)
         self._settings.set(_PO_KEY, po + 1)
         self._settings.set(_REG13_KEY, reg13 + 1)
         log.info("Generated СФЕРА %s (ПО%s) for %s", out_path.name, po, passport.surname)
         return SveraResult(pdf_path=out_path, udo_number=udo, po_number=po)
+
+    @staticmethod
+    def _draw_certificate(pdf: Path, values: dict, photo: Path | None,
+                          stamp: Path | None) -> None:
+        import fitz
+
+        from src.pdf.svera_udo import UdoData, render_udostoverenie
+
+        doc = fitz.open(str(pdf))
+        try:
+            render_udostoverenie(doc[1], UdoData(
+                number=str(values["svera.udo_number"]),
+                fio_dative=str(values["svera.fio_udo_left"]).split("\n"),
+                profession=str(values["svera.prof_udo_left"]),
+                qualification=str(values["svera.qual_udo_right"]),
+                issue_date=str(values["svera.date_udo"]),
+                basis=str(values["svera.osnovanie"]),
+                photo_path=photo,
+                stamp_path=stamp,
+            ))
+            doc.saveIncr()
+        finally:
+            doc.close()
 
     def _unique_output_path(self, passport: Passport, base: Path | None) -> Path:
         folder = base if base is not None else paths.output_dir() / "svera"

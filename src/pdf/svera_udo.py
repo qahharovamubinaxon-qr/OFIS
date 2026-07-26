@@ -1,0 +1,177 @@
+"""Typeset the СФЕРА «Удостоверение» card onto the centre's empty blank.
+
+The bundled blank carries only the red cover and the «Учебный центр СФЕРА»
+letterhead, so every line — the licence strip, the labels, the holder's name,
+the profession, the commission wording and the signature rules — is set here.
+Coordinates were measured off the centre's own filled certificate, so the
+output lines up with it 1:1 (Times New Roman, underlines included).
+
+The round stamp is printed last, slightly translucent, so it reads like real
+ink pressed over the photo and the text rather than a sticker on top.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import fitz
+
+from src.pdf.engine import _font_file
+
+# ---------------------------------------------------------------- fonts
+_REG, _BOLD, _IT, _BI = "OfisSerif", "OfisSerifBold", "OfisSerifItalic", "OfisSerifBoldItalic"
+_IDS = {_REG: "sv_r", _BOLD: "sv_b", _IT: "sv_i", _BI: "sv_bi"}
+
+# licence strip, printed on every certificate
+LICENCE = ("Лицензия №Л035-01265-18/00460507 выдана Министерством "
+           "образования и науки УР")
+CHAIRMAN = "Никитина К.С."
+
+# left card
+_L_FIO_X = 182.9          # ФИО lines start here
+_L_FIO_RIGHT = 283.2      # …and their rules run to here
+_L_FIO_BASE = 136.4       # first ФИО baseline
+_L_FIO_STEP = 12.4
+_L_CENTRE = 209.4         # centre of the left card's text column
+# right card
+_R_LEFT, _R_RIGHT = 328.5, 551.3
+_R_CENTRE = 439.9
+
+
+@dataclass(frozen=True)
+class UdoData:
+    number: str            # «3606»
+    fio_dative: list[str]  # [«Муминову», «Шерали», «Рузимухаммад Угли»]
+    profession: str        # «Электрогазосварщик»
+    qualification: str     # «Электрогазосварщик 5 (пятого) разряда»
+    issue_date: str        # «04.08.2023 г.»
+    basis: str             # «ООО УЦ "СФЕРА" № ПО3355 от 04.08.2023 г.»
+    photo_path: Path | None = None
+    stamp_path: Path | None = None
+
+
+class _Pen:
+    """Small helper: text at a baseline, optional underline, in one call."""
+
+    def __init__(self, page: fitz.Page) -> None:
+        self._page = page
+        self._fonts = {name: fitz.Font(fontfile=str(_font_file(name))) for name in _IDS}
+        for name, pdf_id in _IDS.items():
+            page.insert_font(fontname=pdf_id, fontfile=str(_font_file(name)))
+
+    def width(self, text: str, font: str, size: float) -> float:
+        return self._fonts[font].text_length(text, fontsize=size)
+
+    def text(self, x: float, baseline: float, text: str, *, font: str = _REG,
+             size: float = 11.0, centre: float | None = None,
+             fit: float | None = None) -> None:
+        if not text:
+            return
+        if fit:  # shrink until it fits the available width
+            while size > 5 and self.width(text, font, size) > fit:
+                size -= 0.25
+        if centre is not None:
+            x = centre - self.width(text, font, size) / 2
+        self._page.insert_text((x, baseline), text,
+                               fontname=_IDS[font], fontsize=size)
+
+    def rule(self, x0: float, x1: float, y: float, width: float = 0.7) -> None:
+        self._page.draw_line((x0, y), (x1, y), color=(0, 0, 0), width=width)
+
+
+def _translucent_stamp(path: Path, alpha: float = 0.82) -> bytes | None:
+    """Fade the stamp a touch so the text under it stays legible — the way a
+    real rubber stamp looks when pressed over print."""
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow ships with the app
+        return None
+    try:
+        img = Image.open(path).convert("RGBA")
+    except OSError:
+        return None
+    arr = np.array(img)
+    arr[..., 3] = (arr[..., 3].astype(float) * alpha).astype("uint8")
+    import io
+
+    buf = io.BytesIO()
+    Image.fromarray(arr).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
+    """Draw the whole certificate spread onto ``page`` (the empty blank)."""
+    pen = _Pen(page)
+
+    # ---------------- left card ----------------
+    pen.text(51.8, 114.1, LICENCE, font=_IT, size=6.5, fit=221.5)
+    pen.text(0, 123.7, f"УДОСТОВЕРЕНИЕ № {data.number}",
+             font=_BI, size=11.5, centre=_L_CENTRE)
+    pen.text(134.4, 136.6, "Выдано:", font=_BI, size=9)
+
+    for i, line in enumerate(data.fio_dative[:3]):
+        base = _L_FIO_BASE + i * _L_FIO_STEP
+        pen.text(_L_FIO_X, base, line, font=_BI, size=12.5,
+                 fit=_L_FIO_RIGHT - _L_FIO_X)
+        pen.rule(_L_FIO_X, _L_FIO_RIGHT, base + 2.1)
+
+    pen.text(0, 170.3, "в том, что он(а) исвоил(а) программу",
+             font=_BI, size=7.5, centre=_L_CENTRE)
+    pen.text(0, 176.8, "профессионального обучения по профессии:",
+             font=_BI, size=7.5, centre=_L_CENTRE)
+    pen.text(0, 192.9, f"“{data.profession}”", font=_BI, size=11,
+             centre=_L_CENTRE, fit=140)
+
+    pen.rule(160.7, 261.0, 205.5)
+    pen.text(0, 217.4, "(личная подпись)", font=_BI, size=9, centre=208.5)
+    pen.text(140.6, 231.0, f"Дата выдачи: {data.issue_date}", font=_BI, size=10)
+
+    # ---------------- right card ----------------
+    pen.text(0, 104.0, "Решением аттестационной комиссии",
+             font=_BOLD, size=10, centre=_R_CENTRE)
+
+    fio_line = " ".join(data.fio_dative)
+    pen.text(0, 119.2, fio_line, font=_BI, size=12, centre=_R_CENTRE,
+             fit=_R_RIGHT - 339.6)
+    pen.rule(339.6, 544.3, 121.6)
+
+    pen.text(0, 137.5, "присвоена (подтверждена) квалификация:",
+             font=_BOLD, size=10.5, centre=_R_CENTRE)
+    pen.text(0, 161.6, data.qualification, font=_BOLD, size=11.5,
+             centre=_R_CENTRE, fit=_R_RIGHT - 363.0)
+    pen.rule(363.0, 529.9, 165.3)
+
+    pen.text(_R_LEFT, 185.5,
+             "Допускается к работе согласно должностным обязанностям.",
+             font=_REG, size=11, fit=_R_RIGHT - _R_LEFT)
+    pen.text(_R_LEFT, 197.5, "Основание: Протокол аттестационной комиссии",
+             font=_REG, size=11, fit=_R_RIGHT - _R_LEFT)
+    pen.text(_R_LEFT, 214.3, data.basis, font=_REG, size=11,
+             fit=_R_RIGHT - _R_LEFT)
+
+    pen.text(_R_LEFT, 234.8, "Председатель комиссии", font=_REG, size=11)
+    pen.rule(432.0, 468.0, 235.6)
+    pen.text(469.1, 234.3, CHAIRMAN, font=_REG, size=11)
+
+    # ---------------- photo, then the stamps on top ----------------
+    if data.photo_path and Path(data.photo_path).exists():
+        box = fitz.Rect(51.0, 128.3, 121.3, 208.4)
+        try:
+            page.insert_image(box, filename=str(data.photo_path), keep_proportion=True)
+        except (RuntimeError, ValueError):
+            pass
+        page.draw_rect(box, color=(0, 0, 0), width=0.7)
+
+    if data.stamp_path and Path(data.stamp_path).exists():
+        ink = _translucent_stamp(Path(data.stamp_path))
+        for box in (fitz.Rect(98.7, 118.0, 215.5, 229.8),     # over the photo
+                    fitz.Rect(381.5, 133.6, 490.4, 241.7)):   # over the quals
+            try:
+                if ink:
+                    page.insert_image(box, stream=ink, overlay=True)
+                else:
+                    page.insert_image(box, filename=str(data.stamp_path), overlay=True)
+            except (RuntimeError, ValueError):
+                pass

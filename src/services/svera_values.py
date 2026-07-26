@@ -18,7 +18,7 @@ from src.domain.profession import Profession
 from src.pdf.formatters import _date_dmy, _date_dmy_g, _date_long_g
 from src.utils.ru_names import to_dative_parts
 
-CENTRE_NAME = 'ООО УЦ "СФЕРА"'
+CENTRE_NAME = "ООО УЦ “СФЕРА”"
 CITY = "Ижевск"
 PROTOCOL_SUBTITLE = "заседания комиссии по проверке знаний профессионального обучения"
 DEFAULT_HOURS = 160
@@ -78,10 +78,10 @@ def build_svera_values(
         "svera.zaklyuchenie": _with_note(profession.qualification_short, profession),
 
         # ---------- удостоверение ----------
-        "svera.udo_title": f"УДОСТОВЕРЕНИЕ № {udo_number}",
+        "svera.udo_number": str(udo_number),
         "svera.fio_udo_left": "\n".join(dative),
-        "svera.prof_udo_left": f"“{_with_note(profession.name, profession)}”",
-        "svera.date_udo": f"Дата выдачи: {_date_dmy_g(issue_date)}",
+        "svera.prof_udo_left": _with_note(profession.name, profession),
+        "svera.date_udo": _date_dmy_g(issue_date),
         "svera.fio_udo_right": " ".join(dative),
         "svera.qual_udo_right": _with_note(profession.qualification_full, profession),
         "svera.osnovanie": (f"{CENTRE_NAME} № ПО{po_number} "

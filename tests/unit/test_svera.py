@@ -65,7 +65,7 @@ def test_values_split_case() -> None:
     assert v["svera.protocol_title"] == "ПРОТОКОЛ № ПО3963"
     assert "ПО3963" in str(v["svera.osnovanie"])
     # the certificate number doubles as the protocol's регистрац. №
-    assert v["svera.udo_title"] == "УДОСТОВЕРЕНИЕ № 606"
+    assert v["svera.udo_number"] == "606"
     assert str(v["svera.result"]).splitlines() == ["Сдал,", "606", "180035 9856150"]
     # dates carry exactly one Russian year marker
     assert str(v["svera.date_long_top"]).count("г.") == 1
