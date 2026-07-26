@@ -19,7 +19,11 @@ _VOWELS = "аеёиоуыэюя"
 
 
 def _cap(word: str) -> str:
-    return word[:1].upper() + word[1:].lower() if word else word
+    """Title-case every word — «РУЗИМУХАММАД УГЛИ» → «Рузимухаммад Угли»,
+    the way the centre's certificates print compound patronymics."""
+    if not word:
+        return word
+    return " ".join(w[:1].upper() + w[1:].lower() for w in word.split())
 
 
 def _dative_surname(s: str) -> str:

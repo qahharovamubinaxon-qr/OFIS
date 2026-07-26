@@ -41,8 +41,8 @@ class Profession(BaseModel):
 
     @property
     def qualification_short(self) -> str:
-        """Арматурщик 5 разряда — протокол «Заключение» column."""
-        return f"{self.name} {self.grade} разряда"
+        """Арматурщик 5-й разряд — протокол «Заключение» column."""
+        return f"{self.name} {self.grade}-й разряд"
 
     @property
     def qualification_full(self) -> str:

@@ -24,6 +24,9 @@ log = get_logger(__name__)
 
 _MAPPING_PATH = paths.templates_dir() / "svera" / "mapping.v1.json"
 _TEMPLATE_PATH = paths.templates_dir() / "svera" / "template.pdf"
+# The centre's round stamp (transparent PNG) — printed over the photo on the
+# left card and over the qualification block on the right one.
+_STAMP_PATH = paths.templates_dir() / "svera" / "stamp.png"
 
 _UDO_KEY, _UDO_START = "svera.udo_counter", 100
 _PO_KEY, _PO_START = "svera.po_counter", 1548
@@ -60,11 +63,13 @@ class SveraService:
         po = self._peek(_PO_KEY, _PO_START)
         reg13 = self._peek(_REG13_KEY, _REG13_START)
 
+        stamp = _STAMP_PATH if _STAMP_PATH.exists() else None
         values = build_svera_values(
             passport.surname, passport.name, passport.patronymic, profession,
             issue_date=issue_date,
             photo_path=str(photo_path) if photo_path else None,
             po_number=po, udo_number=udo, reg13=reg13,
+            stamp_path=str(stamp) if stamp else None,
         )
         mapping = FieldMapping.load(_MAPPING_PATH)
         out_path = self._unique_output_path(passport, output_dir)

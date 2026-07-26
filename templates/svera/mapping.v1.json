@@ -1,233 +1,231 @@
 {
-  "template": "svera",
-  "template_version": "1",
-  "mapping_version": "1",
-  "page_size": [
-    595.3,
-    822.1
-  ],
-  "fields": [
-    {
-      "id": "svera.po_protocol",
-      "type": "text",
-      "page": 1,
-      "x": 347,
-      "y": 145,
-      "font": "OfisSerifBold",
-      "size": 12,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.date_short",
-      "type": "text",
-      "page": 1,
-      "x": 300,
-      "y": 163,
-      "font": "OfisSerifBold",
-      "size": 11,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.date_long_top",
-      "type": "text",
-      "page": 1,
-      "x": 448,
-      "y": 208,
-      "font": "OfisSerifBold",
-      "size": 12,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.date_long_prikaz",
-      "type": "text",
-      "page": 1,
-      "x": 318,
-      "y": 223,
-      "font": "OfisSerifBold",
-      "size": 12,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.proverka",
-      "type": "text",
-      "page": 1,
-      "x": 78,
-      "y": 338,
-      "font": "OfisSerifBold",
-      "size": 12,
-      "align": "left",
-      "_calibrated": true,
-      "width": 490,
-      "wrap_width": 490,
-      "line_height": 13,
-      "clear_rects": [
-        [
-          55,
-          322,
-          585,
-          350
-        ]
-      ]
-    },
-    {
-      "id": "svera.fio_protocol",
-      "type": "text",
-      "page": 1,
-      "x": 95,
-      "y": 400,
-      "font": "OfisSerifBold",
-      "size": 11,
-      "align": "center",
-      "_calibrated": true,
-      "width": 90,
-      "wrap_width": 90,
-      "line_height": 17.5
-    },
-    {
-      "id": "svera.reg13",
-      "type": "text",
-      "page": 1,
-      "x": 300,
-      "y": 440,
-      "font": "OfisSerifBold",
-      "size": 11,
-      "align": "center",
-      "_calibrated": true,
-      "width": 105
-    },
-    {
-      "id": "svera.zaklyuchenie",
-      "type": "text",
-      "page": 1,
-      "x": 408,
-      "y": 405,
-      "font": "OfisSerifBold",
-      "size": 11,
-      "align": "center",
-      "_calibrated": true,
-      "width": 135,
-      "wrap_width": 135,
-      "line_height": 15
-    },
-    {
-      "id": "svera.udo_number",
-      "type": "text",
-      "page": 2,
-      "x": 258,
-      "y": 123,
-      "font": "OfisSerifBoldItalic",
-      "size": 13,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.photo",
-      "type": "image",
-      "page": 2,
-      "x": 52,
-      "y": 130,
-      "width": 66,
-      "height": 76,
-      "_calibrated": true
-    },
-    {
-      "id": "svera.fio_udo_left",
-      "type": "text",
-      "page": 2,
-      "x": 298,
-      "y": 128,
-      "font": "OfisSerifBoldItalic",
-      "size": 13,
-      "align": "left",
-      "_calibrated": true,
-      "width": 160,
-      "wrap_width": 160,
-      "line_height": 16.5
-    },
-    {
-      "id": "svera.prof_udo_left",
-      "type": "text",
-      "page": 2,
-      "x": 205,
-      "y": 192,
-      "font": "OfisSerifBoldItalic",
-      "size": 13,
-      "align": "center",
-      "_calibrated": true,
-      "width": 160,
-      "wrap_width": 160,
-      "line_height": 15
-    },
-    {
-      "id": "svera.date_udo",
-      "type": "text",
-      "page": 2,
-      "x": 200,
-      "y": 235,
-      "font": "OfisSerifBoldItalic",
-      "size": 11,
-      "align": "left",
-      "_calibrated": true,
-      "clear_rects": [
-        [
-          222,
-          225,
-          241,
-          239
-        ]
-      ]
-    },
-    {
-      "id": "svera.fio_udo_right",
-      "type": "text",
-      "page": 2,
-      "x": 375,
-      "y": 115,
-      "font": "OfisSerifBoldItalic",
-      "size": 14,
-      "align": "center",
-      "_calibrated": true,
-      "width": 215
-    },
-    {
-      "id": "svera.qual_udo_right",
-      "type": "text",
-      "page": 2,
-      "x": 378,
-      "y": 152,
-      "font": "OfisSerifBold",
-      "size": 13,
-      "align": "center",
-      "_calibrated": true,
-      "width": 210,
-      "wrap_width": 210,
-      "line_height": 16
-    },
-    {
-      "id": "svera.po_udo",
-      "type": "text",
-      "page": 2,
-      "x": 448,
-      "y": 214,
-      "font": "OfisSerif",
-      "size": 11,
-      "align": "left",
-      "_calibrated": true
-    },
-    {
-      "id": "svera.date_udo_right",
-      "type": "text",
-      "page": 2,
-      "x": 495,
-      "y": 214,
-      "font": "OfisSerif",
-      "size": 10,
-      "align": "left",
-      "_calibrated": true
-    }
-  ]
+ "template": "svera/template.pdf",
+ "template_version": "2",
+ "mapping_version": "2",
+ "page_size": [
+  595.275634765625,
+  822.1044311523438
+ ],
+ "fields": [
+  {
+   "id": "svera.protocol_title",
+   "type": "text",
+   "page": 1,
+   "y": 144.3,
+   "font": "OfisSerifBold",
+   "size": 12.5,
+   "align": "center",
+   "x": 47.7,
+   "width": 500
+  },
+  {
+   "id": "svera.protocol_sub",
+   "type": "text",
+   "page": 1,
+   "y": 155.2,
+   "font": "OfisSerifBold",
+   "size": 10.5,
+   "align": "center",
+   "x": 47.7,
+   "width": 500
+  },
+  {
+   "id": "svera.date_short",
+   "type": "text",
+   "page": 1,
+   "y": 165.8,
+   "font": "OfisSerifBold",
+   "size": 11.5,
+   "align": "center",
+   "x": 47.7,
+   "width": 500
+  },
+  {
+   "id": "svera.date_long_top",
+   "type": "text",
+   "page": 1,
+   "y": 197.2,
+   "font": "OfisSerifBold",
+   "size": 12,
+   "align": "right",
+   "x": 47.7,
+   "width": 505
+  },
+  {
+   "id": "svera.gorod",
+   "type": "text",
+   "page": 1,
+   "y": 210.9,
+   "font": "OfisSerifBold",
+   "size": 12,
+   "align": "left",
+   "x": 48.1
+  },
+  {
+   "id": "svera.prikaz",
+   "type": "text",
+   "page": 1,
+   "y": 230.4,
+   "font": "OfisSerifBold",
+   "size": 11.5,
+   "align": "left",
+   "x": 48.9
+  },
+  {
+   "id": "svera.proverka",
+   "type": "text",
+   "page": 1,
+   "y": 320.0,
+   "font": "OfisSerifBold",
+   "size": 12,
+   "align": "left",
+   "x": 47.7,
+   "width": 493,
+   "wrap_width": 493,
+   "line_height": 15.6
+  },
+  {
+   "id": "svera.fio_protocol",
+   "type": "text",
+   "page": 1,
+   "y": 409.0,
+   "font": "OfisSerifBold",
+   "size": 10.5,
+   "align": "center",
+   "x": 77.0,
+   "width": 62,
+   "wrap_width": 62,
+   "line_height": 10.95
+  },
+  {
+   "id": "svera.result",
+   "type": "text",
+   "page": 1,
+   "y": 407.0,
+   "font": "OfisSerifBold",
+   "size": 10.5,
+   "align": "center",
+   "x": 274.8,
+   "width": 95,
+   "wrap_width": 95,
+   "line_height": 13.15
+  },
+  {
+   "id": "svera.zaklyuchenie",
+   "type": "text",
+   "page": 1,
+   "y": 400.8,
+   "font": "OfisSerifBold",
+   "size": 10.5,
+   "align": "center",
+   "x": 384.0,
+   "width": 100,
+   "wrap_width": 100,
+   "line_height": 11.9
+  },
+  {
+   "id": "svera.udo_title",
+   "type": "text",
+   "page": 2,
+   "y": 126.5,
+   "font": "OfisSerifBoldItalic",
+   "size": 13,
+   "align": "center",
+   "x": 140.6,
+   "width": 118
+  },
+  {
+   "id": "svera.fio_udo_left",
+   "type": "text",
+   "page": 2,
+   "y": 136.5,
+   "font": "OfisSerifBoldItalic",
+   "size": 13,
+   "align": "left",
+   "x": 180.0,
+   "width": 126,
+   "wrap_width": 126,
+   "line_height": 13.0
+  },
+  {
+   "id": "svera.prof_udo_left",
+   "type": "text",
+   "page": 2,
+   "y": 191.7,
+   "font": "OfisSerifBoldItalic",
+   "size": 11,
+   "align": "center",
+   "x": 160.0,
+   "width": 100
+  },
+  {
+   "id": "svera.date_udo",
+   "type": "text",
+   "page": 2,
+   "y": 230.0,
+   "font": "OfisSerifBoldItalic",
+   "size": 11,
+   "align": "left",
+   "x": 140.6
+  },
+  {
+   "id": "svera.fio_udo_right",
+   "type": "text",
+   "page": 2,
+   "y": 118.8,
+   "font": "OfisSerifBoldItalic",
+   "size": 12,
+   "align": "center",
+   "x": 339.6,
+   "width": 205
+  },
+  {
+   "id": "svera.qual_udo_right",
+   "type": "text",
+   "page": 2,
+   "y": 157.8,
+   "font": "OfisSerifBold",
+   "size": 12,
+   "align": "center",
+   "x": 363.0,
+   "width": 167
+  },
+  {
+   "id": "svera.osnovanie",
+   "type": "text",
+   "page": 2,
+   "y": 211.7,
+   "font": "OfisSerif",
+   "size": 12,
+   "align": "left",
+   "x": 328.9
+  },
+  {
+   "id": "svera.photo",
+   "type": "image",
+   "page": 2,
+   "x": 51.8,
+   "y": 136.5,
+   "width": 69.5,
+   "height": 71.1
+  },
+  {
+   "id": "svera.stamp_left",
+   "type": "image",
+   "page": 2,
+   "x": 98.7,
+   "y": 118.0,
+   "width": 116.8,
+   "height": 111.8
+  },
+  {
+   "id": "svera.stamp_right",
+   "type": "image",
+   "page": 2,
+   "x": 381.5,
+   "y": 133.6,
+   "width": 108.9,
+   "height": 108.1
+  }
+ ]
 }
