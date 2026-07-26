@@ -33,6 +33,7 @@ _L_FIO_X = 182.9          # ФИО lines start here
 _L_FIO_RIGHT = 283.2      # …and their rules run to here
 _L_FIO_BASE = 136.4       # first ФИО baseline
 _L_FIO_STEP = 12.4
+_FIO_SIZE = 11.5          # holder's name on the left card
 _L_CENTRE = 209.4         # centre of the left card's text column
 # right card
 _R_LEFT, _R_RIGHT = 328.5, 551.3
@@ -108,14 +109,17 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
     # ---------------- left card ----------------
     pen.text(51.8, 114.1, LICENCE, font=_IT, size=6.5, fit=221.5)
     pen.text(0, 123.7, f"УДОСТОВЕРЕНИЕ № {data.number}",
-             font=_BI, size=11.5, centre=_L_CENTRE)
+             font=_BI, size=10, centre=_L_CENTRE)
     pen.text(134.4, 136.6, "Выдано:", font=_BI, size=9)
 
+    # each name line is ruled only as far as the word actually runs
     for i, line in enumerate(data.fio_dative[:3]):
         base = _L_FIO_BASE + i * _L_FIO_STEP
-        pen.text(_L_FIO_X, base, line, font=_BI, size=12.5,
-                 fit=_L_FIO_RIGHT - _L_FIO_X)
-        pen.rule(_L_FIO_X, _L_FIO_RIGHT, base + 2.1)
+        size = _FIO_SIZE
+        while size > 6 and pen.width(line, _BI, size) > _L_FIO_RIGHT - _L_FIO_X:
+            size -= 0.25
+        pen.text(_L_FIO_X, base, line, font=_BI, size=size)
+        pen.rule(_L_FIO_X, _L_FIO_X + pen.width(line, _BI, size), base + 2.1)
 
     pen.text(0, 170.3, "в том, что он(а) исвоил(а) программу",
              font=_BI, size=7.5, centre=_L_CENTRE)
@@ -143,17 +147,21 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
              centre=_R_CENTRE, fit=_R_RIGHT - 363.0)
     pen.rule(363.0, 529.9, 165.3)
 
-    pen.text(_R_LEFT, 185.5,
-             "Допускается к работе согласно должностным обязанностям.",
-             font=_REG, size=11, fit=_R_RIGHT - _R_LEFT)
-    pen.text(_R_LEFT, 197.5, "Основание: Протокол аттестационной комиссии",
-             font=_REG, size=11, fit=_R_RIGHT - _R_LEFT)
-    pen.text(_R_LEFT, 214.3, data.basis, font=_REG, size=11,
-             fit=_R_RIGHT - _R_LEFT)
+    # the three body lines share one size — the largest at which the longest
+    # of them still fits the card, so they read as one block
+    body = ["Допускается к работе согласно должностным обязанностям.",
+            "Основание: Протокол аттестационной комиссии",
+            data.basis]
+    body_size = 11.0
+    avail = _R_RIGHT - _R_LEFT
+    while body_size > 6 and any(pen.width(t, _REG, body_size) > avail for t in body):
+        body_size -= 0.25
+    for baseline, line in zip((185.5, 197.5, 214.3), body, strict=True):
+        pen.text(_R_LEFT, baseline, line, font=_REG, size=body_size)
 
-    pen.text(_R_LEFT, 234.8, "Председатель комиссии", font=_REG, size=11)
+    pen.text(_R_LEFT, 234.8, "Председатель комиссии", font=_REG, size=body_size)
     pen.rule(432.0, 468.0, 235.6)
-    pen.text(469.1, 234.3, CHAIRMAN, font=_REG, size=11)
+    pen.text(469.1, 234.3, CHAIRMAN, font=_REG, size=body_size)
 
     # ---------------- photo, then the stamps on top ----------------
     if data.photo_path and Path(data.photo_path).exists():
