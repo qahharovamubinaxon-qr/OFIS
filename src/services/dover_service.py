@@ -19,13 +19,23 @@ from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.config import paths
 from src.domain.documents import Passport
-from src.pdf.engine import _font_file
 from src.pdf.formatters import _date_dmy
 
 log = get_logger(__name__)
 
 NOTARY_FIO = "Друганова Маргарита Владимировна"
+NOTARY_SHORT = "Друганова М.В."
 NOTARY_CITY = "город Москва"
+
+# settings keys (all editable in Sozlamalar)
+KEY_SERIES_PREFIX = "dover.series_prefix"   # «77 АВ»
+KEY_SERIES_NEXT = "dover.series_next"       # 2463964 → +1 per document
+KEY_REESTR_NEXT = "dover.reestr_next"       # 12855 → +1 per document
+KEY_TARIF = "dover.tarif"                   # «1500»
+DEFAULT_SERIES_PREFIX = "77 АВ"
+DEFAULT_SERIES_NEXT = 2463964
+DEFAULT_REESTR_NEXT = 12855
+DEFAULT_TARIF = "1500"
 
 DOVER_TYPES = [
     "Авто (тавсифдан аниқлайди)",
@@ -46,23 +56,36 @@ _SYSTEM = (
     "Ты — помощник московского нотариуса. Составь ПОЛНЫЙ текст нотариального "
     "документа (доверенность / согласие / заявление) по стандартам нотариальной "
     "практики города Москвы и законодательства РФ (ГК РФ, Основы законодательства "
-    "о нотариате). Пиши строго официальным русским языком. Структура: заголовок "
-    "(вид документа), место и дата прописью, полные данные доверителя (ФИО, дата "
-    "рождения, гражданство, паспорт: серия, номер, кем и когда выдан), полные "
-    "данные представителя, подробные полномочия по смыслу задания, срок действия "
+    "о нотариате). Пиши строго официальным русским языком.\n"
+    "СТРОГАЯ СТРУКТУРА (каждый пункт — с новой строки):\n"
+    "1) первая строка — ТОЛЬКО вид документа ЗАГЛАВНЫМИ (СОГЛАСИЕ / "
+    "ДОВЕРЕННОСТЬ / ЗАЯВЛЕНИЕ);\n"
+    "2) вторая строка — «Город Москва.»;\n"
+    "3) третья строка — дата составления ПРОПИСЬЮ, например «Двадцать шестое "
+    "июля две тысячи двадцать шестого года.»;\n"
+    "4) далее абзацы: полные данные доверителя (ФИО, дата рождения, пол, "
+    "гражданство, паспорт: серия, номер, кем и когда выдан), полные данные "
+    "представителя, подробные полномочия по смыслу задания, срок действия "
     "(если уместен — один год, если не указан иной), право/запрет передоверия, "
-    "отметка о разъяснении статей закона, строка для подписи доверителя, затем "
-    "удостоверительная надпись нотариуса: «{city}. <дата прописью>. Настоящая "
-    "доверенность удостоверена мной, {notary}, нотариусом города Москвы…» с "
-    "местами для реестрового номера и тарифа (оставь «№ ________»). Верни ТОЛЬКО "
-    "текст документа, без пояснений и без markdown."
-).format(city=NOTARY_CITY, notary=NOTARY_FIO)
+    "отметка о разъяснении статей закона;\n"
+    "5) строка «Подпись:» с длинной линией из подчёркиваний;\n"
+    "6) удостоверительная надпись: снова «Город Москва.», дата прописью на "
+    "отдельной строке, затем «Настоящее согласие (доверенность/заявление) "
+    "удостоверено мной, {notary}, нотариусом города Москвы.» и «…подписано "
+    "гражданином <ФИО> в моем присутствии. Личность его установлена, "
+    "дееспособность проверена.»\n"
+    "НЕ пиши строки про реестровый номер, тариф и подпись нотариуса — их "
+    "добавляет программа. Верни ТОЛЬКО текст документа, без пояснений и без "
+    "markdown."
+).format(notary=NOTARY_FIO)
 
 
 @dataclass(frozen=True)
 class DoverResult:
     docx_path: Path
     pdf_path: Path
+    series: str = ""
+    reestr: int = 0
 
 
 def _passport_block(label: str, p: Passport | None) -> str:
@@ -83,8 +106,31 @@ def _passport_block(label: str, p: Passport | None) -> str:
 
 
 class DoverService:
-    def __init__(self, key_getter) -> None:
+    def __init__(self, key_getter, settings=None) -> None:
         self._key_getter = key_getter
+        self._settings = settings  # SettingsService | None (counters persist when set)
+
+    # -- counters ------------------------------------------------------
+    def _counter(self, key: str, default: int) -> int:
+        if self._settings is None:
+            return default
+        try:
+            return int(self._settings.get(key, default) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def _str_setting(self, key: str, default: str) -> str:
+        if self._settings is None:
+            return default
+        return str(self._settings.get(key, default) or default).strip() or default
+
+    def _advance_counters(self) -> None:
+        if self._settings is None:
+            return
+        self._settings.set(KEY_SERIES_NEXT,
+                           self._counter(KEY_SERIES_NEXT, DEFAULT_SERIES_NEXT) + 1)
+        self._settings.set(KEY_REESTR_NEXT,
+                           self._counter(KEY_REESTR_NEXT, DEFAULT_REESTR_NEXT) + 1)
 
     def generate_from_images(
         self,
@@ -125,15 +171,30 @@ class DoverService:
         return self._call(key, parts)
 
     def _save(self, text: str, stem: str, output_dir: Path | None) -> DoverResult:
+        from src.pdf.dover_renderer import finalize_notarial_text, render_dover_pdf
+
+        reestr = self._counter(KEY_REESTR_NEXT, DEFAULT_REESTR_NEXT)
+        tarif = self._str_setting(KEY_TARIF, DEFAULT_TARIF)
+        series = (f"{self._str_setting(KEY_SERIES_PREFIX, DEFAULT_SERIES_PREFIX)} "
+                  f"{self._counter(KEY_SERIES_NEXT, DEFAULT_SERIES_NEXT)}")
+        final = finalize_notarial_text(text, reestr=reestr, tarif=tarif,
+                                       notary_short=NOTARY_SHORT)
+
+        title = next((ln.strip() for ln in final.splitlines() if ln.strip()),
+                     "ДОВЕРЕННОСТЬ")
+        kind = "".join(c for c in title.split()[0] if c.isalpha()) or "ДОВЕРЕННОСТЬ"
         folder = output_dir if output_dir is not None else paths.output_dir() / "dover"
         folder.mkdir(parents=True, exist_ok=True)
-        base = folder / f"{stem}_ДОВЕРЕННОСТЬ"
+        base = folder / f"{stem}_{kind}"
         i = 1
         while base.with_suffix(".pdf").exists():
-            base = folder / f"{stem}_ДОВЕРЕННОСТЬ_{i:03d}"
+            base = folder / f"{stem}_{kind}_{i:03d}"
             i += 1
-        return DoverResult(docx_path=self._to_docx(text, base.with_suffix(".docx")),
-                           pdf_path=self._to_pdf(text, base.with_suffix(".pdf")))
+        docx_path = self._to_docx(final, base.with_suffix(".docx"))
+        pdf_path = render_dover_pdf(final, base.with_suffix(".pdf"), series=series)
+        self._advance_counters()
+        return DoverResult(docx_path=docx_path, pdf_path=pdf_path,
+                           series=series, reestr=reestr)
 
     def _call(self, key: str, parts: list) -> str:
         body = json.dumps({"contents": [{"parts": parts}]}).encode()
@@ -166,19 +227,10 @@ class DoverService:
     ) -> DoverResult:
         text = self._compose(principal, agent, doc_type=doc_type,
                              description=description, form_date=form_date)
-        folder = output_dir if output_dir is not None else paths.output_dir() / "dover"
-        folder.mkdir(parents=True, exist_ok=True)
         stem = "".join(c if c.isalnum() or c in "_- " else "_"
                        for c in f"{principal.surname}_{principal.name}".upper()) or "DOVER"
-        base = folder / f"{stem}_ДОВЕРЕННОСТЬ"
-        i = 1
-        while base.with_suffix(".pdf").exists():
-            base = folder / f"{stem}_ДОВЕРЕННОСТЬ_{i:03d}"
-            i += 1
-        docx_path = self._to_docx(text, base.with_suffix(".docx"))
-        pdf_path = self._to_pdf(text, base.with_suffix(".pdf"))
         log.info("Dover draft for %s (%s)", principal.surname, doc_type)
-        return DoverResult(docx_path=docx_path, pdf_path=pdf_path)
+        return self._save(text, stem, output_dir)
 
     # ------------------------------------------------------------------
     def _compose(self, principal, agent, *, doc_type, description, form_date) -> str:
@@ -214,43 +266,35 @@ class DoverService:
 
     @staticmethod
     def _to_docx(text: str, out: Path) -> Path:
+        """Word copy without the blank background — same layout rules as the
+        PDF (title/city/date centered, body justified, notary line split)."""
         import docx
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        from docx.shared import Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+        from docx.shared import Cm, Pt
+
+        from src.pdf.dover_renderer import _classify
 
         doc = docx.Document()
         style = doc.styles["Normal"]
         style.font.name = "Times New Roman"
         style.font.size = Pt(12)
-        for i, line in enumerate(text.split("\n")):
-            p = doc.add_paragraph(line.strip())
-            p.alignment = (WD_ALIGN_PARAGRAPH.CENTER if i < 2 and line.strip()
-                           else WD_ALIGN_PARAGRAPH.JUSTIFY)
+        for role, content in _classify(text.strip().splitlines()):
+            if role == "title":
+                p = doc.add_paragraph()
+                run = p.add_run(content)
+                run.bold = True
+                run.font.size = Pt(14)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif role == "center":
+                p = doc.add_paragraph(content)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif role == "notary":
+                name = content.split(":", 1)[1].strip()
+                p = doc.add_paragraph(f"Нотариус:\t{name}")
+                p.paragraph_format.tab_stops.add_tab_stop(
+                    Cm(16.0), WD_TAB_ALIGNMENT.RIGHT)
+            else:
+                p = doc.add_paragraph(content.strip())
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         doc.save(str(out))
-        return out
-
-    @staticmethod
-    def _to_pdf(text: str, out: Path) -> Path:
-        import fitz
-
-        doc = fitz.open()
-        font_path = str(_font_file("OfisSerif"))
-        rect = fitz.Rect(60, 60, 535, 780)
-        remaining = text.strip()
-        while remaining:
-            chunk = remaining
-            while True:
-                page = doc.new_page(width=595, height=842)
-                page.insert_font(fontname="dover", fontfile=font_path)
-                spill = page.insert_textbox(rect, chunk, fontname="dover",
-                                            fontsize=12, lineheight=1.35, align=3)
-                if spill >= 0 or len(chunk) <= 200:
-                    break
-                doc.delete_page(doc.page_count - 1)
-                cut = chunk.rfind("\n", 0, int(len(chunk) * 0.85))
-                chunk = chunk[:cut if cut > 0 else int(len(chunk) * 0.85)]
-            remaining = remaining[len(chunk):].strip()
-        out.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(str(out), garbage=4, deflate=True)
-        doc.close()
         return out

@@ -118,10 +118,15 @@ class DoverView(QWidget):
 
         saved = ask_save_dir(self, [result.pdf_path, result.docx_path])
         extra = f" → {saved}" if saved else ""
-        self._status.setText(f"✅ Tayyor: {result.pdf_path.name} + Word нусхаси{extra}")
+        nums = (f"  |  Бланк: {result.series} · Реестр № {result.reestr}"
+                if result.series else "")
+        self._status.setText(
+            f"✅ Tayyor: {result.pdf_path.name} + Word нусхаси{nums}{extra}")
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
-        box.setText(f"Ҳужжат тайёр:\n{result.pdf_path}\n{result.docx_path}")
+        box.setText(
+            f"Ҳужжат тайёр:\n{result.pdf_path}\n{result.docx_path}\n\n"
+            f"Бланк серияси: {result.series}\nРеестр №: {result.reestr}")
         open_btn = box.addButton("Papkani ochish", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("OK", QMessageBox.ButtonRole.RejectRole)
         box.exec()

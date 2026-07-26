@@ -1,5 +1,24 @@
 # OFIS — Progress
 
+## Доверенность на нотариальном бланке + premium UI ✅
+- **Blank rendering**: every Доверенность/Согласие/Заявление PDF is now laid
+  onto the office's scanned notarial blank (`templates/dover_blank/page1.jpg`
+  — series pre-cleaned — + continuation `page2.jpg`). The series number
+  («77 АВ 2463964») is drawn per document in the blank's own red serif and
+  auto-increments; реестр № does too (12855, 12856, …). Word copy stays
+  blank-free. `src/pdf/dover_renderer.py` + tests.
+- **Layout per the approved образец**: title (СОГЛАСИЕ/…), «Город Москва.» and
+  the date-in-words centered; body justified; «Подпись:» line; удостоверительная
+  надпись; fixed block «Зарегистрировано в реестре: № N / Уплачено по тарифу:
+  1500 руб. / Нотариус: … Друганова М.В.» (AI's own реестр/тариф lines are
+  stripped and replaced — applies to ALL dover doc types).
+- **Settings → Доверенность**: серия prefix, next бланк number, next реестр №,
+  тариф — all editable; counters persist in the DB.
+- **Premium UI**: both themes rebuilt (gradient sidebar, accent-bar nav
+  selection, gradient RUN button, focus glow inputs, styled combos/tables/
+  scrollbars/dialogs/tooltips).
+- Tests: **49/49**.
+
 ## v1.0.0 — release polish ✅
 - **Backup/Restore (Phase 11)**: Settings → «Zaxira yaratish» zips the whole DB
   (firms, addresses, counters, archive) + user templates; «Zaxiradan tiklash»

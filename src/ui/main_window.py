@@ -145,8 +145,10 @@ class MainWindow(QMainWindow):
 
             return DoverView(
                 self._container.resolve(OcrService),
-                DoverService(key_getter=lambda: str(
-                    self._settings.get("ai.gemini_key", "") or "")),
+                DoverService(
+                    key_getter=lambda: str(self._settings.get("ai.gemini_key", "") or ""),
+                    settings=self._settings,
+                ),
             )
         if key == "nav.jpg2pdf":
             from src.ui.views.jpg2pdf_view import Jpg2PdfView

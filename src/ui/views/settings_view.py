@@ -78,6 +78,35 @@ class SettingsView(QWidget):
 
         root.addLayout(form)
 
+        # -- доверенность counters -------------------------------------
+        from src.services.dover_service import (
+            DEFAULT_REESTR_NEXT, DEFAULT_SERIES_NEXT, DEFAULT_SERIES_PREFIX,
+            DEFAULT_TARIF, KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX,
+            KEY_TARIF,
+        )
+
+        dv_title = QLabel("Доверенность / Согласие — бланк ва реестр")
+        dv_title.setStyleSheet("font-weight:600; margin-top:8px;")
+        root.addWidget(dv_title)
+        dv = QFormLayout()
+        dv.setVerticalSpacing(8)
+        self._dv_prefix = QLineEdit(
+            str(self._settings.get(KEY_SERIES_PREFIX, DEFAULT_SERIES_PREFIX) or DEFAULT_SERIES_PREFIX))
+        self._dv_series = QLineEdit(
+            str(self._settings.get(KEY_SERIES_NEXT, DEFAULT_SERIES_NEXT) or DEFAULT_SERIES_NEXT))
+        self._dv_reestr = QLineEdit(
+            str(self._settings.get(KEY_REESTR_NEXT, DEFAULT_REESTR_NEXT) or DEFAULT_REESTR_NEXT))
+        self._dv_tarif = QLineEdit(
+            str(self._settings.get(KEY_TARIF, DEFAULT_TARIF) or DEFAULT_TARIF))
+        dv.addRow("Бланк серияси (префикс):", self._dv_prefix)
+        dv.addRow("Кейинги бланк рақами:", self._dv_series)
+        dv.addRow("Кейинги реестр №:", self._dv_reestr)
+        dv.addRow("Тариф (руб.):", self._dv_tarif)
+        save_dv = QPushButton("Saqlash")
+        save_dv.clicked.connect(self._save_dover)
+        dv.addRow("", save_dv)
+        root.addLayout(dv)
+
         # -- backup / restore ------------------------------------------
         bk_title = QLabel("Zaxira nusxa / Резервная копия")
         bk_title.setStyleSheet("font-weight:600; margin-top:8px;")
@@ -118,6 +147,23 @@ class SettingsView(QWidget):
     def _save_lang(self, lang: str) -> None:
         self._settings.set("language", lang)
         QMessageBox.information(self, "OK", "Til saqlandi. Qayta ishga tushiring / Restart to apply.")
+
+    def _save_dover(self) -> None:
+        from src.services.dover_service import (
+            KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX, KEY_TARIF,
+        )
+
+        try:
+            series = int(self._dv_series.text().strip())
+            reestr = int(self._dv_reestr.text().strip())
+        except ValueError:
+            QMessageBox.warning(self, "Xato", "Бланк рақами ва реестр № — фақат рақам.")
+            return
+        self._settings.set(KEY_SERIES_PREFIX, self._dv_prefix.text().strip() or "77 АВ")
+        self._settings.set(KEY_SERIES_NEXT, series)
+        self._settings.set(KEY_REESTR_NEXT, reestr)
+        self._settings.set(KEY_TARIF, self._dv_tarif.text().strip() or "1500")
+        QMessageBox.information(self, "OK", "Доверенность рақамлари сақланди.")
 
     # -- backup / restore ----------------------------------------------
     def _create_backup(self) -> None:
