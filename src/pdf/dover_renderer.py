@@ -29,18 +29,67 @@ _LEADING = 1.42
 
 _CENTER, _JUSTIFY, _TITLE, _NOTARY = "center", "justify", "title", "notary"
 
+# красная строка — first-line indent of a body paragraph (≈1 cm)
+PARA_INDENT = 28.0
+
+_ENUM_RE = re.compile(r"^(\d+[\.)]\s|[-–—•]\s)")
+_TERMINAL = (".", ":", ";", "!", "?", "_")
+
 
 def blank_dir() -> Path:
     return paths.templates_dir() / "dover_blank"
 
 
+def _is_special(stripped: str, *, first: bool, prev_city: bool) -> bool:
+    low = stripped.lower()
+    if first or low.startswith(("город москва", "нотариус:", "подпись",
+                                "зарегистрировано", "уплачено")):
+        return True
+    return prev_city and not any(c.isdigit() for c in stripped) and (
+        "года" in low or "тысячи" in low
+    )
+
+
+def _reflow(lines: list[str]) -> list[str]:
+    """Merge hard-wrapped body lines back into full paragraphs.
+
+    AI (and pasted samples) often break one sentence across several short
+    lines; printed to the blank that leaves one-word lines. A body line is
+    glued to the previous paragraph unless the paragraph already ends a
+    sentence (terminal punctuation), a blank line intervenes, an enumeration
+    item starts, or either line is a special (title/city/date/…) line."""
+    out: list[str] = []
+    seen_first = False
+    prev_city = False
+    prev_special = True
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped:
+            out.append("")
+            prev_special = True
+            prev_city = False
+            continue
+        special = _is_special(stripped, first=not seen_first, prev_city=prev_city)
+        seen_first = True
+        prev_city = stripped.lower().startswith("город москва")
+        if special or prev_special or _ENUM_RE.match(stripped) or not out:
+            out.append(stripped)
+        else:
+            prev = out[-1]
+            if prev and not prev.endswith(_TERMINAL):
+                out[-1] = prev + " " + stripped
+            else:
+                out.append(stripped)
+        prev_special = special
+    return out
+
+
 def _classify(lines: list[str]) -> list[tuple[str, str]]:
-    """Tag each logical line with its layout role."""
+    """Tag each logical (reflowed) line with its layout role."""
     out: list[tuple[str, str]] = []
     seen_title = False
     prev_city = False
-    for raw in lines:
-        line = raw.rstrip()
+    for line in _reflow(lines):
         stripped = line.strip()
         if not stripped:
             out.append((_JUSTIFY, ""))
@@ -65,7 +114,7 @@ def _classify(lines: list[str]) -> list[tuple[str, str]]:
         if low.startswith("нотариус:"):
             out.append((_NOTARY, stripped))
             continue
-        out.append((_JUSTIFY, line))
+        out.append((_JUSTIFY, stripped))
     return out
 
 
@@ -105,14 +154,16 @@ def render_dover_pdf(text: str, out: Path, *, series: str | None) -> Path:
         if page is None or y + needed > _BOTTOM:
             new_page()
 
-    def wrap(words: list[str], font, size: float) -> list[list[str]]:
+    def wrap(words: list[str], font, size: float,
+             first_indent: float = 0.0) -> list[list[str]]:
         rows: list[list[str]] = []
         cur: list[str] = []
         cur_w = 0.0
         space = font.text_length(" ", fontsize=size)
         for w in words:
             ww = font.text_length(w, fontsize=size)
-            if cur and cur_w + space + ww > width:
+            avail = width - (first_indent if not rows else 0.0)
+            if cur and cur_w + space + ww > avail:
                 rows.append(cur)
                 cur, cur_w = [w], ww
             else:
@@ -151,19 +202,23 @@ def render_dover_pdf(text: str, out: Path, *, series: str | None) -> Path:
                 tw.append((_X1 - nw, y + _BODY_SIZE), name, font=serif, fontsize=_BODY_SIZE)
             y += step
             continue
-        # justified paragraph line(s)
+        # justified paragraph with красная строка on its first line
+        indent = 0.0 if content.lower().startswith(("подпись", "зарегистрировано",
+                                                    "уплачено")) else PARA_INDENT
         words = content.split()
-        rows = wrap(words, serif, _BODY_SIZE)
+        rows = wrap(words, serif, _BODY_SIZE, first_indent=indent)
         for i, row in enumerate(rows):
             ensure_room(step)
+            x_start = _X0 + (indent if i == 0 else 0.0)
+            row_width = _X1 - x_start
             last = i == len(rows) - 1
             if last or len(row) == 1:
-                tw.append((_X0, y + _BODY_SIZE), " ".join(row),
+                tw.append((x_start, y + _BODY_SIZE), " ".join(row),
                           font=serif, fontsize=_BODY_SIZE)
             else:
                 total = sum(serif.text_length(w, fontsize=_BODY_SIZE) for w in row)
-                gap = (width - total) / (len(row) - 1)
-                x = _X0
+                gap = (row_width - total) / (len(row) - 1)
+                x = x_start
                 for w in row:
                     tw.append((x, y + _BODY_SIZE), w, font=serif, fontsize=_BODY_SIZE)
                     x += serif.text_length(w, fontsize=_BODY_SIZE) + gap
