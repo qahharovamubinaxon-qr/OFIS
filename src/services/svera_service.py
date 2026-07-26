@@ -76,13 +76,34 @@ class SveraService:
         fill(_TEMPLATE_PATH, mapping, values, out_path)
         # Page 2 (the certificate) is typeset in full — its blank is empty, so
         # the labels, rules and stamps are drawn rather than mapped.
-        self._draw_certificate(out_path, values, photo_path, stamp)
+        framed = self._fit_photo(photo_path, out_path.parent)
+        self._draw_certificate(out_path, values, framed or photo_path, stamp)
 
         self._settings.set(_UDO_KEY, udo + 1)
         self._settings.set(_PO_KEY, po + 1)
         self._settings.set(_REG13_KEY, reg13 + 1)
         log.info("Generated СФЕРА %s (ПО%s) for %s", out_path.name, po, passport.surname)
         return SveraResult(pdf_path=out_path, udo_number=udo, po_number=po)
+
+    @staticmethod
+    def _fit_photo(photo: Path | None, folder: Path) -> Path | None:
+        """Crop whatever the operator uploaded to the certificate's frame:
+        head and shoulders centred, background white, filling it edge to edge."""
+        if photo is None or not photo.exists():
+            return None
+        from src.pdf.svera_udo import PHOTO_ASPECT
+        from src.services.photo_service import prepare_portrait
+
+        try:
+            png = prepare_portrait(photo.read_bytes(), aspect=PHOTO_ASPECT)
+        except Exception as exc:  # noqa: BLE001 - fall back to the raw photo
+            log.warning("Certificate photo not fitted (%s) — using it as-is", exc)
+            return None
+        if not png:
+            return None
+        out = folder / f".{photo.stem}_framed.png"
+        out.write_bytes(png)
+        return out
 
     @staticmethod
     def _draw_certificate(pdf: Path, values: dict, photo: Path | None,

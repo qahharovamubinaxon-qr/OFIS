@@ -213,11 +213,12 @@ class PhotoService:
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _document_crop(cv2, rgb, x, y, w, h):
-        """3:4 window around the face: head ≈60% of height, air above hair."""
+    def _document_crop(cv2, rgb, x, y, w, h, aspect: float = 0.75):
+        """Window around the face at ``aspect`` (w/h): head ≈60% of the height,
+        with air above the hair — the document-photo proportions."""
         H, W = rgb.shape[:2]
         crop_h = h * 2.4
-        crop_w = crop_h * 0.75
+        crop_w = crop_h * aspect
         top = y - 0.5 * h
         left = x + w / 2 - crop_w / 2
         pad = int(max(0.0, -left, -top, left + crop_w - W, top + crop_h - H)) + 1
@@ -263,9 +264,9 @@ class PhotoService:
         return out.astype("uint8")
 
     @staticmethod
-    def _center_crop(cv2, rgb):
+    def _center_crop(cv2, rgb, aspect: float = 0.75, out=None):
         h, w = rgb.shape[:2]
-        target = 3 / 4
+        target = aspect
         if w / h > target:
             new_w = int(h * target)
             x0 = (w - new_w) // 2
@@ -274,4 +275,46 @@ class PhotoService:
             new_h = int(w / target)
             y0 = max(0, (h - new_h) // 4)  # bias toward the top (face usually there)
             crop = rgb[y0:y0 + new_h, :]
-        return cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
+        return cv2.resize(crop, out or (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
+
+
+def prepare_portrait(data: bytes, aspect: float = 0.75, height: int = 800) -> bytes | None:
+    """Head-and-shoulders crop at ``aspect`` (width/height) on a white
+    background, ready to drop into a document frame edge to edge.
+
+    Runs the offline pipeline only (no AI): YuNet face detection → eye-line
+    straightening → document crop → GrabCut background whitening. Returns PNG
+    bytes, or None when the image cannot be read.
+    """
+    try:
+        import cv2
+    except ImportError:  # pragma: no cover - cv2 ships with the app
+        return None
+    try:
+        rgb = _load_rgb(data)
+    except Exception:  # noqa: BLE001 - unreadable upload
+        return None
+
+    size = (max(60, int(height * aspect)), height)
+    svc = PhotoService()
+    found = svc._detect_face(cv2, rgb)
+    if found is None:
+        log.info("Portrait: no face found — centre crop to the frame")
+        return _encode_png(svc._center_crop(cv2, rgb, aspect, size))
+
+    x, y, w, h, right_eye, left_eye = found
+    dx, dy = left_eye[0] - right_eye[0], left_eye[1] - right_eye[1]
+    if abs(dx) > 5:
+        angle = math.degrees(math.atan2(dy, dx))
+        if 2.0 < abs(angle) < 25.0:
+            mat = cv2.getRotationMatrix2D((x + w / 2, y + h / 2), angle, 1.0)
+            rgb = cv2.warpAffine(rgb, mat, (rgb.shape[1], rgb.shape[0]),
+                                 flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            again = svc._detect_face(cv2, rgb)
+            if again is not None:
+                x, y, w, h, *_ = again
+
+    crop = svc._document_crop(cv2, rgb, x, y, w, h, aspect)
+    crop = svc._whiten_background(cv2, crop)
+    crop = cv2.resize(crop, size, interpolation=cv2.INTER_AREA)
+    return _encode_png(crop)

@@ -39,6 +39,11 @@ _L_CENTRE = 209.4         # centre of the left card's text column
 _R_LEFT, _R_RIGHT = 328.5, 551.3
 _R_CENTRE = 439.9
 
+# the photo frame on the left card, and its width/height ratio — uploads are
+# cropped to exactly this so they fill it edge to edge
+PHOTO_BOX = (51.0, 128.3, 121.3, 208.4)
+PHOTO_ASPECT = (PHOTO_BOX[2] - PHOTO_BOX[0]) / (PHOTO_BOX[3] - PHOTO_BOX[1])
+
 
 @dataclass(frozen=True)
 class UdoData:
@@ -165,9 +170,11 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
 
     # ---------------- photo, then the stamps on top ----------------
     if data.photo_path and Path(data.photo_path).exists():
-        box = fitz.Rect(51.0, 128.3, 121.3, 208.4)
+        box = fitz.Rect(*PHOTO_BOX)
         try:
-            page.insert_image(box, filename=str(data.photo_path), keep_proportion=True)
+            # the upload is pre-cropped to PHOTO_ASPECT, so it fills the frame
+            page.insert_image(box, filename=str(data.photo_path),
+                              keep_proportion=False)
         except (RuntimeError, ValueError):
             pass
         page.draw_rect(box, color=(0, 0, 0), width=0.7)
