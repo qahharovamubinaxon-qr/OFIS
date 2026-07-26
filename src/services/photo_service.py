@@ -206,7 +206,7 @@ class PhotoService:
                     x, y, w, h, *_ = redetected
 
         crop = self._document_crop(cv2, rgb, x, y, w, h)
-        crop = self._whiten_background(cv2, crop)
+        crop = self._whiten_backdrop(cv2, crop)
         crop = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
         note = "Lokal usul" + (f" (AI: {self._last_error})" if getattr(self, "_last_error", "") else "")
         return PhotoResult(png=_encode_png(crop), face_found=True, note=note)
@@ -223,11 +223,66 @@ class PhotoService:
         left = x + w / 2 - crop_w / 2
         pad = int(max(0.0, -left, -top, left + crop_w - W, top + crop_h - H)) + 1
         if pad > 1:
-            rgb = cv2.copyMakeBorder(rgb, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+            # pad with white, not by replicating the edge — replication smears
+            # the border pixels into visible streaks on a document photo
+            rgb = cv2.copyMakeBorder(rgb, pad, pad, pad, pad,
+                                     cv2.BORDER_CONSTANT, value=(255, 255, 255))
             left += pad
             top += pad
         x0, y0 = int(max(0, left)), int(max(0, top))
         return rgb[y0:y0 + int(crop_h), x0:x0 + int(crop_w)]
+
+    @staticmethod
+    def _whiten_backdrop(cv2, crop):
+        """Whiten ONLY the backdrop, leaving the person and their clothes intact.
+
+        The backdrop is found by flooding inward from the top and the upper
+        side edges with a colour tolerance: the fill spreads across the even
+        studio background but stops at the hair, face and shoulders, so a dark
+        jacket is never mistaken for background the way a blind GrabCut
+        rectangle would. If the fill leaks over most of the frame (busy or
+        dark background) the photo is returned untouched.
+        """
+        import numpy as np
+
+        h, w = crop.shape[:2]
+        if h < 40 or w < 40:
+            return crop
+        bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+        smooth = cv2.GaussianBlur(bgr, (5, 5), 0)
+
+        mask = np.zeros((h + 2, w + 2), np.uint8)
+        tol = (26, 26, 26)
+        flags = 4 | cv2.FLOODFILL_MASK_ONLY | (255 << 8)
+        step = max(3, w // 48)
+        seeds = [(x, 0) for x in range(0, w, step)]
+        seeds += [(x, 1) for x in range(0, w, step * 2)]
+        # sides, upper two-thirds only — the shoulders own the lower band
+        for y in range(0, int(h * 0.62), step):
+            seeds += [(0, y), (w - 1, y)]
+        for sx, sy in seeds:
+            if mask[sy + 1, sx + 1] == 0:
+                try:
+                    cv2.floodFill(smooth, mask, (sx, sy), 255, tol, tol, flags)
+                except cv2.error:
+                    return crop
+
+        back = mask[1:-1, 1:-1]
+        share = float((back > 0).sum()) / (h * w)
+        if share < 0.03 or share > 0.85:
+            return crop  # nothing found, or the fill leaked into the person
+
+        # close over thin strips the fill could not cross (a slightly different
+        # shade of the same backdrop), then soften the silhouette edge
+        back = cv2.morphologyEx(back, cv2.MORPH_CLOSE,
+                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+        back = cv2.morphologyEx(back, cv2.MORPH_OPEN,
+                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+        back = cv2.GaussianBlur(back, (7, 7), 0)
+        alpha = back.astype(np.float32)[..., None] / 255.0
+        white = np.full_like(crop, 255, dtype=np.float32)
+        out = crop.astype(np.float32) * (1 - alpha) + white * alpha
+        return out.astype("uint8")
 
     @staticmethod
     def _whiten_background(cv2, crop):
@@ -315,6 +370,6 @@ def prepare_portrait(data: bytes, aspect: float = 0.75, height: int = 800) -> by
                 x, y, w, h, *_ = again
 
     crop = svc._document_crop(cv2, rgb, x, y, w, h, aspect)
-    crop = svc._whiten_background(cv2, crop)
+    crop = svc._whiten_backdrop(cv2, crop)
     crop = cv2.resize(crop, size, interpolation=cv2.INTER_AREA)
     return _encode_png(crop)
