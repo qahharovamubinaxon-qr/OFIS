@@ -206,6 +206,16 @@ def main() -> int:
     window = MainWindow(container, translator)
     window.show()
 
+    # Telegram bot (phone remote-control) — silent no-op without a token.
+    from src.controllers.telegram_bot import TelegramBot
+
+    bot = TelegramBot(container)
+    try:
+        bot.start()
+    except Exception as exc:  # noqa: BLE001 - bot must never block the UI
+        log.error("Telegram bot failed to start: %s", exc)
+    window._telegram_bot = bot  # keep alive for the app's lifetime
+
     log.info("UI ready (theme=%s, language=%s)", settings.theme, settings.language)
     return app.exec()
 

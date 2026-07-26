@@ -107,6 +107,35 @@ class SettingsView(QWidget):
         dv.addRow("", save_dv)
         root.addLayout(dv)
 
+        # -- telegram bot ----------------------------------------------
+        from src.controllers.telegram_bot import KEY_PASSWORD, KEY_TOKEN
+
+        tg_title = QLabel("Telegram бот — телефондан бошқариш")
+        tg_title.setStyleSheet("font-weight:600; margin-top:8px;")
+        root.addWidget(tg_title)
+        tg = QFormLayout()
+        tg.setVerticalSpacing(8)
+        self._tg_token = QLineEdit(str(self._settings.get(KEY_TOKEN, "") or ""))
+        self._tg_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._tg_token.setPlaceholderText("123456789:AA… (@BotFather'дан)")
+        self._tg_parol = QLineEdit(str(self._settings.get(KEY_PASSWORD, "") or ""))
+        self._tg_parol.setPlaceholderText("масалан: ofis2026")
+        tg.addRow("Бот токени:", self._tg_token)
+        tg.addRow("Парол:", self._tg_parol)
+        save_tg = QPushButton("Saqlash")
+        save_tg.clicked.connect(self._save_telegram)
+        tg.addRow("", save_tg)
+        root.addLayout(tg)
+        tg_hint = QLabel(
+            "Telegram'да @BotFather → /newbot → токенни шу ерга киритинг. "
+            "Телефондан ботга: /start ПАРОЛ — кейин расмларни юбориб PDF оласиз. "
+            "Бот ишлаши учун шу компютер ва OFIS очиқ туриши керак. "
+            "Токен киритилгач дастурни қайта очинг."
+        )
+        tg_hint.setStyleSheet("color:#8a94a3;")
+        tg_hint.setWordWrap(True)
+        root.addWidget(tg_hint)
+
         # -- backup / restore ------------------------------------------
         bk_title = QLabel("Zaxira nusxa / Резервная копия")
         bk_title.setStyleSheet("font-weight:600; margin-top:8px;")
@@ -164,6 +193,16 @@ class SettingsView(QWidget):
         self._settings.set(KEY_REESTR_NEXT, reestr)
         self._settings.set(KEY_TARIF, self._dv_tarif.text().strip() or "1500")
         QMessageBox.information(self, "OK", "Доверенность рақамлари сақланди.")
+
+    def _save_telegram(self) -> None:
+        from src.controllers.telegram_bot import KEY_PASSWORD, KEY_TOKEN
+
+        self._settings.set(KEY_TOKEN, self._tg_token.text().strip())
+        self._settings.set(KEY_PASSWORD, self._tg_parol.text().strip())
+        QMessageBox.information(
+            self, "OK",
+            "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
+            "bot shunda ishga tushadi.")
 
     # -- backup / restore ----------------------------------------------
     def _create_backup(self) -> None:
