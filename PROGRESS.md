@@ -1,5 +1,21 @@
 # OFIS — Progress
 
+## v1.0.0 — release polish ✅
+- **Backup/Restore (Phase 11)**: Settings → «Zaxira yaratish» zips the whole DB
+  (firms, addresses, counters, archive) + user templates; «Zaxiradan tiklash»
+  stages the ZIP and applies it on next start (pre-restore DB kept in backups/).
+  `src/services/backup_service.py`, tests in test_backup.py.
+- **User templates now live in AppData** (`%LOCALAPPDATA%\OFIS\templates`), not
+  inside the program folder — an EXE rebuild/update no longer deletes firms,
+  addresses or company templates added by the user.
+- **Packaging (Phase 14)**: real app icon (`resources/icons/ofis.ico`, generator
+  in scripts/make_icon.py), Windows version resource (build/version_info.txt),
+  Inno Setup installer script (build/installer.iss), portable ZIP step in
+  build_exe.bat. APP_VERSION → 1.0.0; window/taskbar icon set at startup.
+- Tests: **46/46**. Remaining (needs owner input): paid image-API key for
+  10/10 РАСМ-ФОТО; cleaned трудовой templates for the AI template-analysis
+  engine; notary requisites for Доверенность header.
+
 ## Current state — WORKING MVP ✅
 The app runs end-to-end and produces correct МВД Приложение № 7 PDFs.
 

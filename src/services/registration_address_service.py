@@ -59,7 +59,7 @@ class RegistrationAddressService:
         elif build_from_blank:
             from src.services.address_template_builder import AddressTemplateBuilder
 
-            dest_dir = paths.templates_dir() / f"registration_{address.internal_code.lower()}"
+            dest_dir = paths.user_templates_dir() / f"registration_{address.internal_code.lower()}"
             dest_dir.mkdir(parents=True, exist_ok=True)
             built = AddressTemplateBuilder().build(
                 dest_dir / "template.pdf",
@@ -78,7 +78,7 @@ class RegistrationAddressService:
         return address
 
     def _import_template(self, address: RegistrationAddress, source: Path) -> Path:
-        dest_dir = paths.templates_dir() / f"registration_{address.internal_code.lower()}"
+        dest_dir = paths.user_templates_dir() / f"registration_{address.internal_code.lower()}"
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / "template.pdf"
         shutil.copyfile(source, dest)

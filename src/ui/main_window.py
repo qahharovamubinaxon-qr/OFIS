@@ -159,7 +159,15 @@ class MainWindow(QMainWindow):
         if key == "nav.search":
             return ArchiveView(self._container.resolve(GeneratedRepository), "Qidiruv / Поиск")
         if key == "nav.settings":
-            return SettingsView(self._settings, on_theme_change=self._apply_theme)
+            from src.database.connection import Database
+            from src.services.backup_service import BackupService
+
+            db = self._container.resolve(Database)
+            return SettingsView(
+                self._settings,
+                on_theme_change=self._apply_theme,
+                backup=BackupService(db.connection),
+            )
         return QWidget()
 
     def _on_nav(self, index: int) -> None:

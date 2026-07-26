@@ -79,7 +79,7 @@ class TrudFirmService:
                hod_source: Path | None = None) -> TrudFirm:
         if self._repo.by_internal_code(code):
             raise ValidationError("Internal code already exists", context={"code": code})
-        dest = paths.templates_dir() / f"trud_{code.lower()}"
+        dest = paths.user_templates_dir() / f"trud_{code.lower()}"
         dest.mkdir(parents=True, exist_ok=True)
         trud = dest / f"trudovoy{trud_source.suffix.lower()}"
         uved = dest / f"uvedomlenie{uved_source.suffix.lower()}"

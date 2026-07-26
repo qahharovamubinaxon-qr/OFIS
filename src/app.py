@@ -168,6 +168,15 @@ def main() -> int:
     configure_logging()
     log.info("Starting OFIS")
 
+    # A staged backup restore must land before the DB is opened.
+    from src.services.backup_service import BackupService
+
+    try:
+        if BackupService.apply_pending_restore():
+            log.info("Pending backup restore applied")
+    except Exception as exc:  # noqa: BLE001 - a bad ZIP must not brick startup
+        log.error("Pending restore failed: %s", exc)
+
     try:
         container = build_container()
     except OfisError as exc:
@@ -186,6 +195,11 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("OFIS")
+    icon_file = paths.resources_dir() / "icons" / "ofis_256.png"
+    if icon_file.exists():
+        from PySide6.QtGui import QIcon
+
+        app.setWindowIcon(QIcon(str(icon_file)))
     apply_theme(app, settings.theme)
 
     translator = Translator(settings.language)

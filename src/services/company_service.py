@@ -55,8 +55,9 @@ class CompanyService:
         return company
 
     def _import_template(self, company: Company, source: Path) -> Path:
-        """Copy a company's blank template into templates/<code>/template.pdf."""
-        dest_dir = paths.templates_dir() / company.internal_code.lower()
+        """Copy a company's blank template into the user templates dir (AppData —
+        survives an EXE update)."""
+        dest_dir = paths.user_templates_dir() / company.internal_code.lower()
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / "template.pdf"
         shutil.copyfile(source, dest)

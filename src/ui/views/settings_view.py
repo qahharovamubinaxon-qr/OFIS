@@ -7,8 +7,11 @@ applies live; language change asks for a restart (view strings rebuild on start)
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -19,15 +22,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.common.errors import OfisError
 from src.config import constants, paths
 from src.config.settings_service import SettingsService
+from src.services.backup_service import BackupService
 
 
 class SettingsView(QWidget):
-    def __init__(self, settings: SettingsService, on_theme_change=None) -> None:
+    def __init__(
+        self,
+        settings: SettingsService,
+        on_theme_change=None,
+        backup: BackupService | None = None,
+    ) -> None:
         super().__init__()
         self._settings = settings
         self._on_theme_change = on_theme_change
+        self._backup = backup or BackupService()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
@@ -67,7 +78,29 @@ class SettingsView(QWidget):
 
         root.addLayout(form)
 
-        out = QLabel(f"Chiqish papkasi: {paths.output_dir()}")
+        # -- backup / restore ------------------------------------------
+        bk_title = QLabel("Zaxira nusxa / Резервная копия")
+        bk_title.setStyleSheet("font-weight:600; margin-top:8px;")
+        root.addWidget(bk_title)
+        bk_row = QHBoxLayout()
+        make_bk = QPushButton("💾  Zaxira yaratish (ZIP)")
+        make_bk.clicked.connect(self._create_backup)
+        restore_bk = QPushButton("📥  Zaxiradan tiklash")
+        restore_bk.clicked.connect(self._restore_backup)
+        bk_row.addWidget(make_bk)
+        bk_row.addWidget(restore_bk)
+        bk_row.addStretch(1)
+        root.addLayout(bk_row)
+        bk_hint = QLabel(
+            "Zaxira ZIP ichida: butun baza (firmalar, manzillar, hisoblagichlar, "
+            "arxiv yozuvlari) + yuklangan shablonlar. Yangi kompyuterga o'tishda "
+            "yoki har oy bir marta zaxira oling."
+        )
+        bk_hint.setStyleSheet("color:#8a94a3;")
+        bk_hint.setWordWrap(True)
+        root.addWidget(bk_hint)
+
+        out = QLabel(f"Chiqish papkasi: {paths.output_dir()}\nMa'lumotlar: {paths.data_dir()}")
         out.setStyleSheet("color:#8a94a3;")
         out.setWordWrap(True)
         root.addWidget(out)
@@ -85,3 +118,42 @@ class SettingsView(QWidget):
     def _save_lang(self, lang: str) -> None:
         self._settings.set("language", lang)
         QMessageBox.information(self, "OK", "Til saqlandi. Qayta ishga tushiring / Restart to apply.")
+
+    # -- backup / restore ----------------------------------------------
+    def _create_backup(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "Zaxira qayerga saqlansin?", str(paths.desktop_dir())
+        )
+        if not folder:
+            return
+        try:
+            target = self._backup.create_backup(Path(folder))
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        QMessageBox.information(self, "Tayyor", f"Zaxira nusxa yaratildi:\n{target}")
+
+    def _restore_backup(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Zaxira ZIP faylini tanlang", str(paths.desktop_dir()),
+            "OFIS backup (*.zip)",
+        )
+        if not path:
+            return
+        confirm = QMessageBox.question(
+            self, "Tasdiqlash",
+            "Joriy ma'lumotlar zaxiradagi bilan ALMASHTIRILADI.\n"
+            "(Hozirgi baza avval backups/ papkasiga saqlab qo'yiladi.)\n\nDavom etamizmi?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            BackupService.stage_restore(Path(path))
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        QMessageBox.information(
+            self, "Tayyor",
+            "Zaxira qabul qilindi.\nDasturni YOPIB QAYTA OCHING — "
+            "ma'lumotlar shunda tiklanadi.",
+        )

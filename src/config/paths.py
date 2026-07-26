@@ -67,6 +67,14 @@ def backups_dir() -> Path:
     return _sub("backups")
 
 
+def user_templates_dir() -> Path:
+    """Templates the user imports at runtime (firms, addresses, companies).
+
+    Lives in AppData — NOT inside the program folder — so rebuilding or
+    updating the EXE never deletes them."""
+    return _sub("templates")
+
+
 def output_dir() -> Path:
     return _sub("output")
 

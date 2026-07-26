@@ -33,7 +33,8 @@ exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="OFIS",
     console=False,  # windowed — no terminal window
-    icon=None,
+    icon=str(ROOT / "resources" / "icons" / "ofis.ico"),
+    version=str(ROOT / "build" / "version_info.txt"),
 )
 coll = COLLECT(  # noqa: F821
     exe, a.binaries, a.datas, name="OFIS"
