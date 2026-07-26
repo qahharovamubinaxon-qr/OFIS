@@ -60,6 +60,12 @@ QStatusBar::item { border: none; }
 #primaryButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                        stop:0 #4f89ff, stop:1 #3a6ff5); }
 
+#settingsNav { background: #ffffff; border: 1px solid #e4e8ee; border-radius: 12px;
+               padding: 8px; outline: 0; }
+#settingsNav::item { padding: 10px 12px; margin: 2px 0; border-radius: 8px; color: #55606f; }
+#settingsNav::item:hover { background: #f0f3f8; color: #1c2430; }
+#settingsNav::item:selected { background: #e3ecff; color: #0f213f; font-weight: 600; }
+
 /* ---------- buttons ---------- */
 QPushButton { background: #ffffff; border: 1px solid #d7dde6; border-radius: 9px;
               padding: 8px 16px; color: #1c2430; }

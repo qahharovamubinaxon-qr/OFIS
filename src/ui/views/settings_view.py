@@ -17,9 +17,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -37,6 +40,21 @@ def _right(widget: QWidget) -> QHBoxLayout:
     row.addStretch(1)
     row.addWidget(widget)
     return row
+
+
+def _open_folder(folder) -> None:
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(folder)])  # noqa: S603,S607
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])  # noqa: S603,S607
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])  # noqa: S603,S607
+    except OSError:
+        pass
 
 
 class SettingsView(QWidget):
@@ -59,18 +77,27 @@ class SettingsView(QWidget):
         title.setObjectName("viewTitle")
         page.addWidget(title)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        holder = QWidget()
-        root = QVBoxLayout(holder)
-        root.setContentsMargins(0, 0, 10, 0)
-        root.setSpacing(16)
-        scroll.setWidget(holder)
-        page.addWidget(scroll, stretch=1)
+        # Sub-navigation: sections on the left, one page of cards each — the
+        # settings no longer read as one long scroll.
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        page.addLayout(body, stretch=1)
+
+        self._sections = QListWidget()
+        self._sections.setObjectName("settingsNav")
+        self._sections.setFixedWidth(200)
+        self._sections.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sections.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._sections.setTextElideMode(Qt.TextElideMode.ElideRight)
+        body.addWidget(self._sections)
+
+        self._pages = QStackedWidget()
+        body.addWidget(self._pages, stretch=1)
+        self._sections.currentRowChanged.connect(self._pages.setCurrentIndex)
 
         # -- AI ---------------------------------------------------------
+        root = self._section("🤖", "Sun'iy intellekt")
         ai = Card("🤖", "Sun'iy intellekt",
                   "Hujjatlarni o'qish, tarjima va matn tayyorlash uchun Gemini kaliti.")
         key_row = QHBoxLayout()
@@ -84,9 +111,14 @@ class SettingsView(QWidget):
         key_row.addWidget(self._key, stretch=1)
         key_row.addWidget(save_key)
         ai.add(key_row)
+        self._ai_state = ai.note("")
+        ai.note("Kalit: aistudio.google.com/apikey — bepul limit tugasa "
+                "billing yoqiladi.")
         root.addWidget(ai)
+        root.addStretch(1)
 
         # -- appearance --------------------------------------------------
+        root = self._section("🎨", "Ko'rinish")
         look = Card("🎨", "Ko'rinish", "Mavzu darhol, til qayta ishga tushirgach.")
         look_form = look.form()
         self._theme = QComboBox()
@@ -100,8 +132,10 @@ class SettingsView(QWidget):
         self._lang.currentTextChanged.connect(self._save_lang)
         look_form.addRow("Til / Язык:", self._lang)
         root.addWidget(look)
+        root.addStretch(1)
 
         # -- доверенность counters ---------------------------------------
+        root = self._section("📜", "Рақамлар")
         from src.services.dover_service import (
             DEFAULT_REESTR_NEXT, DEFAULT_SERIES_NEXT, DEFAULT_SERIES_PREFIX,
             DEFAULT_TARIF, KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX,
@@ -129,8 +163,10 @@ class SettingsView(QWidget):
         save_dv.clicked.connect(self._save_dover)
         dover.add(_right(save_dv))
         root.addWidget(dover)
+        root.addStretch(1)
 
         # -- telegram bot -------------------------------------------------
+        root = self._section("📱", "Telegram bot")
         from src.controllers.telegram_bot import KEY_PASSWORD, KEY_TOKEN
 
         tg_card = Card("📱", "Telegram bot",
@@ -147,13 +183,16 @@ class SettingsView(QWidget):
         save_tg.setObjectName("primaryButton")
         save_tg.clicked.connect(self._save_telegram)
         tg_card.add(_right(save_tg))
+        self._tg_state = tg_card.note("")
         tg_card.note(
             "@BotFather → /newbot → tokenni shu yerga kiriting. Telefondan botga: "
             "/start PAROL. Token kiritilgach dasturni qayta oching."
         )
         root.addWidget(tg_card)
+        root.addStretch(1)
 
         # -- backup / restore ---------------------------------------------
+        root = self._section("💾", "Zaxira")
         bk = Card("💾", "Zaxira nusxa",
                   "Butun baza (firmalar, manzillar, hisoblagichlar, arxiv) + shablonlar.")
         bk_row = QHBoxLayout()
@@ -165,19 +204,76 @@ class SettingsView(QWidget):
         bk_row.addWidget(restore_bk)
         bk_row.addStretch(1)
         bk.add(bk_row)
+        self._bk_state = bk.note("")
         bk.note("Yangi kompyuterga o'tishda yoki har oy bir marta zaxira oling.")
         root.addWidget(bk)
+        root.addStretch(1)
 
         # -- folders --------------------------------------------------------
-        folders = Card("📁", "Papkalar", "")
-        folders.note(f"Chiqish papkasi:  {paths.output_dir()}")
-        folders.note(f"Ma'lumotlar:  {paths.data_dir()}")
+        root = self._section("📁", "Papkalar")
+        folders = Card("📁", "Papkalar", "Hujjatlar va ma'lumotlar qayerda turadi.")
+        for label, folder in (("Chiqish papkasi", paths.output_dir()),
+                              ("Ma'lumotlar", paths.data_dir()),
+                              ("Zaxiralar", paths.backups_dir())):
+            row = QHBoxLayout()
+            text = QLabel(f"{label}:  {folder}")
+            text.setObjectName("cardNote")
+            text.setWordWrap(True)
+            open_btn = QPushButton("Ochish")
+            open_btn.clicked.connect(lambda _=False, f=folder: _open_folder(f))
+            row.addWidget(text, stretch=1)
+            row.addWidget(open_btn)
+            folders.add(row)
         root.addWidget(folders)
-
         root.addStretch(1)
+
+        self._sections.setCurrentRow(0)
+        self._refresh_states()
+
+    # ------------------------------------------------------------------
+    def _section(self, icon: str, title: str) -> QVBoxLayout:
+        """Register a settings section and return the layout for its cards."""
+        item = QListWidgetItem(f"{icon}   {title}")
+        self._sections.addItem(item)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        holder = QWidget()
+        layout = QVBoxLayout(holder)
+        layout.setContentsMargins(0, 0, 10, 0)
+        layout.setSpacing(16)
+        scroll.setWidget(holder)
+        self._pages.addWidget(scroll)
+        return layout
+
+    def refresh(self) -> None:
+        self._refresh_states()
+
+    def _refresh_states(self) -> None:
+        """Show at a glance what is configured and what is not."""
+        from src.controllers.telegram_bot import KEY_TOKEN
+
+        has_key = bool(str(self._settings.get("ai.gemini_key", "") or "").strip())
+        self._ai_state.setText("✅  Kalit kiritilgan — AI ishlaydi." if has_key
+                               else "⚠️  Kalit yo'q — AI bo'limlari ishlamaydi.")
+
+        has_token = bool(str(self._settings.get(KEY_TOKEN, "") or "").strip())
+        self._tg_state.setText("✅  Token kiritilgan — bot ishga tushadi." if has_token
+                               else "⚠️  Token yo'q — bot o'chirilgan.")
+
+        backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
+        if backups:
+            newest = backups[-1]
+            stamp = newest.stem.replace("OFIS_backup_", "").replace("_", " ")
+            self._bk_state.setText(f"Oxirgi zaxira:  {stamp}  ({len(backups)} ta)")
+        else:
+            self._bk_state.setText("⚠️  Hali zaxira olinmagan.")
 
     def _save_key(self) -> None:
         self._settings.set("ai.gemini_key", self._key.text().strip())
+        self._refresh_states()
         QMessageBox.information(self, "OK", "Gemini kaliti saqlandi. Keyingi PDF'da ishlaydi.")
 
     def _save_theme(self, theme: str) -> None:
@@ -211,6 +307,7 @@ class SettingsView(QWidget):
 
         self._settings.set(KEY_TOKEN, self._tg_token.text().strip())
         self._settings.set(KEY_PASSWORD, self._tg_parol.text().strip())
+        self._refresh_states()
         QMessageBox.information(
             self, "OK",
             "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
@@ -228,6 +325,7 @@ class SettingsView(QWidget):
         except OfisError as exc:
             QMessageBox.warning(self, "Xato", exc.message)
             return
+        self._refresh_states()
         QMessageBox.information(self, "Tayyor", f"Zaxira nusxa yaratildi:\n{target}")
 
     def _restore_backup(self) -> None:
