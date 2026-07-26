@@ -9,15 +9,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
-    QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +28,15 @@ from src.common.errors import OfisError
 from src.config import constants, paths
 from src.config.settings_service import SettingsService
 from src.services.backup_service import BackupService
+from src.ui.widgets.card import Card
+
+
+def _right(widget: QWidget) -> QHBoxLayout:
+    """Push a single control to the right edge of its card."""
+    row = QHBoxLayout()
+    row.addStretch(1)
+    row.addWidget(widget)
+    return row
 
 
 class SettingsView(QWidget):
@@ -40,81 +51,91 @@ class SettingsView(QWidget):
         self._on_theme_change = on_theme_change
         self._backup = backup or BackupService()
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(14)
+        page = QVBoxLayout(self)
+        page.setContentsMargins(28, 24, 28, 16)
+        page.setSpacing(14)
 
         title = QLabel("Sozlamalar / Настройки")
         title.setObjectName("viewTitle")
-        root.addWidget(title)
+        page.addWidget(title)
 
-        form = QFormLayout()
-        form.setVerticalSpacing(12)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        holder = QWidget()
+        root = QVBoxLayout(holder)
+        root.setContentsMargins(0, 0, 10, 0)
+        root.setSpacing(16)
+        scroll.setWidget(holder)
+        page.addWidget(scroll, stretch=1)
 
-        # Gemini key
+        # -- AI ---------------------------------------------------------
+        ai = Card("🤖", "Sun'iy intellekt",
+                  "Hujjatlarni o'qish, tarjima va matn tayyorlash uchun Gemini kaliti.")
         key_row = QHBoxLayout()
         self._key = QLineEdit(str(self._settings.get("ai.gemini_key", "") or ""))
         self._key.setEchoMode(QLineEdit.EchoMode.Password)
         self._key.setPlaceholderText("AIza…")
         save_key = QPushButton("Saqlash")
+        save_key.setObjectName("primaryButton")
         save_key.clicked.connect(self._save_key)
+        key_row.addWidget(QLabel("Gemini API kalit:"))
         key_row.addWidget(self._key, stretch=1)
         key_row.addWidget(save_key)
-        form.addRow("Gemini API kalit:", key_row)
+        ai.add(key_row)
+        root.addWidget(ai)
 
-        # theme
+        # -- appearance --------------------------------------------------
+        look = Card("🎨", "Ko'rinish", "Mavzu darhol, til qayta ishga tushirgach.")
+        look_form = look.form()
         self._theme = QComboBox()
         self._theme.addItems(constants.SUPPORTED_THEMES)
         self._theme.setCurrentText(self._settings.theme)
         self._theme.currentTextChanged.connect(self._save_theme)
-        form.addRow("Mavzu / Theme:", self._theme)
-
-        # language
+        look_form.addRow("Mavzu / Theme:", self._theme)
         self._lang = QComboBox()
         self._lang.addItems(constants.SUPPORTED_LANGUAGES)
         self._lang.setCurrentText(self._settings.language)
         self._lang.currentTextChanged.connect(self._save_lang)
-        form.addRow("Til / Язык:", self._lang)
+        look_form.addRow("Til / Язык:", self._lang)
+        root.addWidget(look)
 
-        root.addLayout(form)
-
-        # -- доверенность counters -------------------------------------
+        # -- доверенность counters ---------------------------------------
         from src.services.dover_service import (
             DEFAULT_REESTR_NEXT, DEFAULT_SERIES_NEXT, DEFAULT_SERIES_PREFIX,
             DEFAULT_TARIF, KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX,
             KEY_TARIF,
         )
 
-        dv_title = QLabel("Доверенность / Согласие — бланк ва реестр")
-        dv_title.setStyleSheet("font-weight:600; margin-top:8px;")
-        root.addWidget(dv_title)
-        dv = QFormLayout()
-        dv.setVerticalSpacing(8)
-        self._dv_prefix = QLineEdit(
-            str(self._settings.get(KEY_SERIES_PREFIX, DEFAULT_SERIES_PREFIX) or DEFAULT_SERIES_PREFIX))
-        self._dv_series = QLineEdit(
-            str(self._settings.get(KEY_SERIES_NEXT, DEFAULT_SERIES_NEXT) or DEFAULT_SERIES_NEXT))
-        self._dv_reestr = QLineEdit(
-            str(self._settings.get(KEY_REESTR_NEXT, DEFAULT_REESTR_NEXT) or DEFAULT_REESTR_NEXT))
-        self._dv_tarif = QLineEdit(
-            str(self._settings.get(KEY_TARIF, DEFAULT_TARIF) or DEFAULT_TARIF))
+        dover = Card("📜", "Доверенность · Согласие",
+                     "Бланк серияси ва реестр рақами ҳар ҳужжатда автомат +1 бўлади.")
+        dv = dover.form()
+        self._dv_prefix = QLineEdit(str(
+            self._settings.get(KEY_SERIES_PREFIX, DEFAULT_SERIES_PREFIX)
+            or DEFAULT_SERIES_PREFIX))
+        self._dv_series = QLineEdit(str(
+            self._settings.get(KEY_SERIES_NEXT, DEFAULT_SERIES_NEXT) or DEFAULT_SERIES_NEXT))
+        self._dv_reestr = QLineEdit(str(
+            self._settings.get(KEY_REESTR_NEXT, DEFAULT_REESTR_NEXT) or DEFAULT_REESTR_NEXT))
+        self._dv_tarif = QLineEdit(str(
+            self._settings.get(KEY_TARIF, DEFAULT_TARIF) or DEFAULT_TARIF))
         dv.addRow("Бланк серияси (префикс):", self._dv_prefix)
         dv.addRow("Кейинги бланк рақами:", self._dv_series)
         dv.addRow("Кейинги реестр №:", self._dv_reestr)
         dv.addRow("Тариф (руб.):", self._dv_tarif)
         save_dv = QPushButton("Saqlash")
+        save_dv.setObjectName("primaryButton")
         save_dv.clicked.connect(self._save_dover)
-        dv.addRow("", save_dv)
-        root.addLayout(dv)
+        dover.add(_right(save_dv))
+        root.addWidget(dover)
 
-        # -- telegram bot ----------------------------------------------
+        # -- telegram bot -------------------------------------------------
         from src.controllers.telegram_bot import KEY_PASSWORD, KEY_TOKEN
 
-        tg_title = QLabel("Telegram бот — телефондан бошқариш")
-        tg_title.setStyleSheet("font-weight:600; margin-top:8px;")
-        root.addWidget(tg_title)
-        tg = QFormLayout()
-        tg.setVerticalSpacing(8)
+        tg_card = Card("📱", "Telegram bot",
+                       "Telefondan PDF tayyorlash — kompyuter va OFIS ochiq turishi kerak.")
+        tg = tg_card.form()
         self._tg_token = QLineEdit(str(self._settings.get(KEY_TOKEN, "") or ""))
         self._tg_token.setEchoMode(QLineEdit.EchoMode.Password)
         self._tg_token.setPlaceholderText("123456789:AA… (@BotFather'дан)")
@@ -123,23 +144,18 @@ class SettingsView(QWidget):
         tg.addRow("Бот токени:", self._tg_token)
         tg.addRow("Парол:", self._tg_parol)
         save_tg = QPushButton("Saqlash")
+        save_tg.setObjectName("primaryButton")
         save_tg.clicked.connect(self._save_telegram)
-        tg.addRow("", save_tg)
-        root.addLayout(tg)
-        tg_hint = QLabel(
-            "Telegram'да @BotFather → /newbot → токенни шу ерга киритинг. "
-            "Телефондан ботга: /start ПАРОЛ — кейин расмларни юбориб PDF оласиз. "
-            "Бот ишлаши учун шу компютер ва OFIS очиқ туриши керак. "
-            "Токен киритилгач дастурни қайта очинг."
+        tg_card.add(_right(save_tg))
+        tg_card.note(
+            "@BotFather → /newbot → tokenni shu yerga kiriting. Telefondan botga: "
+            "/start PAROL. Token kiritilgach dasturni qayta oching."
         )
-        tg_hint.setStyleSheet("color:#8a94a3;")
-        tg_hint.setWordWrap(True)
-        root.addWidget(tg_hint)
+        root.addWidget(tg_card)
 
-        # -- backup / restore ------------------------------------------
-        bk_title = QLabel("Zaxira nusxa / Резервная копия")
-        bk_title.setStyleSheet("font-weight:600; margin-top:8px;")
-        root.addWidget(bk_title)
+        # -- backup / restore ---------------------------------------------
+        bk = Card("💾", "Zaxira nusxa",
+                  "Butun baza (firmalar, manzillar, hisoblagichlar, arxiv) + shablonlar.")
         bk_row = QHBoxLayout()
         make_bk = QPushButton("💾  Zaxira yaratish (ZIP)")
         make_bk.clicked.connect(self._create_backup)
@@ -148,20 +164,16 @@ class SettingsView(QWidget):
         bk_row.addWidget(make_bk)
         bk_row.addWidget(restore_bk)
         bk_row.addStretch(1)
-        root.addLayout(bk_row)
-        bk_hint = QLabel(
-            "Zaxira ZIP ichida: butun baza (firmalar, manzillar, hisoblagichlar, "
-            "arxiv yozuvlari) + yuklangan shablonlar. Yangi kompyuterga o'tishda "
-            "yoki har oy bir marta zaxira oling."
-        )
-        bk_hint.setStyleSheet("color:#8a94a3;")
-        bk_hint.setWordWrap(True)
-        root.addWidget(bk_hint)
+        bk.add(bk_row)
+        bk.note("Yangi kompyuterga o'tishda yoki har oy bir marta zaxira oling.")
+        root.addWidget(bk)
 
-        out = QLabel(f"Chiqish papkasi: {paths.output_dir()}\nMa'lumotlar: {paths.data_dir()}")
-        out.setStyleSheet("color:#8a94a3;")
-        out.setWordWrap(True)
-        root.addWidget(out)
+        # -- folders --------------------------------------------------------
+        folders = Card("📁", "Papkalar", "")
+        folders.note(f"Chiqish papkasi:  {paths.output_dir()}")
+        folders.note(f"Ma'lumotlar:  {paths.data_dir()}")
+        root.addWidget(folders)
+
         root.addStretch(1)
 
     def _save_key(self) -> None:

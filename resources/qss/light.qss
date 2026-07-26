@@ -43,6 +43,18 @@ QStatusBar::item { border: none; }
 #statValue { font-size: 30px; font-weight: 800; color: #2f6bff; background: transparent; }
 #statLabel { font-size: 12px; color: #6b7686; background: transparent; }
 
+#card { background: #ffffff; border: 1px solid #e4e8ee; border-radius: 16px; }
+#card QLabel { background: transparent; }
+#cardTitle { font-size: 15px; font-weight: 700; color: #131a24; letter-spacing: 0.2px; }
+#cardSubtitle { font-size: 12.5px; color: #6b7686; }
+#cardNote { font-size: 12px; color: #8a94a3; }
+#primaryButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                 stop:0 #3f7dff, stop:1 #2b64f0);
+                 color: #ffffff; font-weight: 600; border: 1px solid #2f6bff;
+                 border-radius: 8px; padding: 7px 20px; }
+#primaryButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                       stop:0 #4f89ff, stop:1 #3a6ff5); }
+
 /* ---------- buttons ---------- */
 QPushButton { background: #ffffff; border: 1px solid #d7dde6; border-radius: 9px;
               padding: 8px 16px; color: #1c2430; }

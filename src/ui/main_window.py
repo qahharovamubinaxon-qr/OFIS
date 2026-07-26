@@ -7,11 +7,12 @@ for its real view without touching this shell — the navigation contract stays 
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QStackedWidget,
     QStatusBar,
@@ -43,22 +44,27 @@ from src.ui.views.svera_view import SveraView
 from src.ui.views.photo_view import PhotoView
 from src.ui.views.trud_view import TrudView
 
+# (section header | None, key, default title, subtitle, icon)
 _NAV = [
-    ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts", "📊"),
-    ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF", "🛂"),
-    ("nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
-    ("nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
-    ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
-    ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
-    ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
-    ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
-    ("nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
-    ("nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
-    ("nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
-    ("nav.companies", "Companies", "Templates, logos and company data", "🏢"),
-    ("nav.archive", "Archive", "Every generated package, by year and company", "🗂️"),
-    ("nav.search", "Search", "Find an employee by passport, patent or name", "🔍"),
-    ("nav.settings", "Settings", "Language, theme, AI providers, folders", "⚙️"),
+    (None, "nav.dashboard", "Dashboard", "Today's activity, totals and alerts", "📊"),
+    ("МИГРАЦИЯ", "nav.process", "Process Employee",
+     "Upload documents → OCR → verify → PDF", "🛂"),
+    (None, "nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
+    (None, "nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
+    (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
+    (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
+    ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
+    (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
+    ("ҲУЖЖАТ", "nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
+    (None, "nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
+    (None, "nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
+    ("БАЗА", "nav.companies", "Companies", "Templates, logos and company data", "🏢"),
+    (None, "nav.archive", "Archive",
+     "Every generated package, by year and company", "🗂️"),
+    (None, "nav.search", "Search",
+     "Find an employee by passport, patent or name", "🔍"),
+    (None, "nav.settings", "Settings",
+     "Language, theme, AI providers, folders", "⚙️"),
 ]
 
 
@@ -85,12 +91,19 @@ class MainWindow(QMainWindow):
         root.addWidget(self._stack, stretch=1)
         self.setCentralWidget(central)
 
-        for key, title, subtitle, icon in _NAV:
-            self._nav_list.addItem(f"{icon}  {self._tr.tr(key, title)}")
+        # Section headers are non-selectable list rows, so the nav reads as
+        # grouped sections while the stack still maps 1:1 to real entries.
+        self._row_to_page: dict[int, int] = {}
+        for section, key, title, subtitle, icon in _NAV:
+            if section:
+                self._nav_list.addItem(self._section_item(section))
+            item = QListWidgetItem(f"{icon}   {self._tr.tr(key, title)}")
+            self._nav_list.addItem(item)
+            self._row_to_page[self._nav_list.count() - 1] = self._stack.count()
             self._stack.addWidget(self._make_view(key, title, subtitle))
 
         self._nav_list.currentRowChanged.connect(self._on_nav)
-        self._nav_list.setCurrentRow(1)  # open on Process Employee
+        self._select_page(1)  # open on Process Employee
 
         self._build_status_bar()
 
@@ -200,8 +213,34 @@ class MainWindow(QMainWindow):
             )
         return QWidget()
 
-    def _on_nav(self, index: int) -> None:
-        self._stack.setCurrentIndex(index)
+    @staticmethod
+    def _section_item(text: str) -> QListWidgetItem:
+        """A small, muted, non-selectable group heading inside the nav list."""
+        from PySide6.QtGui import QColor, QFont
+
+        item = QListWidgetItem(text)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
+        item.setFont(font)
+        item.setForeground(QColor("#7c879a"))
+        item.setSizeHint(QSize(0, 30))
+        return item
+
+    def _select_page(self, page_index: int) -> None:
+        """Focus the nav row that owns ``page_index`` in the stack."""
+        for row, page in self._row_to_page.items():
+            if page == page_index:
+                self._nav_list.setCurrentRow(row)
+                return
+
+    def _on_nav(self, row: int) -> None:
+        page = self._row_to_page.get(row)
+        if page is None:  # a section header — ignore
+            return
+        self._stack.setCurrentIndex(page)
         view = self._stack.currentWidget()
         refresh = getattr(view, "refresh", None)
         if callable(refresh):

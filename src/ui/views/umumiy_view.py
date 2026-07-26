@@ -13,7 +13,6 @@ from pathlib import Path
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QDateEdit,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -27,7 +26,7 @@ from src.common.errors import OfisError
 from src.common.threading import run_async
 from src.ocr.service import OcrService
 from src.services.umumiy_service import UmumiyResult, UmumiyService
-from src.ui.widgets.drop_zone import DropZone
+from src.ui.widgets.multi_drop import PDF_EXTS, MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
 
 
@@ -36,7 +35,6 @@ class UmumiyView(QWidget):
         super().__init__()
         self._ocr = ocr
         self._svc = service
-        self._doc: Path | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
@@ -46,30 +44,29 @@ class UmumiyView(QWidget):
         title.setObjectName("viewTitle")
         root.addWidget(title)
 
-        # -- source document + date -------------------------------------
+        # -- date --------------------------------------------------------
         row = QHBoxLayout()
-        self._doc_label = QLabel("Ҳужжат танланмаган (PDF)")
-        pick = QPushButton("📄  Ҳужжат танлаш (PDF)")
-        pick.clicked.connect(self._pick_doc)
-        row.addWidget(pick)
-        row.addWidget(self._doc_label, stretch=1)
+        row.addWidget(QLabel("Ҳужжат санаси:"))
         self._date = QDateEdit()
         self._date.setDisplayFormat("dd.MM.yyyy")
         self._date.setDate(QDate.currentDate())
         self._date.setCalendarPopup(True)
-        row.addWidget(QLabel("Сана:"))
         row.addWidget(self._date)
+        row.addStretch(1)
         root.addLayout(row)
 
-        # -- worker documents -------------------------------------------
+        # -- two drop areas side by side ---------------------------------
         up = QHBoxLayout()
-        up.setSpacing(12)
-        self._dz_passport = DropZone("🛂", "Паспорт")
-        self._dz_patent = DropZone("📄", "Патент / Миграционка (олд)")
-        self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
-        for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
-            up.addWidget(dz, stretch=1)
-        root.addLayout(up)
+        up.setSpacing(14)
+        self._dz_doc = MultiDropZone(
+            "Ҳужжат (PDF) — қайта ишланадиган", limit=1,
+            exts=PDF_EXTS, icon="📄", min_height=170)
+        self._dz_worker = MultiDropZone(
+            "Ишчи ҳужжатлари — паспорт · патент · миграционка (хоҳлаганча)",
+            limit=10, icon="🛂", min_height=170)
+        up.addWidget(self._dz_doc, stretch=1)
+        up.addWidget(self._dz_worker, stretch=1)
+        root.addLayout(up, stretch=1)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (Умумий)")
@@ -96,38 +93,34 @@ class UmumiyView(QWidget):
         root.addStretch(1)
 
     # ------------------------------------------------------------------
-    def _pick_doc(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Ҳужжат (PDF)", "", "PDF (*.pdf)")
-        if path:
-            self._doc = Path(path)
-            self._doc_label.setText(f"✓ {self._doc.name}")
-
     def _form_date(self) -> date:
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
 
     def _run_ai(self) -> None:
-        if self._doc is None:
-            self._warn("Аввал ҳужжат (PDF) танланг.")
+        if not self._dz_doc.files:
+            self._warn("Аввал қайта ишланадиган ҳужжатни (PDF) юкланг.")
             return
         if not self._ocr.available():
             self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
             return
-        if self._dz_passport.path is None:
-            self._warn("Янги ишчининг паспорт расмини юкланг.")
+        if not self._dz_worker.files:
+            self._warn("Ишчининг камида битта ҳужжат расмини юкланг "
+                       "(паспорт, патент ёки миграционка).")
             return
 
-        passport_img = self._dz_passport.path.read_bytes()
-        patent_img = (self._dz_patent.path.read_bytes()
-                      if self._dz_patent.path else None)
-        back_img = (self._dz_patent_back.path.read_bytes()
-                    if self._dz_patent_back.path else None)
-        source = self._doc
+        source = self._dz_doc.files[0]
+        images = [f.read_bytes() for f in self._dz_worker.files]
         form_date = self._form_date()
 
         def work():
+            # Any mix of worker documents is accepted: the first image is read
+            # as the identity document, the rest add patent/migration details.
             passport, patent = self._ocr.read_documents(
-                passport_img, patent_img, back_img)
+                images[0],
+                images[1] if len(images) > 1 else None,
+                images[2] if len(images) > 2 else None,
+            )
             return self._svc.generate(source, passport, patent, form_date=form_date)
 
         self._run.setEnabled(False)
@@ -139,8 +132,7 @@ class UmumiyView(QWidget):
     def _done(self, result: UmumiyResult) -> None:
         self._run.setEnabled(True)
         self._progress.finish()
-        for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
-            dz.clear()
+        self._dz_worker.clear_files()
         from src.ui.widgets.save_to import ask_save_dir
 
         saved = ask_save_dir(self, [result.pdf_path])

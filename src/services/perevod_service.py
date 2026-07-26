@@ -28,7 +28,6 @@ from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.config import paths
 from src.pdf.engine import _font_file
-from src.pdf.formatters import _date_dmy
 
 log = get_logger(__name__)
 
@@ -70,14 +69,15 @@ diploma|attestat|migration_card|other>",
  "issuing_country": "<государство, выдавшее документ>",
  "fields": [{{"label": "<поле по-русски>", "value": "<перевод значения>"}}],
  "stamps": ["<перевод текста печатей и штампов, если есть>"],
- "notes": ["<примечания переводчика, если нужны>"]
+ "notes": ["<примечания переводчика, если нужны>"],
+ "crops": [{{"x0": <число>, "y0": <число>, "x1": <число>, "y1": <число>}}]
 }}
+
+Поле "crops" — по одному элементу на КАЖДУЮ присланную фотографию, в том же \
+порядке. Это границы самого документа на фото (без стола, кровати, пальцев и \
+прочего фона) в долях от размера изображения: 0.0 — левый/верхний край, 1.0 — \
+правый/нижний. Если документ занимает всё фото, верни 0,0,1,1.
 Только JSON, без пояснений и без markdown."""
-
-_ATTEST = (
-    "Перевод с {lang} языка на русский язык выполнен переводчиком."
-)
-
 
 @dataclass(frozen=True)
 class PerevodResult:
@@ -85,6 +85,83 @@ class PerevodResult:
     docx_path: Path
     doc_type: str
     title: str
+
+
+def _scan_page(doc, image: bytes, crop: dict | None = None) -> bool:
+    """Add a page holding the original document as a clean B/W «scan».
+
+    ``crop`` are the document's bounds within the photo in 0..1 fractions (the
+    AI returns them alongside the translation — it can see where the document
+    is far more reliably than edge detection can on a patterned surface). The
+    photo is trimmed to those bounds, its lighting evened out and lifted to
+    paper-white / ink-black, then centred on A4.
+
+    Returns False (adding nothing) if the bytes are not a readable image.
+    """
+    import fitz
+    import numpy as np
+
+    try:
+        import cv2
+    except ImportError:  # pragma: no cover - cv2 ships with the app
+        cv2 = None
+
+    data = image
+    if cv2 is not None:
+        arr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            return False
+        arr = _apply_crop(arr, crop)
+        data = _scan_look(cv2, arr) or data
+
+    page = doc.new_page(width=595, height=842)
+    margin = 38.0
+    area = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
+    try:
+        page.insert_image(area, stream=data, keep_proportion=True)
+    except Exception:  # noqa: BLE001 - unreadable photo must not kill the run
+        doc.delete_page(doc.page_count - 1)
+        log.warning("Perevod: skipped an unreadable document photo")
+        return False
+    return True
+
+
+def _apply_crop(arr, crop: dict | None):
+    """Trim to the AI-reported document bounds, with a small safety margin."""
+    if not isinstance(crop, dict):
+        return arr
+    try:
+        x0 = float(crop["x0"]); y0 = float(crop["y0"])
+        x1 = float(crop["x1"]); y1 = float(crop["y1"])
+    except (KeyError, TypeError, ValueError):
+        return arr
+    if not (0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0):
+        return arr
+    if (x1 - x0) * (y1 - y0) < 0.05:  # implausibly small — ignore
+        return arr
+    h, w = arr.shape[:2]
+    pad = 0.012
+    px0 = max(0, int((x0 - pad) * w)); py0 = max(0, int((y0 - pad) * h))
+    px1 = min(w, int((x1 + pad) * w)); py1 = min(h, int((y1 + pad) * h))
+    if px1 - px0 < 40 or py1 - py0 < 40:
+        return arr
+    return arr[py0:py1, px0:px1]
+
+
+def _scan_look(cv2, arr) -> bytes | None:
+    """Flatten phone lighting and lift the page to crisp black-on-white."""
+    gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+    # divide out the illumination field, then stretch what is left
+    blur = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(gray.shape) / 30.0)
+    flat = cv2.divide(gray, blur, scale=255)
+    flat = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(flat)
+    # clip the paper to white and the ink to black without going fully binary,
+    # so photos, stamps and guilloche stay readable
+    lo, hi = 120.0, 225.0
+    stretched = cv2.convertScaleAbs(flat, alpha=255.0 / (hi - lo),
+                                    beta=-lo * 255.0 / (hi - lo))
+    ok, buf = cv2.imencode(".png", stretched)
+    return buf.tobytes() if ok else None
 
 
 def _forms() -> dict:
@@ -124,7 +201,7 @@ class PerevodService:
         images: list[bytes],
         *,
         doc_type: str = "auto",
-        form_date: date | None = None,
+        form_date: date | None = None,  # kept for API compatibility; unused
         output_dir: Path | None = None,
     ) -> PerevodResult:
         if not images:
@@ -152,6 +229,7 @@ class PerevodService:
                                       if isinstance(f, dict) and f.get("label")])
         stamps = [str(s) for s in data.get("stamps", []) if str(s).strip()]
         notes = [str(n) for n in data.get("notes", []) if str(n).strip()]
+        crops = data.get("crops") if isinstance(data.get("crops"), list) else []
 
         folder = output_dir if output_dir is not None else paths.output_dir() / "perevod"
         folder.mkdir(parents=True, exist_ok=True)
@@ -164,7 +242,10 @@ class PerevodService:
 
         pdf = self._to_pdf(base.with_suffix(".pdf"), title=title, lang=lang,
                            country=country, fields=fields, stamps=stamps,
-                           notes=notes, form_date=form_date or date.today())
+                           notes=notes, scans=list(zip(
+                               images[:10],
+                               list(crops) + [None] * len(images),
+                               strict=False)))
         docx = self._to_docx(base.with_suffix(".docx"), title=title, lang=lang,
                              country=country, fields=fields, stamps=stamps,
                              notes=notes)
@@ -185,7 +266,7 @@ class PerevodService:
 
     def _to_pdf(self, out: Path, *, title: str, lang: str, country: str,
                 fields: list[dict], stamps: list[str], notes: list[str],
-                form_date: date) -> Path:
+                scans: list[tuple[bytes, dict | None]]) -> Path:
         import fitz
 
         serif = fitz.Font(fontfile=str(_font_file("OfisSerif")))
@@ -233,6 +314,10 @@ class PerevodService:
                 rows.append(cur)
             return rows
 
+        # page(s) 1..n — the original document as a clean scan
+        for shot, crop in scans:
+            _scan_page(doc, shot, crop)
+
         new_page()
         center(f"ПЕРЕВОД С {lang.upper()} ЯЗЫКА НА РУССКИЙ ЯЗЫК", bold, 12.0)
         y += 8
@@ -271,20 +356,7 @@ class PerevodService:
                     tw.append((X0, y + 10.0), row, font=serif, fontsize=10.0)
                     y += 10.0 * LEAD
 
-        y += 26
-        room(60)
-        page.draw_line((X0, y), (X1, y), color=(0, 0, 0), width=0.7)
-        y += 14
-        for row in wrapped(_ATTEST.format(lang=lang), serif, SIZE, X0, width):
-            room(SIZE * LEAD)
-            tw.append((X0, y + SIZE), row, font=serif, fontsize=SIZE)
-            y += SIZE * LEAD
-        y += 6
-        tw.append((X0, y + SIZE), f"Дата перевода: {_date_dmy(form_date)}",
-                  font=serif, fontsize=SIZE)
-        y += SIZE * LEAD * 2
-        tw.append((X0, y + SIZE), "Переводчик: ______________________",
-                  font=serif, fontsize=SIZE)
+        # No translator/date block: the office adds its own certification page.
 
         if page is not None and tw is not None:
             tw.write_text(page)
@@ -336,11 +408,5 @@ class PerevodService:
                 d.add_paragraph(s)
         for n in notes:
             d.add_paragraph(f"Примечание переводчика: {n}")
-
-        d.add_paragraph()
-        d.add_paragraph("_" * 70)
-        d.add_paragraph(_ATTEST.format(lang=lang))
-        d.add_paragraph()
-        d.add_paragraph("Переводчик: ______________________")
         d.save(str(out))
         return out

@@ -166,7 +166,10 @@ def test_translation_pdf_and_docx(monkeypatch) -> None:
     assert "ИСАКОВ" in text
     assert "FA7822242" in text
     assert "Отдел внутренних дел" in text
-    assert "Переводчик" in text  # attestation line the notary signs under
+    # the office adds its own certification sheet — the translation itself
+    # must carry no translator name and no date
+    assert "Переводчик" not in text
+    assert "Дата перевода" not in text
 
 
 def test_fields_follow_the_standard_order(monkeypatch) -> None:
