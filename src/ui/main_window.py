@@ -52,6 +52,8 @@ _NAV = [
     ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
     ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
+    ("nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
+    ("nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
     ("nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
     ("nav.companies", "Companies", "Templates, logos and company data", "🏢"),
     ("nav.archive", "Archive", "Every generated package, by year and company", "🗂️"),
@@ -161,6 +163,21 @@ class MainWindow(QMainWindow):
                     settings=self._settings,
                 ),
             )
+        if key == "nav.umumiy":
+            from src.services.umumiy_service import UmumiyService
+            from src.ui.views.umumiy_view import UmumiyView
+
+            return UmumiyView(
+                self._container.resolve(OcrService),
+                UmumiyService(key_getter=lambda: str(
+                    self._settings.get("ai.gemini_key", "") or "")),
+            )
+        if key == "nav.perevod":
+            from src.services.perevod_service import PerevodService
+            from src.ui.views.perevod_view import PerevodView
+
+            return PerevodView(PerevodService(key_getter=lambda: str(
+                self._settings.get("ai.gemini_key", "") or "")))
         if key == "nav.jpg2pdf":
             from src.ui.views.jpg2pdf_view import Jpg2PdfView
 

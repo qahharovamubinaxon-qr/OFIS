@@ -21,7 +21,7 @@ def container(monkeypatch):
     paths.data_dir.cache_clear()
 
 
-def _hostel(code: str = "luzhskaya10"):
+def _hostel(code: str = "testhostel1"):
     from src.domain.registration_address import RegistrationAddress
 
     return RegistrationAddress(
@@ -109,9 +109,10 @@ def test_hostels_are_isolated_from_regular_addresses(container) -> None:
     svc = container.resolve(RegistrationAddressService)
     svc.create_hostel(_hostel(), None)
 
-    hostels = svc.list(kind="hostel")
-    regular = svc.list(kind="regular")
-    assert [a.internal_code for a in hostels] == ["luzhskaya10"]
-    assert "luzhskaya10" not in [a.internal_code for a in regular]
-    # the seeded ПАРКОВАЯ address stays a regular one
-    assert regular, "seeded regular address should remain listed"
+    hostel_codes = [a.internal_code for a in svc.list(kind="hostel")]
+    regular_codes = [a.internal_code for a in svc.list(kind="regular")]
+    assert "testhostel1" in hostel_codes
+    assert "testhostel1" not in regular_codes
+    # the seeded ПАРКОВАЯ address stays a regular one, ЛУЖСКАЯ a hostel
+    assert "parkovaya55" in regular_codes
+    assert "luzhskaya10" in hostel_codes

@@ -62,8 +62,11 @@ def test_values_take_names_from_patent_and_gender_from_passport() -> None:
 def test_seed_and_generate_registration(container) -> None:
     addresses = container.resolve(RegistrationAddressService)
     reg = container.resolve(RegistrationService)
-    assert addresses.count() == 1
-    address = addresses.list()[0]
+    # count() spans every kind (a hostel is seeded too) — assert on the
+    # regular addresses this test is about
+    regular = addresses.list(kind="regular")
+    assert len(regular) == 1
+    address = regular[0]
 
     result = reg.generate(
         _passport(), _patent(), address, registration_expiry=date(2026, 10, 12)
