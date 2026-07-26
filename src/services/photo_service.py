@@ -214,25 +214,31 @@ class PhotoService:
     # ------------------------------------------------------------------
     @staticmethod
     def _document_crop(cv2, rgb, x, y, w, h, aspect: float = 0.75):
-        """Window around the face at ``aspect`` (w/h): head ≈60% of the height,
-        with air above the hair — the document-photo proportions."""
-        H, W = rgb.shape[:2]
-        # tighter than a passport booth shot: the head fills ~65% of the frame
-        # so the portrait reaches the edges of a document window
-        crop_h = h * 2.05
+        """Window around the face at ``aspect`` (w/h), taken entirely from real
+        pixels.
+
+        The window is sized for document proportions (head ≈65% of the height,
+        a little air above the hair), then shrunk and slid until it lies wholly
+        inside the photo. Nothing is padded, so the portrait fills the frame
+        evenly whatever shape the original was — a source narrower than the
+        target simply yields a shorter window instead of white side bars.
+        """
+        H, W = float(rgb.shape[0]), float(rgb.shape[1])
+
+        crop_h = h * 2.3
         crop_w = crop_h * aspect
-        top = y - 0.42 * h
-        left = x + w / 2 - crop_w / 2
-        pad = int(max(0.0, -left, -top, left + crop_w - W, top + crop_h - H)) + 1
-        if pad > 1:
-            # pad with white, not by replicating the edge — replication smears
-            # the border pixels into visible streaks on a document photo
-            rgb = cv2.copyMakeBorder(rgb, pad, pad, pad, pad,
-                                     cv2.BORDER_CONSTANT, value=(255, 255, 255))
-            left += pad
-            top += pad
-        x0, y0 = int(max(0, left)), int(max(0, top))
-        return rgb[y0:y0 + int(crop_h), x0:x0 + int(crop_w)]
+        scale = min(1.0, W / crop_w, H / crop_h)   # keep the aspect exact
+        crop_w, crop_h = crop_w * scale, crop_h * scale
+
+        left = x + w / 2 - crop_w / 2              # centred on the face
+        top = y - 0.42 * h                         # air above the hair
+        left = max(0.0, min(left, W - crop_w))     # slide fully inside
+        top = max(0.0, min(top, H - crop_h))
+
+        x0, y0 = int(round(left)), int(round(top))
+        x1 = min(rgb.shape[1], x0 + int(round(crop_w)))
+        y1 = min(rgb.shape[0], y0 + int(round(crop_h)))
+        return rgb[y0:y1, x0:x1]
 
     @staticmethod
     def _whiten_backdrop(cv2, crop):
