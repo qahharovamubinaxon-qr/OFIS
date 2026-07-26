@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 
 _BAR_QSS = """
 QProgressBar {
-    border: none; border-radius: 7px; background: #e8ecf2;
+    border: none; border-radius: 7px; background: rgba(127, 140, 160, 0.22);
     min-height: 14px; max-height: 14px; text-align: center; color: transparent;
 }
 QProgressBar::chunk {

@@ -44,18 +44,18 @@ from src.ui.views.photo_view import PhotoView
 from src.ui.views.trud_view import TrudView
 
 _NAV = [
-    ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts"),
-    ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF"),
-    ("nav.registration", "Registration", "Уведомление о прибытии → PDF"),
-    ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF"),
-    ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF"),
-    ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш"),
-    ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF"),
-    ("nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш"),
-    ("nav.companies", "Companies", "Templates, logos and company data"),
-    ("nav.archive", "Archive", "Every generated package, by year and company"),
-    ("nav.search", "Search", "Find an employee by passport, patent or name"),
-    ("nav.settings", "Settings", "Language, theme, AI providers, folders"),
+    ("nav.dashboard", "Dashboard", "Today's activity, totals and alerts", "📊"),
+    ("nav.process", "Process Employee", "Upload documents → OCR → verify → PDF", "🛂"),
+    ("nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
+    ("nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
+    ("nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
+    ("nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
+    ("nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
+    ("nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
+    ("nav.companies", "Companies", "Templates, logos and company data", "🏢"),
+    ("nav.archive", "Archive", "Every generated package, by year and company", "🗂️"),
+    ("nav.search", "Search", "Find an employee by passport, patent or name", "🔍"),
+    ("nav.settings", "Settings", "Language, theme, AI providers, folders", "⚙️"),
 ]
 
 
@@ -82,8 +82,8 @@ class MainWindow(QMainWindow):
         root.addWidget(self._stack, stretch=1)
         self.setCentralWidget(central)
 
-        for key, title, subtitle in _NAV:
-            self._nav_list.addItem(self._tr.tr(key, title))
+        for key, title, subtitle, icon in _NAV:
+            self._nav_list.addItem(f"{icon}  {self._tr.tr(key, title)}")
             self._stack.addWidget(self._make_view(key, title, subtitle))
 
         self._nav_list.currentRowChanged.connect(self._on_nav)
@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("sidebar")
-        panel.setFixedWidth(232)
+        panel.setFixedWidth(248)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -203,13 +203,26 @@ class MainWindow(QMainWindow):
 
         self._nav_list.setObjectName("navList")
         self._nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._nav_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._nav_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         layout.addWidget(self._nav_list, stretch=1)
+
+        version = QLabel(f"v{constants.APP_VERSION} · {constants.ORG_NAME}")
+        version.setObjectName("sidebarVersion")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(version)
         return panel
 
     def _build_status_bar(self) -> None:
         bar = QStatusBar()
+        bar.setSizeGripEnabled(False)
         self.setStatusBar(bar)
         provider = self._settings.get_str("ai.primary_provider").capitalize()
-        bar.addWidget(QLabel(f"  {self._tr.tr('status.ready', 'Ready')}"))
-        bar.addPermanentWidget(QLabel(f"AI: {provider}"))
+        ready = QLabel(f"  ●  {self._tr.tr('status.ready', 'Ready')}")
+        ready.setObjectName("statusReady")
+        bar.addWidget(ready)
+        chip = QLabel(f"AI · {provider}")
+        chip.setObjectName("statusChip")
+        bar.addPermanentWidget(chip)
         bar.addPermanentWidget(QLabel(f"v{constants.APP_VERSION}  "))

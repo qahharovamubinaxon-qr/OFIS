@@ -2,7 +2,12 @@
 
 QWidget { background: #0d1117; color: #e6e9ef; font-family: "Segoe UI", "Arial"; font-size: 14px; }
 QMainWindow { background: #0d1117; }
+QLabel { background: transparent; }
 QToolTip { background: #1a2029; color: #e6e9ef; border: 1px solid #2b3646; border-radius: 6px; padding: 6px 8px; }
+QFrame[frameShape="4"] { border: none; background: #1c232e; max-height: 1px; }
+QMenu { background: #131a23; border: 1px solid #263041; border-radius: 8px; padding: 6px; }
+QMenu::item { padding: 7px 22px; border-radius: 6px; }
+QMenu::item:selected { background: #1a2942; }
 
 /* ---------- sidebar ---------- */
 #sidebar { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #10151c, stop:1 #0c1016);
@@ -22,10 +27,16 @@ QToolTip { background: #1a2029; color: #e6e9ef; border: 1px solid #2b3646; borde
 #viewTitle { font-size: 26px; font-weight: 700; color: #f2f4f8; background: transparent; letter-spacing: 0.3px; }
 #viewSubtitle { font-size: 14px; color: #8a94a3; margin-top: 6px; background: transparent; }
 
+#sidebarVersion { color: #566172; font-size: 11px; padding: 10px 0 12px 0;
+                  border-top: 1px solid #1c232e; background: transparent; }
+
 /* ---------- status bar ---------- */
 QStatusBar { background: #10151c; color: #8a94a3; border-top: 1px solid #1c232e; }
 QStatusBar QLabel { color: #8a94a3; background: transparent; }
 QStatusBar::item { border: none; }
+#statusReady { color: #3ecf8e; font-weight: 600; }
+#statusChip { color: #9aa4b4; background: #171e28; border: 1px solid #263041;
+              border-radius: 9px; padding: 2px 10px; margin-right: 8px; }
 
 /* ---------- cards ---------- */
 #statCard { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #131a23, stop:1 #10161e);
