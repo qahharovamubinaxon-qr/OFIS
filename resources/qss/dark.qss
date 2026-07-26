@@ -30,6 +30,11 @@ QMenu::item:selected { background: #1a2942; }
 #sidebarVersion { color: #566172; font-size: 11px; padding: 10px 0 12px 0;
                   border-top: 1px solid #1c232e; background: transparent; }
 
+#refreshButton { background: #16202e; border: 1px solid #26364d; border-radius: 9px;
+                 color: #a8b6cc; font-weight: 600; padding: 9px 12px; }
+#refreshButton:hover { background: #1c2a3d; border-color: #35507a; color: #dce5f2; }
+#refreshButton:pressed { background: #131c28; }
+
 /* ---------- status bar ---------- */
 QStatusBar { background: #10151c; color: #8a94a3; border-top: 1px solid #1c232e; }
 QStatusBar QLabel { color: #8a94a3; background: transparent; }

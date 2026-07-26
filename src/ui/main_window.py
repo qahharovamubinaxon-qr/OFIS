@@ -8,12 +8,14 @@ for its real view without touching this shell — the navigation contract stays 
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QStatusBar,
     QVBoxLayout,
@@ -58,6 +60,7 @@ _NAV = [
     ("ҲУЖЖАТ", "nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
     (None, "nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
     (None, "nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
+    (None, "nav.summa", "СУММА-ДАТА", "Сумма ва санани пропись қилиш", "🔢"),
     ("БАЗА", "nav.companies", "Companies", "Templates, logos and company data", "🏢"),
     (None, "nav.archive", "Archive",
      "Every generated package, by year and company", "🗂️"),
@@ -106,6 +109,11 @@ class MainWindow(QMainWindow):
         self._select_page(1)  # open on Process Employee
 
         self._build_status_bar()
+
+        refresh_shortcut = QShortcut(QKeySequence("F5"), self)
+        refresh_shortcut.activated.connect(self.reset_current_view)
+        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(
+            self.reset_current_view)
 
     def _make_view(self, key: str, title: str, subtitle: str) -> QWidget:
         if key == "nav.dashboard":
@@ -195,6 +203,10 @@ class MainWindow(QMainWindow):
             from src.ui.views.jpg2pdf_view import Jpg2PdfView
 
             return Jpg2PdfView()
+        if key == "nav.summa":
+            from src.ui.views.summa_view import SummaView
+
+            return SummaView()
         if key == "nav.companies":
             return CompaniesView(self._container.resolve(CompanyService))
         if key == "nav.archive":
@@ -275,11 +287,29 @@ class MainWindow(QMainWindow):
         self._nav_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         layout.addWidget(self._nav_list, stretch=1)
 
+        refresh = QPushButton("🔄  Обновить")
+        refresh.setObjectName("refreshButton")
+        refresh.setToolTip("Майдонларни тозалаш — янги ҳужжат юклаш учун (F5)")
+        refresh.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh.clicked.connect(self.reset_current_view)
+        wrap = QVBoxLayout()
+        wrap.setContentsMargins(12, 6, 12, 4)
+        wrap.addWidget(refresh)
+        layout.addLayout(wrap)
+
         version = QLabel(f"v{constants.APP_VERSION} · {constants.ORG_NAME}")
         version.setObjectName("sidebarVersion")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
         return panel
+
+    def reset_current_view(self) -> None:
+        """Clear the open screen's uploads so a new document can be loaded."""
+        from src.ui.widgets.reset import reset_view
+
+        view = self._stack.currentWidget()
+        if view is not None and reset_view(view):
+            self.statusBar().showMessage("Майдонлар тозаланди / Очищено", 2500)
 
     def _build_status_bar(self) -> None:
         bar = QStatusBar()
