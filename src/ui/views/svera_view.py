@@ -3,6 +3,9 @@
 Pick a profession (сфера), a date, upload the student photo + passport →
 RUN. Produces a 2-page PDF (certificate + protocol) named by surname. New
 professions can be added inline.
+
+The ФИО boxes override whatever the passport is read as, and filling them in
+lets a certificate be made with no passport at all.
 """
 
 from __future__ import annotations
@@ -97,11 +100,24 @@ class SveraView(QWidget):
         row.addWidget(self._date)
         root.addLayout(row)
 
+        # -- the student's name -----------------------------------------
+        names = QHBoxLayout()
+        names.addWidget(QLabel("Ф.И.О.:"))
+        self._surname = QLineEdit()
+        self._surname.setPlaceholderText("Фамилия")
+        self._name = QLineEdit()
+        self._name.setPlaceholderText("Исм")
+        self._patronymic = QLineEdit()
+        self._patronymic.setPlaceholderText("Отчество")
+        for w in (self._surname, self._name, self._patronymic):
+            names.addWidget(w, stretch=1)
+        root.addLayout(names)
+
         # -- uploads ----------------------------------------------------
         up = QHBoxLayout()
         up.setSpacing(12)
         self._dz_photo = DropZone("🖼️", "O'quvchi rasmi (foto)")
-        self._dz_passport = DropZone("🛂", "Паспорт")
+        self._dz_passport = DropZone("🛂", "Паспорт (ихтиёрий)")
         for dz in (self._dz_photo, self._dz_passport):
             up.addWidget(dz, stretch=1)
         root.addLayout(up)
@@ -153,9 +169,12 @@ class SveraView(QWidget):
         return date(q.year(), q.month(), q.day())
 
     def _hint(self) -> str:
+        typed = "Ф.И.О. yozsangiz — pasportdan o'qilgani o'rniga o'sha yoziladi."
         if self._c.ai_available():
-            return f"AI tayyor. Keyingi ПО raqami: {self._c.next_po_number()}."
-        return "AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting."
+            return (f"AI tayyor. Keyingi ПО raqami: {self._c.next_po_number()}. "
+                    + typed)
+        return ("AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting, "
+                "yoki pasportsiz Ф.И.О. ni qo'lda yozing.")
 
     # ------------------------------------------------------------------
     def _add_profession(self) -> None:
@@ -178,23 +197,34 @@ class SveraView(QWidget):
         if profession is None:
             self._warn("Avval soha tanlang yoki qo'shing.")
             return
-        if not self._c.ai_available():
-            self._warn("AI kaliti yo'q. Sozlamalarga Gemini kalitini kiriting.")
-            return
         if self._dz_photo.path is None:
             self._warn("O'quvchi rasmini (foto) yuklang.")
             return
-        if self._dz_passport.path is None:
-            self._warn("Pasport rasmini yuklang.")
-            return
 
-        passport = self._c.read_image(self._dz_passport.path)
+        surname = self._surname.text().strip()
+        name = self._name.text().strip()
+        patronymic = self._patronymic.text().strip()
+        if self._dz_passport.path is None:
+            if not (surname and name):
+                self._warn("Pasport yuklang, yoki hech bo'lmasa familiya "
+                           "va ismni yozing.")
+                return
+            passport = None
+        else:
+            if not self._c.ai_available():
+                self._warn("AI kaliti yo'q. Sozlamalarga Gemini kalitini "
+                           "kiriting, yoki Ф.И.О. ni qo'lda yozing.")
+                return
+            passport = self._c.read_image(self._dz_passport.path)
+
         photo_path = self._dz_photo.path
         issue_date = self._issue_date()
-        self._busy("AI o'qiyapti va СФЕРА PDF yaratyapti…")
+        self._busy("СФЕРА PDF yaratyapti…" if passport is None
+                   else "AI o'qiyapti va СФЕРА PDF yaratyapti…")
         run_async(
             self._c.generate_from_images, profession, passport, photo_path,
-            issue_date=issue_date,
+            issue_date=issue_date, surname=surname, name=name,
+            patronymic=patronymic,
             on_success=self._done, on_error=self._failed,
         )
 
@@ -209,6 +239,8 @@ class SveraView(QWidget):
         self._progress.finish()
         for dz in (self._dz_photo, self._dz_passport):
             dz.clear()
+        for field in (self._surname, self._name, self._patronymic):
+            field.clear()
         self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (ПО{result.po_number})")
         from src.ui.widgets.save_to import ask_save_dir
 

@@ -96,3 +96,109 @@ def test_seed_and_generate(container) -> None:
     doc.close()
     # ПО counter advances
     assert svera.next_po_number() == po + 1
+
+
+# ------------------------------------------------- a name typed by hand
+
+
+class _FakeOcr:
+    """Stands in for Gemini: returns a deliberately misread name."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def available(self) -> bool:
+        return True
+
+    def read_passport(self, _image: bytes) -> Passport:
+        self.calls += 1
+        return Passport(surname="ВОЛТАЗОДА", name="РУСТАН",
+                        patronymic="МАХМАД", number="402565897")
+
+
+def _controller(ocr):
+    from src.controllers.svera_controller import SveraController
+
+    return SveraController(professions=None, ocr=ocr, svera=None)
+
+
+def test_a_typed_name_overrides_what_the_passport_was_read_as() -> None:
+    """The centre saw OCR misread surnames, so a typed one must win."""
+    ocr = _FakeOcr()
+    student = _controller(ocr)._student(b"img", "БОЛТАЗОДА", "РУСТАМ", "")
+    assert (student.surname, student.name) == ("БОЛТАЗОДА", "РУСТАМ")
+    # the part left blank still comes off the passport
+    assert student.patronymic == "МАХМАД"
+    assert student.number == "402565897"
+
+
+def test_an_untouched_name_is_left_to_the_passport() -> None:
+    student = _controller(_FakeOcr())._student(b"img", "", "", "")
+    assert student.surname == "ВОЛТАЗОДА"
+
+
+def test_a_certificate_can_be_made_with_no_passport_at_all() -> None:
+    ocr = _FakeOcr()
+    student = _controller(ocr)._student(None, "БОЛТАЗОДА", "РУСТАМ", "МАХМАД")
+    assert (student.surname, student.name, student.patronymic) == (
+        "БОЛТАЗОДА", "РУСТАМ", "МАХМАД")
+    assert ocr.calls == 0, "the passport reader should not have been called"
+
+
+def test_no_passport_and_no_name_is_refused() -> None:
+    from src.common.errors import OfisError
+
+    with pytest.raises(OfisError):
+        _controller(_FakeOcr())._student(None, "", "", "")
+
+
+# ------------------------------------------- a long profession wraps
+
+
+@pytest.mark.skipif(not HAS_TEMPLATE, reason="СФЕРА template not bundled")
+@pytest.mark.parametrize(
+    ("profession", "expected_lines"),
+    [("Электрогазосварщик", 1),
+     ("Монтажник по монтажу стальных и железобетонных конструкций", 2)],
+)
+def test_a_long_profession_wraps_instead_of_shrinking(
+        profession, expected_lines) -> None:
+    """It used to be squeezed onto one line until it was unreadable."""
+    from src.pdf.svera_udo import (
+        _L_PROF_SIZE,
+        _L_PROF_WIDTH,
+        UdoData,
+        render_udostoverenie,
+    )
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    render_udostoverenie(page, UdoData(
+        number="3606", fio_dative=["Болтазоду", "Рустаму", "Махмаду"],
+        profession=profession, qualification="—",
+        issue_date="27.07.2026 г.", basis="—"))
+
+    lines = [sp for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]
+             if "“" in sp["text"] or "”" in sp["text"]
+             or (sp["bbox"][1] > 180 and sp["bbox"][3] < 205
+                 and sp["bbox"][2] < 290 and sp["text"].strip())]
+    assert len(lines) == expected_lines, [sp["text"] for sp in lines]
+    if expected_lines == 1:
+        assert lines[0]["size"] >= _L_PROF_SIZE - 0.01
+        return
+
+    # the two lines share a size and come out roughly even, so they read as one
+    # block rather than a long line with a stub under it
+    assert lines[0]["size"] == lines[1]["size"]
+    widths = [sp["bbox"][2] - sp["bbox"][0] for sp in lines]
+    assert max(widths) / min(widths) < 2.0, widths
+
+    # and the whole point: far bigger than squeezing it all onto one line,
+    # which is what the card used to do
+    from src.pdf.engine import _font_file
+
+    font = fitz.Font(fontfile=str(_font_file("OfisSerifBoldItalic")))
+    one_line = _L_PROF_SIZE * _L_PROF_WIDTH / font.text_length(
+        f"“{profession}”", fontsize=_L_PROF_SIZE)
+    assert lines[0]["size"] > one_line * 1.5, (lines[0]["size"], one_line)

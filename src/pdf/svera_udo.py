@@ -35,6 +35,12 @@ _L_FIO_BASE = 136.4       # first ФИО baseline
 _L_FIO_STEP = 12.4
 _FIO_SIZE = 11.5          # holder's name on the left card
 _L_CENTRE = 209.4         # centre of the left card's text column
+# the profession, in quotes under «…по профессии:». A long one is broken over
+# two lines rather than shrunk — the centre asked for it to stay readable.
+_L_PROF_SIZE = 11.0
+_L_PROF_WIDTH = 150.0     # the card's usable width, between photo and edge
+_L_PROF_ONE = 192.9       # baseline when it fits on one line
+_L_PROF_TWO = (187.4, 198.9)   # …and the pair of baselines when it does not
 # right card
 _R_LEFT, _R_RIGHT = 328.5, 551.3
 _R_CENTRE = 439.9
@@ -111,6 +117,49 @@ def _translucent_stamp(path: Path, alpha: float = 0.82) -> bytes | None:
     return buf.getvalue()
 
 
+def _profession_lines(pen: "_Pen", profession: str) -> None:
+    """Set the profession, wrapping onto a second line instead of shrinking.
+
+    A long trade name used to be squeezed down until it fit one line, which
+    left it too small to read on the card. It now breaks across two lines at
+    the word boundary that makes them most even, and both keep the full size
+    whenever the pair fits. Only a name too long even for two lines shrinks,
+    and then both lines shrink together so they read as one block.
+    """
+    if not profession:
+        return
+    quoted = f"“{profession}”"
+    if pen.width(quoted, _BI, _L_PROF_SIZE) <= _L_PROF_WIDTH:
+        pen.text(0, _L_PROF_ONE, quoted, font=_BI, size=_L_PROF_SIZE,
+                 centre=_L_CENTRE)
+        return
+
+    first, second = _balanced_split(pen, quoted)
+    size = _L_PROF_SIZE
+    widest = max(pen.width(first, _BI, size), pen.width(second, _BI, size))
+    while size > 6 and widest > _L_PROF_WIDTH:
+        size -= 0.25
+        widest = max(pen.width(first, _BI, size), pen.width(second, _BI, size))
+    for baseline, line in zip(_L_PROF_TWO, (first, second), strict=True):
+        pen.text(0, baseline, line, font=_BI, size=size, centre=_L_CENTRE)
+
+
+def _balanced_split(pen: "_Pen", text: str) -> tuple[str, str]:
+    """Break ``text`` in two at the word boundary that evens the halves out."""
+    words = text.split()
+    if len(words) < 2:
+        return text, ""
+    best, best_worst = 1, None
+    for cut in range(1, len(words)):
+        left = " ".join(words[:cut])
+        right = " ".join(words[cut:])
+        worst = max(pen.width(left, _BI, _L_PROF_SIZE),
+                    pen.width(right, _BI, _L_PROF_SIZE))
+        if best_worst is None or worst < best_worst:
+            best, best_worst = cut, worst
+    return " ".join(words[:best]), " ".join(words[best:])
+
+
 def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
     """Draw the whole certificate spread onto ``page`` (the empty blank)."""
     pen = _Pen(page)
@@ -134,8 +183,7 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
              font=_BI, size=7.5, centre=_L_CENTRE)
     pen.text(0, 176.8, "профессионального обучения по профессии:",
              font=_BI, size=7.5, centre=_L_CENTRE)
-    pen.text(0, 192.9, f"“{data.profession}”", font=_BI, size=11,
-             centre=_L_CENTRE, fit=140)
+    _profession_lines(pen, data.profession)
 
     pen.rule(160.7, 261.0, 205.5)
     pen.text(0, 217.4, "(личная подпись)", font=_BI, size=9, centre=208.5)
