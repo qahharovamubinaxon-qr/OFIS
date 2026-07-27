@@ -47,6 +47,12 @@ class OcrService:
     def __init__(self, ai: AiManager) -> None:
         self._ai = ai
 
+    @property
+    def ai(self) -> AiManager:
+        """The provider stack, for callers that read something other than a
+        passport — the уведомление blank study, for instance."""
+        return self._ai
+
     def available(self) -> bool:
         return self._ai.available()
 

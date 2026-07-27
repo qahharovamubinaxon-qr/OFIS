@@ -218,12 +218,50 @@ class TrudView(QWidget):
                                 "Nomi, kod va IKKALA shablon PDF ham kerak.")
             return
         try:
-            self._c.add_firm(name, code, trud_tpl, uved_tpl, hod_tpl)
+            firm = self._c.add_firm(name, code, trud_tpl, uved_tpl, hod_tpl)
             self.refresh()
         except OfisError as exc:
             QMessageBox.warning(self, "Xato", exc.message)
+            return
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Xato", str(exc))
+            return
+        self._study_uved(firm)
+
+    def _study_uved(self, firm) -> None:
+        """Read the new firm's blank so its уведомление fills in the right rows.
+
+        Every firm's Госуслуги blank is laid out differently, so this is what
+        stops a worker's surname landing on the «Отчество» line.
+        """
+        self._busy("Уведомление бланкаси ўрганилаяпти…")
+        run_async(self._c.study_uved, firm,
+                  on_success=self._studied, on_error=self._study_failed)
+
+    def _studied(self, study) -> None:
+        self._run.setEnabled(True)
+        self._progress.finish()
+        found = len(study.fields)
+        if study.ok:
+            note = f"✅ Бланка ўрганилди: {found} та майдон топилди."
+            if study.missing:
+                note += ("\n⚠️ Топилмагани: " + ", ".join(study.missing)
+                         + " — бу қаторлар бўш қолади.")
+            self._status.setText(note)
+            QMessageBox.information(self, "Tayyor", note)
+            return
+        note = (f"⚠️ Бланкадан фақат {found} та майдон топилди — камлик "
+                "қиляпти, шунинг учун эски жойлашув ишлатилади.\n"
+                "Бланкани текшириб, қайта юкланг.")
+        self._status.setText(note)
+        QMessageBox.warning(self, "Diqqat", note)
+
+    def _study_failed(self, error: Exception) -> None:
+        self._run.setEnabled(True)
+        self._progress.fail()
+        msg = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText("⚠️ Бланка ўрганилмади: " + msg)
+        QMessageBox.warning(self, "Diqqat", "Бланка ўрганилмади:\n" + msg)
 
     def _remove_firm(self) -> None:
         firm = self._selected_firm()

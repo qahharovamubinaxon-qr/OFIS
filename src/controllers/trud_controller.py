@@ -27,6 +27,10 @@ class TrudController:
                  hod_tpl: Path | None = None) -> TrudFirm:
         return self._firms.create(name, code, trud_tpl, uved_tpl, hod_tpl)
 
+    def study_uved(self, firm: TrudFirm):
+        """Read the firm's blank and learn where each worker value goes."""
+        return self._firms.study_uved(firm, self._ocr.ai)
+
     def archive_firm(self, firm_id: UUID) -> None:
         self._firms.archive(firm_id)
 

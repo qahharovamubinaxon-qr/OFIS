@@ -75,6 +75,25 @@ class TrudFirmService:
         self._repo.archive(firm_id)
         log.info("Trud firm archived: %s", firm_id)
 
+    def study_uved(self, firm: TrudFirm, ai) -> "object":
+        """Learn where this firm's blank wants each worker value, and keep it.
+
+        Every firm's Госуслуги blank differs — a different employer block, a
+        different page count, some rows already filled — so one shared mapping
+        cannot serve them all. Returns the study so the caller can tell the
+        operator what was found.
+        """
+        from src.services import uved_layout
+
+        if firm.uved_template_path.suffix.lower() != ".pdf":
+            raise ValidationError("Only a PDF уведомление can be studied",
+                                  context={"path": str(firm.uved_template_path)})
+        result = uved_layout.study(firm.uved_template_path, ai)
+        if result.ok:
+            uved_layout.save(result, firm.uved_template_path,
+                             firm.uved_template_path.parent)
+        return result
+
     def create(self, name: str, code: str, trud_source: Path, uved_source: Path,
                hod_source: Path | None = None) -> TrudFirm:
         if self._repo.by_internal_code(code):
@@ -176,7 +195,12 @@ class TrudService:
             uved_path = docx_to_pdf(docx_uv) or docx_uv
         else:
             uved_path = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.pdf")
-            mapping = FieldMapping.load(_UVED_MAPPING)
+            from src.services import uved_layout
+
+            # this firm's own blank, studied when it was added; the bundled
+            # mapping is only a fallback for firms added before that existed
+            own = uved_layout.mapping_for(firm.uved_template_path)
+            mapping = FieldMapping.load(own or _UVED_MAPPING)
             fill(firm.uved_template_path, mapping, self._uved_values(
                 passport, patent, form_date=form_date, profession=prof,
             ), uved_path)
