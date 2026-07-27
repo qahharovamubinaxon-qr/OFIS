@@ -63,6 +63,10 @@ _SERIA_SIZE = 9.0                      # the серия line runs a little large
 _DATE_SIZE = 9.6                       # «Дата выдачи» is larger again
 _PR_SIZE = 15.6                        # «ПР» is Times, matching its own label
 _PR_TRACKING = 1.16                    # …and letterspaced, as on the sample
+# …and then a little taller again, without widening: the glyphs are stretched
+# vertically about their own baseline, so the columns keep the widths measured
+# off the office's badge.
+_STRETCH = 1.18
 
 # --- front -------------------------------------------------------------
 # the white photo window in the blank, 85.2 × 113.2 pt — very close to 3:4
@@ -343,7 +347,17 @@ class BeydjikService:
             page.draw_rect(fitz.Rect(*box), color=None, fill=(1, 1, 1))
 
     @staticmethod
-    def _text(page, font, text: str, x: float, baseline: float, *,
+    def _taller(origin: tuple[float, float]) -> tuple:
+        """A morph that stretches glyphs vertically about their own baseline.
+
+        The office wanted the values taller without them growing wider, which a
+        larger font size cannot do — so the drawing is scaled in y only, pivoted
+        on the baseline so nothing shifts up or down.
+        """
+        return (fitz.Point(*origin), fitz.Matrix(1, _STRETCH))
+
+    @classmethod
+    def _text(cls, page, font, text: str, x: float, baseline: float, *,
               size: float = _SIZE, max_x: float | None = None) -> None:
         if not text:
             return
@@ -351,10 +365,11 @@ class BeydjikService:
             avail = max_x - x
             while size > 5 and font.text_length(text, fontsize=size) > avail:
                 size -= 0.25
-        page.insert_text((x, baseline), text, fontname="bj", fontsize=size)
+        page.insert_text((x, baseline), text, fontname="bj", fontsize=size,
+                         morph=cls._taller((x, baseline)))
 
-    @staticmethod
-    def _back_text(page, font, text: str, right_x: float, top_y: float, *,
+    @classmethod
+    def _back_text(cls, page, font, text: str, right_x: float, top_y: float, *,
                    size: float, fontname: str = "bj") -> None:
         """Draw ``text`` rotated 180° (the badge back), with ``right_x`` its
         right edge — the point where reading begins on the flipped card."""
@@ -364,10 +379,11 @@ class BeydjikService:
         while size > 5 and font.text_length(text, fontsize=size) > right_x - 15:
             size -= 0.25
         page.insert_text((right_x, top_y), text, fontname=fontname,
-                         fontsize=size, rotate=180)
+                         fontsize=size, rotate=180,
+                         morph=cls._taller((right_x, top_y)))
 
-    @staticmethod
-    def _back_number(page, serif, number: str, right_x: float,
+    @classmethod
+    def _back_number(cls, page, serif, number: str, right_x: float,
                      top_y: float) -> None:
         """The «ПР …» serial — Times, like its own label, and letterspaced.
 
@@ -380,7 +396,8 @@ class BeydjikService:
         x = right_x
         for char in number:
             page.insert_text((x, top_y), char, fontname="bjs",
-                             fontsize=_PR_SIZE, rotate=180)
+                             fontsize=_PR_SIZE, rotate=180,
+                             morph=cls._taller((x, top_y)))
             x -= serif.text_length(char, fontsize=_PR_SIZE) + _PR_TRACKING
 
     @staticmethod

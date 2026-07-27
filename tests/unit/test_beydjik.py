@@ -11,6 +11,7 @@ import pytest
 from src.config import paths
 from src.domain.documents import Passport
 from src.domain.enums import Gender
+from src.pdf.engine import _font_file
 
 
 @pytest.fixture(autouse=True)
@@ -186,6 +187,42 @@ def test_a_long_firm_name_wraps_onto_a_second_line(svc) -> None:
     tops = sorted(round(s["origin"][1], 1) for s in lines)
     assert abs((tops[-1] - tops[0]) - _FIRM_LINE) < 0.2
     assert abs(tops[-1] - _FIRM_BASE) < 0.2
+
+
+def test_the_values_are_stretched_taller_but_not_wider(svc) -> None:
+    """The office wanted taller text at the same column widths.
+
+    A bigger font size would widen it too, so the glyphs are scaled in y only,
+    pivoted on their baseline — the baseline itself must not move, and the
+    column must keep the width measured off the office's badge.
+    """
+    import numpy as np
+
+    from src.services.beydjik_service import _ROW_DOB, _SIZE, _STRETCH, _X_WIDE
+
+    page = fitz.open(_make(svc).pdf_path)[0]
+
+    # width comes from the text itself, which the vertical morph must not touch
+    span = next(sp for b in page.get_text("dict")["blocks"]
+                for ln in b.get("lines", []) for sp in ln["spans"]
+                if sp["text"].strip() == "01.08.1994")
+    plain = fitz.Font(fontfile=str(_font_file("OfisArialBold"))).text_length(
+        "01.08.1994", fontsize=_SIZE)
+    assert abs(span["bbox"][0] - _X_WIDE) < 0.5
+    assert abs((span["bbox"][2] - span["bbox"][0]) - plain) < 0.5, "it got wider"
+
+    # height comes from the ink: a slice of the digits, clear of the label on
+    # the left and of the гражданство row below
+    clip = fitz.Rect(190, 101, 250, 112)
+    pm = page.get_pixmap(dpi=600, clip=clip)
+    arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+        pm.height, pm.width, pm.n)[:, :, :3]
+    rows = np.where((arr.max(2) < 110).sum(1) > 0)[0]
+    top, bottom = clip.y0 + rows[0] / (600 / 72), clip.y0 + rows[-1] / (600 / 72)
+
+    # the date has no descender, so the baseline is the bottom of the ink
+    assert abs(bottom - _ROW_DOB) < 0.4, "the baseline moved"
+    assert abs((bottom - top) - _SIZE * 0.716 * _STRETCH) < 0.5, "not stretched"
 
 
 # ------------------------------------------------------------- numbering
