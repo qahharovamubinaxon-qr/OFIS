@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -45,6 +46,18 @@ class PhotoView(QWidget):
         title = QLabel("РАСМ-ФОТО — Документ учун 3×4")
         title.setObjectName("viewTitle")
         root.addWidget(title)
+
+        opts = QHBoxLayout()
+        opts.addWidget(QLabel("Fon rangi:"))
+        self._bg = QComboBox()
+        for label, key in (("⬜ Oq", "white"), ("◽ Och kulrang", "gray"),
+                           ("🟦 Ko'k", "blue")):
+            self._bg.addItem(label, key)
+        self._bg.setFixedWidth(180)
+        self._bg.currentIndexChanged.connect(self._on_photo)
+        opts.addWidget(self._bg)
+        opts.addStretch(1)
+        root.addLayout(opts)
 
         row = QHBoxLayout()
         row.setSpacing(16)
@@ -100,7 +113,7 @@ class PhotoView(QWidget):
         self._copy.setEnabled(False)
         self._status.setText("⏳ Rasm ishlanyapti…")
         self._progress.start("Rasm ishlanyapti…")
-        run_async(self._service.process, data,
+        run_async(self._service.process, data, bg=self._bg.currentData(),
                   on_success=self._done, on_error=self._failed)
 
     def _done(self, result: PhotoResult) -> None:

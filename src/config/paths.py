@@ -75,6 +75,12 @@ def user_templates_dir() -> Path:
     return _sub("templates")
 
 
+def models_dir() -> Path:
+    """Downloaded AI model files (u2net…). In AppData — never in git, and an
+    EXE rebuild does not touch them: they download once and stay."""
+    return _sub("models")
+
+
 def output_dir() -> Path:
     return _sub("output")
 

@@ -258,6 +258,15 @@ def main() -> int:
         log.error("Mini App failed to start: %s", exc)
     window._webapp = webapp
 
+    # Warm up the background-removal model: first install downloads it here,
+    # in the background, so the first photo never waits for the network.
+    import threading as _threading
+
+    from src.services import bg_segment
+
+    _threading.Thread(target=lambda: bg_segment.model_path(download=True),
+                      daemon=True, name="ofis-model-warmup").start()
+
     log.info("UI ready (theme=%s, language=%s)", settings.theme, settings.language)
     return app.exec()
 

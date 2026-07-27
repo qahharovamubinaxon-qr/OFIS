@@ -1,14 +1,16 @@
 """РАСМ-ФОТО: turn a casual worker photo into a document-standard 3×4.
 
-Pipeline (all offline):
+Pipeline (all offline and free):
 1. EXIF-orient and decode.
 2. Detect the face with YuNet (bundled ONNX model, works on any OpenCV ≥4.8).
    Its eye landmarks give the head tilt — the image is rotated straight.
-3. Crop a 3:4 portrait around the face with document proportions (head ≈ 60%
-   of frame, air above the hair).
-4. GrabCut the person from the background and repaint the background pure
-   white.
-5. Output 600×800 PNG.
+3. Crop a 3:4 portrait around the face with document proportions (head ≈ 65%
+   of frame, 12–18% air above the head).
+4. Separate the person from the background with U²-Net
+   (:mod:`src.services.bg_segment`) and repaint the background in the chosen
+   colour (white / light grey / blue). No model yet → edge flood-fill
+   whitening, so the feature never depends on a download.
+5. Output 413×531 px (3×4 cm at 300 DPI) PNG.
 
 If no face is found the photo is centre-cropped to 3:4 without background
 cleanup, so the operator always gets a usable result.
@@ -25,7 +27,15 @@ from src.config import paths
 
 log = get_logger(__name__)
 
-OUT_W, OUT_H = 600, 800  # 3:4
+OUT_W, OUT_H = 413, 531  # 3×4 cm at 300 DPI
+OUT_DPI = 300
+
+# document backdrop colours the operator can pick from
+BG_COLORS: dict[str, tuple[int, int, int]] = {
+    "white": (255, 255, 255),
+    "gray": (235, 235, 235),
+    "blue": (99, 140, 190),
+}
 
 
 @dataclass(frozen=True)
@@ -51,7 +61,7 @@ def _encode_png(rgb) -> bytes:
     from PIL import Image
 
     buf = io.BytesIO()
-    Image.fromarray(rgb).save(buf, format="PNG")
+    Image.fromarray(rgb).save(buf, format="PNG", dpi=(OUT_DPI, OUT_DPI))
     return buf.getvalue()
 
 
@@ -166,12 +176,12 @@ class PhotoService:
         left_eye = (float(f[6]), float(f[7]))
         return x, y, w, h, right_eye, left_eye
 
-    def process(self, data: bytes) -> PhotoResult:
+    def process(self, data: bytes, bg: str = "white") -> PhotoResult:
         import cv2
 
         # 1) AI studio edit when a Gemini key is available — professional
         #    quality; the local pipeline stays as offline fallback.
-        studio = self._ai_studio(data)
+        studio = self._ai_studio(data) if bg == "white" else None
         if studio is not None:
             rgb = _load_rgb(studio)
             found = self._detect_face(cv2, rgb)
@@ -188,7 +198,9 @@ class PhotoService:
         found = self._detect_face(cv2, rgb)
         if found is None:
             log.info("Photo: no face found — centre crop only")
-            return PhotoResult(png=_encode_png(self._center_crop(cv2, rgb)), face_found=False)
+            return PhotoResult(
+                png=_encode_png(self._center_crop(cv2, rgb)), face_found=False,
+                note="Yuz topilmadi — rasm markazdan kesildi, fon o'zgartirilmadi.")
 
         x, y, w, h, right_eye, left_eye = found
         # -- straighten via the eye line ---------------------------------
@@ -206,14 +218,21 @@ class PhotoService:
                     x, y, w, h, *_ = redetected
 
         crop = self._document_crop(cv2, rgb, x, y, w, h)
-        crop = self._whiten_backdrop(cv2, crop)
-        crop = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
-        note = "Lokal usul" + (f" (AI: {self._last_error})" if getattr(self, "_last_error", "") else "")
+        low_res = crop.shape[1] < OUT_W * 0.8  # upscaling would soften the result
+        crop, method = self._apply_background(cv2, crop, bg)
+        crop = cv2.resize(
+            crop, (OUT_W, OUT_H),
+            interpolation=cv2.INTER_LANCZOS4 if low_res else cv2.INTER_AREA)
+        note = {"u2net": "U²-Net (lokal)", "flood": "Lokal usul"}.get(method, "Lokal usul")
+        if low_res:
+            note += " · rasm kichik — sifat pastroq bo'lishi mumkin"
+        if getattr(self, "_last_error", ""):
+            note += f" (AI: {self._last_error})"
         return PhotoResult(png=_encode_png(crop), face_found=True, note=note)
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _document_crop(cv2, rgb, x, y, w, h, aspect: float = 0.75):
+    def _document_crop(cv2, rgb, x, y, w, h, aspect: float = OUT_W / OUT_H):
         """Window around the face at ``aspect`` (w/h), taken entirely from real
         pixels.
 
@@ -239,6 +258,51 @@ class PhotoService:
         x1 = min(rgb.shape[1], x0 + int(round(crop_w)))
         y1 = min(rgb.shape[0], y0 + int(round(crop_h)))
         return rgb[y0:y1, x0:x1]
+
+    @staticmethod
+    def _apply_background(cv2, crop, bg: str = "white") -> tuple:
+        """Repaint the backdrop in ``BG_COLORS[bg]``. U²-Net segmentation when
+        the model is available; otherwise the flood-fill whitening.
+
+        Returns ``(image, method)`` — method is "u2net", "flood" or "none".
+        """
+        import numpy as np
+
+        from src.services.bg_segment import segment
+
+        colour = BG_COLORS.get(bg, BG_COLORS["white"])
+        h, w = crop.shape[:2]
+        if h < 40 or w < 40:
+            return crop, "none"
+
+        mask = segment(crop)
+        if mask is not None:
+            share = float((mask > 128).mean())
+            # sanity: the person must exist, not swallow the whole frame, and
+            # the mask must actually cover the face area (centre-upper block)
+            face_zone = mask[int(h * 0.25):int(h * 0.55), int(w * 0.35):int(w * 0.65)]
+            if 0.15 < share < 0.97 and float(face_zone.mean()) > 128:
+                person = cv2.morphologyEx(
+                    mask, cv2.MORPH_CLOSE,
+                    cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+                person = cv2.GaussianBlur(person, (5, 5), 0)
+                alpha = person.astype(np.float32)[..., None] / 255.0
+                backdrop = np.full_like(crop, 0, dtype=np.float32)
+                backdrop[..., 0], backdrop[..., 1], backdrop[..., 2] = colour
+                out = crop.astype(np.float32) * alpha + backdrop * (1 - alpha)
+                return out.astype("uint8"), "u2net"
+            log.info("U²-Net mask rejected (share %.2f) — flood fill", share)
+
+        if bg == "white":
+            return PhotoService._whiten_backdrop(cv2, crop), "flood"
+        # the flood fill can only whiten; tint its white afterwards
+        whitened = PhotoService._whiten_backdrop(cv2, crop)
+        if colour != (255, 255, 255):
+            white_zone = (whitened.astype(np.int16).min(axis=2) > 247)
+            tinted = whitened.copy()
+            tinted[white_zone] = colour
+            return tinted, "flood"
+        return whitened, "flood"
 
     @staticmethod
     def _whiten_backdrop(cv2, crop):
@@ -327,7 +391,7 @@ class PhotoService:
         return out.astype("uint8")
 
     @staticmethod
-    def _center_crop(cv2, rgb, aspect: float = 0.75, out=None):
+    def _center_crop(cv2, rgb, aspect: float = OUT_W / OUT_H, out=None):
         h, w = rgb.shape[:2]
         target = aspect
         if w / h > target:
@@ -345,9 +409,10 @@ def prepare_portrait(data: bytes, aspect: float = 0.75, height: int = 800) -> by
     """Head-and-shoulders crop at ``aspect`` (width/height) on a white
     background, ready to drop into a document frame edge to edge.
 
-    Runs the offline pipeline only (no AI): YuNet face detection → eye-line
-    straightening → document crop → GrabCut background whitening. Returns PNG
-    bytes, or None when the image cannot be read.
+    Runs the offline pipeline only (no cloud AI): YuNet face detection →
+    eye-line straightening → document crop → U²-Net background removal (flood
+    fill when the model is absent). Returns PNG bytes, or None when the image
+    cannot be read.
     """
     try:
         import cv2
@@ -378,6 +443,6 @@ def prepare_portrait(data: bytes, aspect: float = 0.75, height: int = 800) -> by
                 x, y, w, h, *_ = again
 
     crop = svc._document_crop(cv2, rgb, x, y, w, h, aspect)
-    crop = svc._whiten_backdrop(cv2, crop)
+    crop, _method = svc._apply_background(cv2, crop, "white")
     crop = cv2.resize(crop, size, interpolation=cv2.INTER_AREA)
     return _encode_png(crop)
