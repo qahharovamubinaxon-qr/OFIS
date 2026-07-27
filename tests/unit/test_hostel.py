@@ -190,3 +190,32 @@ def test_start_date_defaults_to_today(container) -> None:
     today = date.today()
     text = fitz.open(result.pdf_path)[1].get_text()
     assert f"{today.day:02d}.{today.month:02d}.{today.year} 00:00" in text
+
+
+def test_every_hostel_gets_the_start_date(container) -> None:
+    """The box is filled for each hostel — including ones added later, whose
+    template the program builds from the blank."""
+    import fitz
+
+    from src.domain.registration_address import RegistrationAddress
+    from src.services.hostel_service import HostelService
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    later = RegistrationAddress(
+        label="ХОСТЕЛ НЕВСКИЙ 5", internal_code="nevsky5",
+        address_text="САНКТ-ПЕТЕРБУРГ Г, НЕВСКИЙ ПР, ДОМ 5",
+        host_fio="ИВАНОВ ПЕТР СЕРГЕЕВИЧ", kind="hostel",
+        oblast="САНКТ-ПЕТЕРБУРГ Г", ulitsa="НЕВСКИЙ ПР", dom="5",
+        organization_name="ООО ГОСТЕВОЙ ДОМ НЕВА", inn="7801234567",
+        template_path=Path("missing.pdf"),
+    )
+    for address in (svc.create_hostel(_hostel("first1"), None),
+                    svc.create_hostel(later, None)):
+        result = HostelService().generate(
+            _passport(), None, address,
+            registration_expiry=date(2026, 10, 25),
+            registration_start=date(2026, 7, 27),
+        )
+        page2 = fitz.open(result.pdf_path)[1]
+        assert page2.search_for("27.07.2026 00:00"), f"{address.label}: date missing"
