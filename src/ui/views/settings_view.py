@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -189,6 +190,41 @@ class SettingsView(QWidget):
             "/start PAROL. Token kiritilgach dasturni qayta oching."
         )
         root.addWidget(tg_card)
+
+        # -- mini app -------------------------------------------------------
+        from src.controllers.telegram_bot import KEY_WEBAPP
+        from src.controllers.telegram_webapp import (
+            DEFAULT_PORT,
+            KEY_ENABLED,
+            KEY_PORT,
+            lan_ip,
+        )
+
+        port_now = self._settings.get(KEY_PORT, DEFAULT_PORT)
+        wa = Card("🌐", "Mini App",
+                  "Butun dastur telefon ekranida — bir xil bo'limlar, bir xil PDF.")
+        wf = wa.form()
+        self._wa_on = QCheckBox("Yoqilsin (dastur ochiq turganda)")
+        self._wa_on.setChecked(
+            str(self._settings.get(KEY_ENABLED, "0")) in ("1", "true", "True"))
+        self._wa_port = QLineEdit(str(port_now))
+        self._wa_url = QLineEdit(str(self._settings.get(KEY_WEBAPP, "") or ""))
+        self._wa_url.setPlaceholderText("https://…  (Telegram Mini App uchun)")
+        wf.addRow("", self._wa_on)
+        wf.addRow("Port:", self._wa_port)
+        wf.addRow("Public https URL:", self._wa_url)
+        save_wa = QPushButton("Saqlash")
+        save_wa.setObjectName("primaryButton")
+        save_wa.clicked.connect(self._save_webapp)
+        wa.add(_right(save_wa))
+        self._wa_state = wa.note("")
+        wa.note(
+            f"Telefon va kompyuter bitta Wi-Fi'da bo'lsa, telefon brauzerida oching:\n"
+            f"http://{lan_ip()}:{port_now}/?k=PAROL   (PAROL — yuqoridagi bot paroli)\n"
+            "Telegram ichida «Mini App» tugmasi chiqishi uchun public https manzil "
+            "kerak (Cloudflare Tunnel / ngrok) — uni yuqoridagi maydonga yozing."
+        )
+        root.addWidget(wa)
         root.addStretch(1)
 
         # -- backup / restore ---------------------------------------------
@@ -263,6 +299,17 @@ class SettingsView(QWidget):
         self._tg_state.setText("✅  Token kiritilgan — bot ishga tushadi." if has_token
                                else "⚠️  Token yo'q — bot o'chirilgan.")
 
+        from src.controllers.telegram_bot import KEY_PASSWORD
+        from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_ENABLED, KEY_PORT, lan_ip
+
+        if str(self._settings.get(KEY_ENABLED, "0")) not in ("1", "true", "True"):
+            self._wa_state.setText("⚠️  O'chirilgan.")
+        elif not str(self._settings.get(KEY_PASSWORD, "") or "").strip():
+            self._wa_state.setText("⚠️  Parol yo'q — Mini App ishga tushmaydi.")
+        else:
+            port = self._settings.get(KEY_PORT, DEFAULT_PORT)
+            self._wa_state.setText(f"✅  Yoqilgan:  http://{lan_ip()}:{port}/?k=PAROL")
+
         backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
         if backups:
             newest = backups[-1]
@@ -312,6 +359,19 @@ class SettingsView(QWidget):
             self, "OK",
             "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
             "bot shunda ishga tushadi.")
+
+    def _save_webapp(self) -> None:
+        from src.controllers.telegram_bot import KEY_WEBAPP
+        from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_ENABLED, KEY_PORT
+
+        port = self._wa_port.text().strip()
+        self._settings.set(KEY_PORT, port if port.isdigit() else str(DEFAULT_PORT))
+        self._settings.set(KEY_ENABLED, "1" if self._wa_on.isChecked() else "0")
+        self._settings.set(KEY_WEBAPP, self._wa_url.text().strip())
+        self._refresh_states()
+        QMessageBox.information(
+            self, "OK",
+            "Mini App sozlamalari saqlandi.\nDasturni yopib qayta oching.")
 
     # -- backup / restore ----------------------------------------------
     def _create_backup(self) -> None:

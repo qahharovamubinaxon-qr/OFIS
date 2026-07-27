@@ -246,6 +246,18 @@ def main() -> int:
         log.error("Telegram bot failed to start: %s", exc)
     window._telegram_bot = bot  # keep alive for the app's lifetime
 
+    # Mini App — the same modules as a phone page; off unless switched on.
+    from src.controllers.telegram_webapp import WebAppServer
+
+    webapp = WebAppServer(container)
+    try:
+        url = webapp.start()
+        if url:
+            log.info("Mini App reachable at %s", url)
+    except Exception as exc:  # noqa: BLE001 - must never block the UI
+        log.error("Mini App failed to start: %s", exc)
+    window._webapp = webapp
+
     log.info("UI ready (theme=%s, language=%s)", settings.theme, settings.language)
     return app.exec()
 

@@ -7,9 +7,8 @@ daemon thread inside the desktop app (long polling — no server, no public IP
 needed). Access is protected by a password: the operator sends
 ``/start <parol>`` once per chat; authorized chat ids persist in settings.
 
-Every module is one entry in :data:`_MODULES` — button label, what has to be
-picked first, how many photos, which extra questions to ask, and how to run it.
-Adding a module to the bot means adding a row there, nothing else.
+The modules themselves live in :mod:`src.controllers.ofis_modules`, shared with
+the Mini App, so both front ends always offer the same work.
 
 No third-party dependency — raw Bot API over urllib.
 """
@@ -19,16 +18,30 @@ from __future__ import annotations
 import json
 import threading
 import time
-import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 from src.common.errors import OfisError
 from src.common.logging import get_logger
+from src.controllers.ofis_modules import (
+    BY_BUTTON as _BY_BUTTON,
+)
+from src.controllers.ofis_modules import (
+    BY_KEY as _BY_KEY,
+)
+from src.controllers.ofis_modules import (
+    MODULES as _MODULES,
+)
+from src.controllers.ofis_modules import (
+    Module,
+    RunContext,
+    build_controllers,
+    label_of as _label,
+    new_state as _fresh,
+    parse_date as _parse_date,
+)
 
 log = get_logger(__name__)
 
@@ -40,196 +53,6 @@ KEY_WEBAPP = "tg.webapp_url"
 _BTN_RUN = "✅ Тайёрла"
 _BTN_CANCEL = "❌ Бекор"
 _BTN_MENU = "☰ Бўлимлар"
-
-# ---------------------------------------------------------------- questions
-
-
-@dataclass(frozen=True)
-class Ask:
-    """One extra question asked after the photos, before the work starts."""
-
-    field: str
-    prompt: str
-    kind: str = "date"            # date | text
-    default_days: int | None = None  # date default = today + N days
-
-
-def _parse_date(text: str) -> date | None:
-    for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d-%m-%Y", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(text.strip(), fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-# ---------------------------------------------------------------- modules
-
-
-@dataclass(frozen=True)
-class Module:
-    key: str
-    button: str
-    run: Callable[["TelegramBot", int, dict], list[Path]]
-    targets: Callable[[dict], list] | None = None
-    target_prompt: str = "Танланг:"
-    photo_prompt: str = "Расмларни юборинг."
-    photo_labels: tuple[str, ...] = ()
-    min_photos: int = 1
-    asks: tuple[Ask, ...] = ()
-    text_only: bool = False       # no photos — answers questions instead
-    needs_ai: bool = True
-
-
-def _photos(state: dict) -> tuple[bytes, bytes | None, bytes | None]:
-    ph = state["photos"]
-    return ph[0], (ph[1] if len(ph) > 1 else None), (ph[2] if len(ph) > 2 else None)
-
-
-def _run_patent(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    passport, patent, back = _photos(state)
-    r = bot.ctl()["process"].generate_from_images(
-        state["target"], passport, patent, back,
-        form_date=state["answers"].get("form_date") or date.today(), profession=None)
-    bot.note(chat_id, f"№ {r.reg_number}")
-    return [r.pdf_path]
-
-
-def _run_reg(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    passport, patent, back = _photos(state)
-    r = bot.ctl()["reg"].generate_from_images(
-        state["target"], passport, patent, back,
-        registration_expiry=state["answers"]["expiry"])
-    return [r.pdf_path]
-
-
-def _run_hostel(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    passport, patent, back = _photos(state)
-    r = bot.ctl()["hostel"].generate_from_images(
-        state["target"], passport, patent, back,
-        registration_expiry=state["answers"]["expiry"],
-        registration_start=state["answers"]["start"])
-    return [r.pdf_path]
-
-
-def _run_trud(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    passport, patent, back = _photos(state)
-    r = bot.ctl()["trud"].generate_from_images(
-        state["target"], passport, patent, back,
-        form_date=date.today(), profession=None)
-    return [p for p in (r.trud_path, r.uved_path, getattr(r, "hod_path", None)) if p]
-
-
-def _run_svera(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    from src.config import paths
-
-    passport = state["photos"][0]
-    if len(state["photos"]) < 2:
-        raise OfisError("Ишчининг расмини ҳам юборинг (2-расм).")
-    portrait = paths.output_dir() / "svera" / f"tg_{uuid.uuid4().hex[:8]}.jpg"
-    portrait.parent.mkdir(parents=True, exist_ok=True)
-    portrait.write_bytes(state["photos"][1])
-    r = bot.ctl()["svera"].generate_from_images(
-        state["target"], passport, portrait,
-        issue_date=state["answers"].get("issue_date") or date.today())
-    bot.note(chat_id, f"Удостоверение № {r.udo_number} · ПО{r.po_number}")
-    return [r.pdf_path]
-
-
-def _run_perevod(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    r = bot.ctl()["perevod"].translate(state["photos"], doc_type="auto")
-    return [p for p in (r.pdf_path, getattr(r, "docx_path", None)) if p]
-
-
-def _run_photo34(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    from src.config import paths
-
-    result = bot.ctl()["photo"].process(state["photos"][0])
-    out = paths.output_dir() / "photo" / f"tg_3x4_{uuid.uuid4().hex[:8]}.png"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(result.png)
-    if result.note:
-        bot.note(chat_id, result.note)
-    return [out]
-
-
-def _run_jpg2pdf(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    from src.config import paths
-    from src.services.jpg2pdf_service import build_pdf
-
-    out = paths.output_dir() / "jpg2pdf" / f"tg_{uuid.uuid4().hex[:8]}.pdf"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(build_pdf(state["photos"]))
-    return [out]
-
-
-def _run_summa(bot: "TelegramBot", chat_id: int, state: dict) -> list[Path]:
-    from src.utils.rus_words import amount_to_words, date_to_words, format_amount, parse_amount
-
-    raw = str(state["answers"].get("value", "")).strip()
-    as_date = _parse_date(raw)
-    if as_date is not None:
-        bot.note(chat_id, date_to_words(as_date))
-        return []
-    try:
-        rubles, kopecks = parse_amount(raw)
-    except ValueError:
-        bot.note(chat_id, "Тушунмадим. Сана (25.07.2026) ёки сумма (27500,50) ёзинг.")
-        return []
-    bot.note(chat_id, f"{format_amount(rubles, kopecks)}\n"
-                      f"{amount_to_words(rubles, kopecks)}")
-    return []
-
-
-_TRIO = ("Паспорт", "Патент (олд)", "Патент (орқа)")
-_TRIO_PROMPT = ("Расмларни ТАРТИБ билан юборинг:\n"
-                "1️⃣ Паспорт\n2️⃣ Патент (олд)\n3️⃣ Патент (орқа)\n"
-                f"Кейин «{_BTN_RUN}» босинг.")
-
-_MODULES: tuple[Module, ...] = (
-    Module("patent", "🛂 Патент PDF", _run_patent,
-           targets=lambda c: c["process"].companies(),
-           target_prompt="Фирмани танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO),
-    Module("reg", "🏠 Регистрация", _run_reg,
-           targets=lambda c: c["reg"].addresses(),
-           target_prompt="Манзилни танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO,
-           asks=(Ask("expiry", "Рўйхатдан ўтиш ТУГАШ санаси (КК.ОО.ЙЙЙЙ):",
-                     default_days=90),)),
-    Module("hostel", "🛏️ ХОСТЕЛ", _run_hostel,
-           targets=lambda c: c["hostel"].addresses(),
-           target_prompt="Хостелни танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO,
-           asks=(Ask("start", "Яшаш БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
-                 Ask("expiry", "Яшаш ТУГАШ санаси (КК.ОО.ЙЙЙЙ):", default_days=90))),
-    Module("trud", "📑 Трудовой", _run_trud,
-           targets=lambda c: c["trud"].firms(),
-           target_prompt="Фирмани танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO),
-    Module("svera", "🎓 СФЕРА", _run_svera,
-           targets=lambda c: c["svera"].professions(),
-           target_prompt="Касбни танланг:",
-           photo_prompt=("Иккита расм юборинг:\n1️⃣ Паспорт\n2️⃣ Ишчининг расми\n"
-                         f"Кейин «{_BTN_RUN}» босинг."),
-           photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
-           asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
-    Module("perevod", "🌐 ПЕРЕВОД", _run_perevod,
-           photo_prompt=("Таржима қилинадиган ҳужжат расмларини юборинг "
-                         f"(хоҳлаганча), кейин «{_BTN_RUN}» босинг.")),
-    Module("photo", "📷 Расм 3×4", _run_photo34,
-           photo_prompt="Ишчи расмини юборинг — 3×4 тайёрлаб бераман.",
-           photo_labels=("Расм",), needs_ai=False),
-    Module("jpg2pdf", "🖼️ JPG→PDF", _run_jpg2pdf,
-           photo_prompt=("Расмларни тартиб билан юборинг, кейин "
-                         f"«{_BTN_RUN}» босинг."), needs_ai=False),
-    Module("summa", "🔢 СУММА-ДАТА", _run_summa, text_only=True, needs_ai=False,
-           asks=(Ask("value", "Сана (25.07.2026) ёки сумма (27500,50) ёзинг:",
-                     kind="text"),)),
-)
-
-_BY_BUTTON = {m.button: m for m in _MODULES}
-_BY_KEY = {m.key: m for m in _MODULES}
 
 
 def _main_keyboard() -> dict:
@@ -247,19 +70,6 @@ def _main_keyboard() -> dict:
 
 _MAIN_KB = _main_keyboard()
 _RUN_KB = {"keyboard": [[_BTN_RUN], [_BTN_MENU, _BTN_CANCEL]], "resize_keyboard": True}
-
-
-def _fresh() -> dict:
-    return {"mode": None, "step": None, "photos": [], "answers": {},
-            "targets": None, "target": None, "ask_index": 0}
-
-
-def _label(item) -> str:
-    for attr in ("name", "label", "title"):
-        value = getattr(item, attr, None)
-        if value:
-            return str(value)
-    return str(item)
 
 
 # ---------------------------------------------------------------- the bot
@@ -313,46 +123,10 @@ class TelegramBot:
 
     # -- controllers (built lazily, Qt-free) ---------------------------
     def ctl(self):
-        if self._controllers is not None:
-            return self._controllers
-        from src.controllers.hostel_controller import HostelController
-        from src.controllers.process_controller import ProcessController
-        from src.controllers.registration_controller import RegistrationController
-        from src.controllers.svera_controller import SveraController
-        from src.controllers.trud_controller import TrudController
-        from src.ocr.service import OcrService
-        from src.services.company_service import CompanyService
-        from src.services.generation_service import GenerationService
-        from src.services.hostel_service import HostelService
-        from src.services.perevod_service import PerevodService
-        from src.services.photo_service import PhotoService
-        from src.services.profession_service import ProfessionService
-        from src.services.registration_address_service import RegistrationAddressService
-        from src.services.registration_service import RegistrationService
-        from src.services.svera_service import SveraService
-        from src.services.trud_service import TrudFirmService, TrudService
-
-        c = self._container
-        ocr = c.resolve(OcrService)
-        key = lambda: str(self._settings.get("ai.gemini_key", "") or "")  # noqa: E731
-        self._controllers = {
-            "process": ProcessController(
-                c.resolve(CompanyService), ocr, c.resolve(GenerationService)),
-            "reg": RegistrationController(
-                c.resolve(RegistrationAddressService), ocr,
-                c.resolve(RegistrationService)),
-            # HostelService is stateless and not container-registered (the
-            # desktop view builds it the same way).
-            "hostel": HostelController(
-                c.resolve(RegistrationAddressService), ocr, HostelService()),
-            "trud": TrudController(
-                c.resolve(TrudFirmService), ocr, c.resolve(TrudService)),
-            "svera": SveraController(
-                c.resolve(ProfessionService), ocr, c.resolve(SveraService)),
-            "perevod": PerevodService(key_getter=key),
-            "photo": PhotoService(key_getter=key),
-            "ocr": ocr,
-        }
+        if self._controllers is None:
+            self._controllers = build_controllers(
+                self._container,
+                lambda: str(self._settings.get("ai.gemini_key", "") or ""))
         return self._controllers
 
     # -- transport (overridden in tests) -------------------------------
@@ -632,7 +406,9 @@ class TelegramBot:
         if not module.text_only:
             self._send(chat_id, "⏳ Тайёрланяпти… (1-2 дақиқа)")
         try:
-            outputs = module.run(self, chat_id, state)
+            outputs = module.run(
+                RunContext(ctl=self.ctl(), note=lambda t: self.note(chat_id, t)),
+                state)
         except OfisError as exc:
             self._menu(chat_id, f"❌ {exc.message}")
         except Exception as exc:  # noqa: BLE001 - surface, never crash the poller
