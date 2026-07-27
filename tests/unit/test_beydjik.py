@@ -115,8 +115,9 @@ def test_the_old_region_line_is_actually_erased(svc) -> None:
     import numpy as np
 
     page = fitz.open(_make(svc, region="77").pdf_path)[0]
-    # the strip that carried «…область» beyond where «г. Москва» reaches
-    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(181.0, 324.5, 218.0, 332.5))
+    # the strip that carried «…область» beyond where the shorter «г. Москва»
+    # reaches (that one starts at x≈214.5)
+    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(184.0, 324.5, 213.0, 332.5))
     arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
         pm.height, pm.width, pm.n)[:, :, :3]
     assert (arr.max(2) < 110).sum() == 0, "the old region line is still printed"
@@ -156,6 +157,8 @@ def test_the_values_are_set_in_arial(svc) -> None:
 
 
 def test_a_long_name_shrinks_instead_of_running_off_the_card(svc) -> None:
+    from src.services.beydjik_service import _SIZE
+
     long_name = _passport(surname="Абдурахманбековхудойбердиев")
     r = svc.generate(long_name, region="77", personal_number="2600586935",
                      inn="772998449826", issue_date=date(2026, 6, 24))
@@ -164,7 +167,7 @@ def test_a_long_name_shrinks_instead_of_running_off_the_card(svc) -> None:
                 for ln in b.get("lines", []) for s in ln["spans"]
                 if "Абдурахман" in s["text"])
     assert span["bbox"][2] < 263.04, "the name runs off the card"
-    assert span["size"] < 7.0, "the name should have shrunk to fit"
+    assert span["size"] < _SIZE, "the name should have shrunk to fit"
 
 
 def test_a_long_firm_name_wraps_onto_a_second_line(svc) -> None:

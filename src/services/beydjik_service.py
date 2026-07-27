@@ -53,11 +53,14 @@ DEFAULT_FIRM = "ООО СФЕРА"
 # values remained. The blank's labels are Arial Bold; the values the office
 # typed are Arial Regular — 10pt in their Word original, which the badge's
 # own page scale renders at 7pt here.
-_FONT, _FONT_BOLD = "OfisArial", "OfisArialBold"
-_SERIF = "OfisSerif"
-_SIZE = 7.0                            # ФИО, даты, гражданство, документ…
-_SERIA_SIZE = 8.2                      # the серия line runs a little larger
-_DATE_SIZE = 8.8                       # «Дата выдачи» is set bold and larger
+# The office then asked for the values one size up and in bold, so every value
+# is set in Arial Bold — the labels around them are bold too, and the card
+# reads better under lamination.
+_FONT_BOLD = "OfisArialBold"
+_SERIF_BOLD = "OfisSerifBold"
+_SIZE = 7.8                            # ФИО, даты, гражданство…
+_SERIA_SIZE = 9.0                      # the серия line runs a little larger
+_DATE_SIZE = 9.6                       # «Дата выдачи» is larger again
 _PR_SIZE = 15.6                        # «ПР» is Times, matching its own label
 _PR_TRACKING = 1.16                    # …and letterspaced, as on the sample
 
@@ -84,7 +87,7 @@ _ROW_DOB = 109.21
 _ROW_CITIZEN = 119.29
 _ROW_DOC = 138.25                     # «паспорт № / ИНН», under its own label
 _ROW_DOLZH = 167.93                   # профессия, under its 3-line label (обл)
-_DOC_SIZE = 6.6                       # the документ line is set a touch smaller
+_DOC_SIZE = 7.4                       # the документ line is set a touch smaller
 # the blanks already print the separating «/» at x 157.7–159.3, so the two
 # numbers are written on either side of it rather than with a slash of our own
 _DOC_PASSPORT_MAX_X = 156.2
@@ -218,11 +221,10 @@ class BeydjikService:
         doc = fitz.open(blank)
         try:
             page = doc[0]
-            page.insert_font(fontname="bj", fontfile=str(_font_file(_FONT)))
-            page.insert_font(fontname="bjb", fontfile=str(_font_file(_FONT_BOLD)))
-            page.insert_font(fontname="bjs", fontfile=str(_font_file(_SERIF)))
-            font = fitz.Font(fontfile=str(_font_file(_FONT)))
-            serif = fitz.Font(fontfile=str(_font_file(_SERIF)))
+            page.insert_font(fontname="bj", fontfile=str(_font_file(_FONT_BOLD)))
+            page.insert_font(fontname="bjs", fontfile=str(_font_file(_SERIF_BOLD)))
+            font = fitz.Font(fontfile=str(_font_file(_FONT_BOLD)))
+            serif = fitz.Font(fontfile=str(_font_file(_SERIF_BOLD)))
             self._fill_front(page, font, passport, region=region,
                              personal_number=personal_number.strip(),
                              inn=inn.strip(), dolzhnost=dolzhnost.strip())
@@ -275,7 +277,7 @@ class BeydjikService:
         self._rewrite_territory(page, font, territory)
         self._fill_firm(page, font, firm)
         self._back_text(page, font, _date_dmy(issue_date), *_DATE_ORIGIN,
-                        size=_DATE_SIZE, fontname="bjb")
+                        size=_DATE_SIZE)
         self._back_number(page, serif, pr, *_PR_ORIGIN)
 
     def _fill_firm(self, page, font, firm: str) -> None:
