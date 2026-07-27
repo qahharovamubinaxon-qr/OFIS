@@ -39,17 +39,29 @@ _BUNDLED_BLANK = paths.templates_dir() / "inn" / "blank.pdf"
 _REG, _BOLD = "OfisSerif", "OfisSerifBold"
 _SIZE = 11.4
 
-_FIO_CENTRE, _FIO_BASE = 305.2, 265.5      # centred over the long rule
-_FIO_MAX_W = 320.0
-_SEX_X, _SEX_BASE = 116.6, 296.5
-_SEX_MAX_W = 100.0
-_DOB_CENTRE, _DOB_BASE = 421.4, 296.5
-_CITIZ_X, _CITIZ_BASE = 176.5, 329.9
-_CITIZ_MAX_W = 250.0
-_DAY_X, _DAY_BASE = 161.5, 425.3
+# Every value sits this far above its rule, so the whole sheet lines up.
+# Measured from the blank: the rules are at these y positions.
+_ABOVE_RULE = 2.6
+_RULE_FIO, _RULE_SEX, _RULE_DOB = 269.2, 301.7, 301.7
+_RULE_CITIZ, _RULE_DAY = 335.3, 428.8
 
-# the twelve ИНН cells
-_INN_FIRST_CENTRE, _INN_PITCH, _INN_BASE = 292.8, 17.26, 425.3
+_FIO_CENTRE = 305.2                        # centred over the long rule
+_FIO_BASE = _RULE_FIO - _ABOVE_RULE
+_FIO_MAX_W = 320.0
+_SEX_X, _SEX_BASE = 116.6, _RULE_SEX - _ABOVE_RULE
+_SEX_MAX_W = 100.0
+_DOB_CENTRE, _DOB_BASE = 421.4, _RULE_DOB - _ABOVE_RULE
+_CITIZ_X, _CITIZ_BASE = 176.5, _RULE_CITIZ - _ABOVE_RULE
+_CITIZ_MAX_W = 250.0
+_DAY_X, _DAY_BASE = 161.5, _RULE_DAY - _ABOVE_RULE
+
+# The twelve ИНН cells, measured off the blank's own grid (the cells are not
+# perfectly even, so each centre is kept rather than a single pitch).
+_INN_CELL_TOP, _INN_CELL_BOTTOM = 416.6, 432.0
+_INN_CENTRES = (292.7, 309.7, 326.8, 343.9, 361.0, 378.1,
+                395.4, 412.7, 430.1, 447.4, 464.5, 480.6)
+# a digit is centred in its cell when its cap-height straddles the middle
+_INN_BASE = (_INN_CELL_TOP + _INN_CELL_BOTTOM) / 2 + _SIZE * 0.662 / 2
 
 
 @dataclass(frozen=True)
@@ -165,9 +177,8 @@ class InnService:
                    _CITIZ_BASE, width=_CITIZ_MAX_W)
         self._text(page, _date_dmy(form_date), _DAY_X, _DAY_BASE)
 
-        for i, digit in enumerate(digits):
-            self._text(page, digit, _INN_FIRST_CENTRE + i * _INN_PITCH,
-                       _INN_BASE, centre=True)
+        for centre, digit in zip(_INN_CENTRES, digits, strict=True):
+            self._text(page, digit, centre, _INN_BASE, centre=True)
 
     @staticmethod
     def _text(page, text: str, x: float, baseline: float, *,

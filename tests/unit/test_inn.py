@@ -88,8 +88,13 @@ def test_the_sheet_carries_every_value(svc) -> None:
     assert "ишчининг инн номери" in flat
 
 
-def test_the_twelve_digits_sit_one_per_cell(svc) -> None:
-    from src.services.inn_service import _INN_FIRST_CENTRE, _INN_PITCH
+def test_the_twelve_digits_sit_centred_in_their_cells(svc) -> None:
+    """Each digit must be in the middle of its box, across and down."""
+    from src.services.inn_service import (
+        _INN_CELL_BOTTOM,
+        _INN_CELL_TOP,
+        _INN_CENTRES,
+    )
 
     page = fitz.open(_make(svc, inn="770912345678").pdf_path)[0]
     digits = [(s["bbox"], s["text"]) for b in page.get_text("dict")["blocks"]
@@ -100,10 +105,36 @@ def test_the_twelve_digits_sit_one_per_cell(svc) -> None:
     digits.sort(key=lambda d: d[0][0])
     assert "".join(t.strip() for _, t in digits) == "770912345678"
 
-    # each one is centred in its own cell
-    for i, (bbox, _) in enumerate(digits):
-        centre = (bbox[0] + bbox[2]) / 2
-        assert abs(centre - (_INN_FIRST_CENTRE + i * _INN_PITCH)) < 1.5
+    cell_middle = (_INN_CELL_TOP + _INN_CELL_BOTTOM) / 2
+    for (bbox, _), cell_centre in zip(digits, _INN_CENTRES, strict=True):
+        across = (bbox[0] + bbox[2]) / 2
+        down = (bbox[1] + bbox[3]) / 2
+        assert abs(across - cell_centre) < 0.5, f"{across} vs {cell_centre}"
+        assert abs(down - cell_middle) < 0.5, f"{down} vs {cell_middle}"
+
+
+def test_values_sit_just_above_their_rules(svc) -> None:
+    """Everything hangs the same small distance over its line."""
+    from src.services.inn_service import (
+        _ABOVE_RULE,
+        _RULE_CITIZ,
+        _RULE_DAY,
+        _RULE_FIO,
+        _RULE_SEX,
+    )
+
+    page = fitz.open(_make(svc).pdf_path)[0]
+    spans = {s["text"].strip(): s for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for s in ln["spans"]}
+
+    for text, rule in (("ИСАКОВ ШАХБОЗ АКМАЛЖОН УГЛИ", _RULE_FIO),
+                       ("мужской", _RULE_SEX),
+                       ("УЗБЕКИСТАН", _RULE_CITIZ),
+                       ("27.07.2026", _RULE_DAY)):
+        span = spans.get(text)
+        assert span is not None, f"{text!r} missing"
+        # PyMuPDF reports the span's origin y as the baseline
+        assert abs(span["origin"][1] - (rule - _ABOVE_RULE)) < 0.3, text
 
 
 def test_a_woman_is_labelled_correctly(svc) -> None:
