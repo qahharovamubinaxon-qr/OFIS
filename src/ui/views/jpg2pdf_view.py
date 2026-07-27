@@ -22,16 +22,9 @@ from src.ui.widgets.run_progress import RunProgress
 
 
 def _build_pdf(paths: list[str]) -> bytes:
-    from PIL import Image, ImageOps
+    from src.services.jpg2pdf_service import build_pdf_from_paths
 
-    pages = []
-    for p in paths:
-        img = ImageOps.exif_transpose(Image.open(p)).convert("RGB")
-        pages.append(img)
-    buf = io.BytesIO()
-    pages[0].save(buf, format="PDF", save_all=True, append_images=pages[1:],
-                  resolution=150)
-    return buf.getvalue()
+    return build_pdf_from_paths(paths)
 
 
 class Jpg2PdfView(QWidget):
