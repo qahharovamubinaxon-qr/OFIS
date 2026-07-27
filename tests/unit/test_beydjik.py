@@ -132,6 +132,22 @@ def test_the_dolzhnost_line_is_only_on_the_oblast_layout(svc) -> None:
         _make(svc, region="77", dolzhnost="Водитель").pdf_path)
 
 
+def test_the_dolzhnost_is_set_a_size_smaller(svc) -> None:
+    """The office wanted профессия smaller than the rest of the card.
+
+    The vertical stretch shows up in the size PyMuPDF reports, so the two
+    sizes are compared with each other rather than with the constants.
+    """
+    from src.services.beydjik_service import _DOLZH_SIZE, _SIZE
+
+    assert _DOLZH_SIZE < _SIZE
+    page = fitz.open(_make(svc, region="50", dolzhnost="Водитель").pdf_path)[0]
+    spans = {sp["text"].strip(): sp for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]}
+    ratio = spans["Водитель"]["size"] / spans["Болтазода"]["size"]
+    assert abs(ratio - _DOLZH_SIZE / _SIZE) < 0.02, ratio
+
+
 def test_the_document_line_uses_the_blank_s_own_slash(svc) -> None:
     """The blank already prints «/» between паспорт and ИНН.
 
@@ -158,8 +174,6 @@ def test_the_values_are_set_in_arial(svc) -> None:
 
 
 def test_a_long_name_shrinks_instead_of_running_off_the_card(svc) -> None:
-    from src.services.beydjik_service import _SIZE
-
     long_name = _passport(surname="Абдурахманбековхудойбердиев")
     r = svc.generate(long_name, region="77", personal_number="2600586935",
                      inn="772998449826", issue_date=date(2026, 6, 24))
@@ -168,7 +182,12 @@ def test_a_long_name_shrinks_instead_of_running_off_the_card(svc) -> None:
                 for ln in b.get("lines", []) for s in ln["spans"]
                 if "Абдурахман" in s["text"])
     assert span["bbox"][2] < 263.04, "the name runs off the card"
-    assert span["size"] < _SIZE, "the name should have shrunk to fit"
+    # the reported size carries the vertical stretch, so it is compared with a
+    # value that was not shrunk rather than with _SIZE itself
+    citizenship = next(sp for b in page.get_text("dict")["blocks"]
+                       for ln in b.get("lines", []) for sp in ln["spans"]
+                       if sp["text"].strip() == "Таджикистан")
+    assert span["size"] < citizenship["size"], "the name should have shrunk"
 
 
 def test_a_long_firm_name_wraps_onto_a_second_line(svc) -> None:

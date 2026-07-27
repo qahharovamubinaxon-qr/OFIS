@@ -94,6 +94,7 @@ _ROW_CITIZEN = 119.29
 _ROW_DOC = 138.25                     # «паспорт № / ИНН», under its own label
 _ROW_DOLZH = 167.93                   # профессия, under its 3-line label (обл)
 _DOC_SIZE = 7.4                       # the документ line is set a touch smaller
+_DOLZH_SIZE = 7.0                     # …and профессия a size smaller again
 # the blanks already print the separating «/» at x 157.7–159.3, so the two
 # numbers are written on either side of it rather than with a slash of our own
 _DOC_PASSPORT_MAX_X = 156.2
@@ -276,7 +277,7 @@ class BeydjikService:
 
         if REGIONS[region]["dolzhnost"] and dolzhnost:
             self._text(page, font, dolzhnost, _X_FULL, _ROW_DOLZH,
-                       max_x=_VALUE_MAX_X)
+                       size=_DOLZH_SIZE, max_x=_VALUE_MAX_X)
 
     def _fill_back(self, page, font, serif, *, firm: str, issue_date: date,
                    pr: str, territory: str) -> None:
