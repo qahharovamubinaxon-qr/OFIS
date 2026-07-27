@@ -248,3 +248,33 @@ def test_the_bundled_blank_carries_no_previous_worker() -> None:
     assert "16.06.1987" not in text
     # …but the sheet itself is intact
     assert "ООО «СФЕРА»" in text and "фукаролиги" in text
+
+
+def test_every_letter_actually_prints(svc) -> None:
+    """Guards against a font whose glyphs measure correctly but draw blank.
+
+    A subsetted copy of Times New Roman keeps the advance widths of letters it
+    dropped, so a missing Ш or М leaves a correctly-sized hole that the text
+    layer cannot reveal. Only looking at ink catches it.
+    """
+    import numpy as np
+
+    # letters that do NOT appear in the sheet's own printed labels
+    p = _passport(surname="ШУХРАТОВ", name="МЮЗАФФАР", patronymic="ЭШБОЕВИЧ")
+    r = svc.generate(p, inn="770912345678", form_date=date(2026, 7, 27))
+
+    page = fitz.open(r.pdf_path)[0]
+    DPI = 300
+    s = DPI / 72
+    # strictly between the label above and the rule below, so only the name
+    # itself is measured — the rule would otherwise fill every column
+    pm = page.get_pixmap(dpi=DPI, clip=fitz.Rect(60, 255.5, 555, 267.5))
+    a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width, pm.n)
+    inked = [i for i, v in enumerate((a[:, :, :3].mean(2) < 128).sum(0)) if v > 0]
+    assert inked, "nothing was drawn on the ФИО line"
+
+    # a word space measures ~3.8pt; a letter that printed blank leaves ~9pt+
+    widest_gap = max(((cur - prev - 1) / s
+                      for prev, cur in zip(inked, inked[1:])), default=0.0)
+    assert widest_gap < 5.5, (
+        f"a {widest_gap:.1f}pt hole in the name — a letter printed blank")
