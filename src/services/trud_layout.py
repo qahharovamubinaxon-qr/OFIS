@@ -76,7 +76,6 @@ _INK = 200                  # anything darker counts as print…
 _NEUTRAL = 40               # …if it is grey rather than the stamp's blue
 _BORDER_MIN_PT = 30.0       # a vertical stroke this long is a table border
 _LEAD_PT = 5.0              # a value starts this far after a colon
-_SLACK_PT = 6.0             # …and may run a little past its underscore
 _DESCENDER = 0.21           # of the size, below the baseline
 
 
@@ -332,13 +331,21 @@ def _baseline(rule_y: float, size: float) -> float:
 
 
 def _field(field_id: str, page: int, x: float, y: float, size: float,
-           width: float | None = None) -> dict:
+           rule: tuple[float, float, float] | None = None) -> dict:
+    """One value, set in the contract's own type.
+
+    Nothing is shrunk to fit: the office asked for the filled-in words to read
+    exactly like the printed ones around them. The underscore the gap was drawn
+    with is whited out as the value is written, since it was only ever a guide
+    for whoever filled the form in by hand.
+    """
     out = {"id": field_id, "type": "text", "page": page,
            "x": round(x, 1), "y": y, "font": "OfisSerif", "size": size,
            "align": "left"}
-    if width:
-        out["width"] = round(width, 1)
-        out["overflow"] = "shrink"
+    if rule is not None:
+        rule_y, start, end = rule
+        out["clear_rects"] = [[round(start - 0.5, 1), round(rule_y - 1.5, 1),
+                               round(end + 0.5, 1), round(rule_y + 2.0, 1)]]
     return out
 
 
@@ -357,8 +364,7 @@ def _run_field(lines: list[Line], spot: tuple[int, float], place: str,
     y, start, end = (row[-1] if place == "sign_fio"
                      else max(row, key=lambda r: r[2] - r[1]))
     return [_field(f"trud.{place}", line.page, start + 1.0,
-                   _baseline(y, size), size,
-                   width=end - start - 1.0 + _SLACK_PT)]
+                   _baseline(y, size), size, rule=(y, start, end))]
 
 
 def _rows(line: Line) -> list[list[tuple[float, float, float]]]:
@@ -397,7 +403,7 @@ def _date_fields(lines: list[Line], spot: tuple[int, float], place: str,
     for part, (_y, start, end) in zip(DATE_PARTS, row, strict=True):
         out.append(_field(f"trud.{place}_{part}", line.page,
                           start + 1.0, baseline, size,
-                          width=end - start - 1.0 + _SLACK_PT))
+                          rule=(row[0][0], start, end)))
     return out
 
 
