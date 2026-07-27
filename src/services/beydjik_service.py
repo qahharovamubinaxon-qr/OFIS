@@ -38,9 +38,11 @@ log = get_logger(__name__)
 # region code → (label, bundled blank, does it carry должность?, territory line)
 REGIONS: dict[str, dict] = {
     "77": {"label": "77 — Москва", "blank": "msk_blank.pdf",
-           "dolzhnost": False, "territory": "г. Москва"},
+           "dolzhnost": False, "territory": "г. Москва",
+           "qr_region": "МОСКВА"},
     "50": {"label": "50 — Московская область", "blank": "obl_blank.pdf",
-           "dolzhnost": True, "territory": "Московская область"},
+           "dolzhnost": True, "territory": "Московская область",
+           "qr_region": "МОСКОВСКАЯ ОБЛАСТЬ"},
 }
 
 KEY_PR_NEXT = "beydjik.pr_next"
@@ -50,15 +52,20 @@ DEFAULT_FIRM = "ООО СФЕРА"
 
 # What goes inside the badge's QR code. The office edits this in Settings, so
 # the placeholders below are the contract — every one of them is filled from
-# the badge that is being printed.
+# the badge that is being printed. Writing a placeholder in CAPITALS gives the
+# value in capitals, which is what the office's record format wants.
 QR_FIELDS = ("fio", "surname", "name", "patronymic", "birth", "citizenship",
-             "passport", "inn", "region", "personal_number", "pr", "firm",
-             "date", "territory", "dolzhnost")
+             "passport", "inn", "region", "region_name", "personal_number",
+             "pr", "firm", "date", "territory", "dolzhnost")
+# the office's own pipe-delimited record, matching what their readers expect
 DEFAULT_QR_TEMPLATE = (
-    "{firm}; {fio}; {birth}; {citizenship}; {passport}; ИНН {inn}; "
-    "{region} {personal_number}; ПР {pr}; {date}")
-# past this the printed modules get too fine to scan at badge size
-_QR_MODULE_WARN = 57
+    "PT0012|Number={personal_number}|Series={region}|BlankNumber={pr}"
+    "|BlankSeries=ПР|LastName={SURNAME}|MiddleName={PATRONYMIC}"
+    "|FirstName={NAME}|BirthDate={birth}|Citizenship={CITIZENSHIP}"
+    "|DocNumber={passport}|Region={REGION_NAME}|Authority={firm}"
+    "|IssueDate={date}")
+# below this a printed module is too fine for a phone camera at badge size
+_QR_MIN_MODULE_MM = 0.38
 
 # ------------------------------------------------------------ geometry
 # Every number below was measured off the office's own filled badge, by
@@ -241,6 +248,7 @@ class BeydjikService:
             "firm": firm,
             "date": _date_dmy(issue_date),
             "territory": REGIONS[region]["territory"],
+            "region_name": REGIONS[region]["qr_region"],
             "dolzhnost": dolzhnost.strip(),
         }
         fields["fio"] = " ".join(
@@ -249,8 +257,10 @@ class BeydjikService:
 
         text = self.qr_template()
         for key in QR_FIELDS:
-            text = text.replace("{" + key + "}", fields.get(key, ""))
-        return " ".join(text.split(" "))
+            value = fields.get(key, "")
+            text = text.replace("{" + key + "}", value)
+            text = text.replace("{" + key.upper() + "}", value.upper())
+        return text
 
     # -------------------------------------------------------- generate
     def generate(
@@ -478,11 +488,12 @@ class BeydjikService:
 
         try:
             side = modules(text).shape[0]
-            if side > _QR_MODULE_WARN:
+            per_module_mm = (QR_BOX[2] - QR_BOX[0]) / 72 * 25.4 / side
+            if per_module_mm < _QR_MIN_MODULE_MM:
                 log.warning(
-                    "БЕЙДЖИК QR is %d modules wide — the printed squares will "
-                    "be about %.2f mm and may not scan; shorten the template.",
-                    side, (QR_BOX[2] - QR_BOX[0]) / 72 * 25.4 / (side + 8))
+                    "БЕЙДЖИК QR is %d modules wide — each printed square is "
+                    "only %.2f mm and may not scan; shorten the template.",
+                    side, per_module_mm)
             draw_qr(page, text, QR_BOX)
         except Exception as exc:  # noqa: BLE001 - never lose a badge to the QR
             log.warning("БЕЙДЖИК QR not drawn (%s) — keeping the blank's own", exc)

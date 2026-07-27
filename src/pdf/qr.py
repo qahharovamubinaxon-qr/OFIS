@@ -48,8 +48,17 @@ def modules(text: str):
     except cv2.error as exc:
         raise OfisError(
             "QR-код яратиб бўлмади — матн жуда узун бўлиши мумкин.") from exc
-    # the encoder returns 0 for dark and 255 for light
-    return (np.asarray(grid) < 128).astype(np.uint8)
+    # the encoder returns 0 for dark and 255 for light…
+    dark = (np.asarray(grid) < 128).astype(np.uint8)
+    # …and wraps the symbol in a two-module quiet zone of its own. Strip it, so
+    # the caller sizes the code itself and decides on its own margin. Every QR
+    # has finder patterns in three corners, so a blank outer row is always
+    # padding and never part of the symbol.
+    rows = np.where(dark.sum(1) > 0)[0]
+    cols = np.where(dark.sum(0) > 0)[0]
+    if len(rows) and len(cols):
+        dark = dark[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+    return dark
 
 
 def _decodes(grid) -> bool:

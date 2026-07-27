@@ -464,12 +464,35 @@ def _decode(pdf) -> str:
 
 
 def test_the_badge_carries_a_scannable_qr_of_the_worker(svc) -> None:
-    """The printed code must decode back to this worker, not the blank's."""
+    """The printed code must decode back to this worker, not the blank's.
+
+    The default template is the office's own pipe-delimited record, so the
+    field names their readers expect are checked alongside the values.
+    """
     text = _decode(_make(svc).pdf_path)
-    for expected in ("Болтазода", "01.08.1994", "Таджикистан", "402565897",
-                     "772998449826", "2600586935", "4476661", "ООО СФЕРА",
-                     "24.06.2026"):
+    assert text.startswith("PT0012|")
+    for expected in ("Number=2600586935", "Series=77", "BlankNumber=4476661",
+                     "BlankSeries=ПР", "LastName=БОЛТАЗОДА",
+                     "MiddleName=МАХМАД", "FirstName=РУСТАМ",
+                     "BirthDate=01.08.1994", "Citizenship=ТАДЖИКИСТАН",
+                     "DocNumber=402565897", "Region=МОСКВА",
+                     "Authority=ООО СФЕРА", "IssueDate=24.06.2026"):
         assert expected in text, (expected, text)
+
+
+def test_the_oblast_badge_names_its_own_region_in_the_code(svc) -> None:
+    text = _decode(_make(svc, region="50", dolzhnost="Водитель").pdf_path)
+    assert "Series=50" in text
+    assert "Region=МОСКОВСКАЯ ОБЛАСТЬ" in text
+
+
+def test_a_placeholder_in_capitals_gives_the_value_in_capitals(svc, settings):
+    """The record format wants names in caps, the card wants them in title."""
+    from src.services.beydjik_service import KEY_QR
+
+    settings.set(KEY_QR, "{surname}|{SURNAME}|{citizenship}|{CITIZENSHIP}")
+    assert _decode(_make(svc).pdf_path) == (
+        "Болтазода|БОЛТАЗОДА|Таджикистан|ТАДЖИКИСТАН")
 
 
 def test_the_office_can_write_its_own_qr_text(svc, settings) -> None:
@@ -507,8 +530,43 @@ def test_the_code_fills_the_frame_it_is_given(svc) -> None:
     s = 600 / 72
     width, height = (cols[-1] - cols[0]) / s, (rows[-1] - rows[0]) / s
 
-    assert width > box.width * 0.9, f"{width:.1f}pt of {box.width:.1f}pt"
-    assert height > box.height * 0.9, f"{height:.1f}pt of {box.height:.1f}pt"
+    assert width > box.width * 0.98, f"{width:.1f}pt of {box.width:.1f}pt"
+    assert height > box.width * 0.98, f"{height:.1f}pt of {box.width:.1f}pt"
+
+
+def test_the_encoders_own_quiet_zone_is_stripped() -> None:
+    """OpenCV wraps the symbol in two blank modules of its own.
+
+    Left in, they made the code sit two modules short of the frame on every
+    side — which is what made it look shrunken inside its box.
+    """
+    import numpy as np
+
+    from src.pdf.qr import modules
+
+    grid = modules("PT0012|Number=2600586935|Series=77")
+    assert grid[0].sum() and grid[-1].sum(), "a blank row survived at the edge"
+    assert grid[:, 0].sum() and grid[:, -1].sum(), "a blank column survived"
+    # …and what is left is a real QR version: 21, 25, 29, … modules square
+    assert grid.shape[0] == grid.shape[1]
+    assert (grid.shape[0] - 17) % 4 == 0, grid.shape
+
+
+def test_the_printed_code_still_scans_at_office_printer_resolution(svc) -> None:
+    """The office prints these on a laser printer, not a plate."""
+    import cv2
+    import numpy as np
+
+    from src.services.beydjik_service import QR_BOX
+
+    page = fitz.open(_make(svc).pdf_path)[0]
+    for dpi in (300, 600):
+        pm = page.get_pixmap(dpi=dpi, clip=fitz.Rect(*QR_BOX) + (-18, -18, 18, 18))
+        arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+            pm.height, pm.width, pm.n)[:, :, :3]
+        text = cv2.QRCodeDetector().detectAndDecode(
+            cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY))[0]
+        assert "LastName=БОЛТАЗОДА" in text, f"unreadable at {dpi} dpi"
 
 
 def test_our_code_covers_the_one_printed_on_the_blank(svc) -> None:
