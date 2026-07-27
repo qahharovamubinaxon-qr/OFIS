@@ -56,6 +56,7 @@ _NAV = [
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.inn", "ИНН", "Ишчининг ИНН рақами варағи → PDF", "🔢"),
+    (None, "nav.beydjik", "БЕЙДЖИК", "Ишчининг бейджиги (77 / 50) → PDF", "🪪"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
@@ -176,6 +177,15 @@ class MainWindow(QMainWindow):
 
             return InnView(InnController(
                 self._container.resolve(OcrService), InnService()))
+        if key == "nav.beydjik":
+            from src.controllers.beydjik_controller import BeydjikController
+            from src.services.beydjik_service import BeydjikService
+            from src.ui.views.beydjik_view import BeydjikView
+
+            return BeydjikView(BeydjikController(
+                self._container.resolve(OcrService),
+                BeydjikService(self._settings),
+            ))
         if key == "nav.dms":
             from src.controllers.dms_controller import DmsController
             from src.services.dms_service import DmsService

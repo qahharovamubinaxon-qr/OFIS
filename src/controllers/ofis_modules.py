@@ -159,6 +159,34 @@ def _run_inn(ctx: RunContext, state: dict) -> list[Path]:
     return [r.pdf_path]
 
 
+def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
+    from src.config import paths
+
+    answers = state["answers"]
+    photo = None
+    if len(state["photos"]) > 1:
+        photo = paths.output_dir() / "beydjik" / f"remote_{uuid.uuid4().hex[:8]}.jpg"
+        photo.parent.mkdir(parents=True, exist_ok=True)
+        photo.write_bytes(state["photos"][1])
+    region = str(answers.get("region") or "77").strip() or "77"
+    # the remote front ends ask for должность on both regions; a dash means
+    # "not applicable", which is how Москва badges are typed
+    dolzhnost = str(answers.get("dolzhnost") or "").strip()
+    if dolzhnost in {"-", "—", "–"}:
+        dolzhnost = ""
+    r = ctx.ctl["beydjik"].generate_from_image(
+        state["photos"][0],
+        region=region,
+        personal_number=str(answers.get("personal_number") or ""),
+        inn=str(answers.get("inn") or ""),
+        issue_date=answers.get("issue_date") or date.today(),
+        firm=str(answers.get("firm") or "") or None,
+        dolzhnost=dolzhnost,
+        photo_path=photo)
+    ctx.note(f"{r.surname} — ПР {r.pr_number} ({r.region})")
+    return [r.pdf_path]
+
+
 def _run_svera(ctx: RunContext, state: dict) -> list[Path]:
     from src.config import paths
 
@@ -301,6 +329,17 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("Паспорт/патент",),
            asks=(Ask("inn", "ИНН рақами (12 та рақам):", kind="text"),
                  Ask("form_date", "Кун (КК.ОО.ЙЙЙЙ):", default_days=0))),
+    Module("beydjik", "🪪 БЕЙДЖИК", _run_beydjik,
+           photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
+           photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
+           asks=(Ask("region", "Шаблон/регион (77 — Москва, 50 — область):",
+                     kind="text"),
+                 Ask("personal_number", "Шахсий номер:", kind="text"),
+                 Ask("inn", "ИНН рақами:", kind="text"),
+                 Ask("firm", "Фирма (кем выдано):", kind="text"),
+                 Ask("dolzhnost", "Должность (фақат 50 учун, керак бўлмаса «-»):",
+                     kind="text"),
+                 Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -363,6 +402,7 @@ def _perevod_cert(container):
 def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     """Build every controller the modules need. Qt-free, so it works from a
     background thread (the bot poller) as well as the HTTP server."""
+    from src.controllers.beydjik_controller import BeydjikController
     from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
     from src.controllers.inn_controller import InnController
@@ -373,6 +413,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.config.settings_service import SettingsService
     from src.ocr.service import OcrService
     from src.services.company_service import CompanyService
+    from src.services.beydjik_service import BeydjikService
     from src.services.dms_service import DmsService
     from src.services.dover_service import DoverService
     from src.services.generation_service import GenerationService
@@ -409,6 +450,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         # Both are stateless services the desktop views build the same way.
         "dms": DmsController(ocr, DmsService(container.resolve(SettingsService))),
         "inn": InnController(ocr, InnService()),
+        "beydjik": BeydjikController(
+            ocr, BeydjikService(container.resolve(SettingsService))),
         "umumiy": UmumiyService(key_getter=key_getter),
         "dover": DoverService(key_getter=key_getter,
                               settings=container.resolve(SettingsService)),

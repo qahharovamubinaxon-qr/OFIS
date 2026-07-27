@@ -336,6 +336,52 @@ class SettingsView(QWidget):
         root.addWidget(inn)
         root.addStretch(1)
 
+        # -- БЕЙДЖИК blanks (one per region) --------------------------------
+        root = self._section("🪪", "БЕЙДЖИК")
+        bj = Card("🪪", "Beydjik blankalari",
+                  "Har region uchun alohida blanka: 77 — Москва, "
+                  "50 — Московская область. Yangi dizayn qilsangiz shu yerga "
+                  "yuklang — AppData'da saqlanadi, EXE qayta yig'ilganda "
+                  "o'chmaydi.")
+        self._bj_blank_states = {}
+        from src.services.beydjik_service import REGIONS as _BJ_REGIONS
+
+        for code, spec in _BJ_REGIONS.items():
+            row = QHBoxLayout()
+            row.addWidget(QLabel(spec["label"]))
+            pick = QPushButton("📄  Blanka yuklash")
+            pick.clicked.connect(lambda _=False, c=code: self._import_bj_blank(c))
+            openb = QPushButton("📂  Papka")
+            openb.clicked.connect(lambda _=False, c=code: self._open_bj_folder(c))
+            reset = QPushButton("↩  Dasturnikiga")
+            reset.clicked.connect(lambda _=False, c=code: self._reset_bj_blank(c))
+            for w in (pick, openb, reset):
+                row.addWidget(w)
+            row.addStretch(1)
+            bj.add(row)
+            self._bj_blank_states[code] = bj.note("")
+        root.addWidget(bj)
+
+        pr = Card("🔢", "Beydjik «ПР» raqami",
+                  "Har beydjikda bittaga oshadi. Yangi seriyani shu yerdan "
+                  "boshlang.")
+        pr_row = QHBoxLayout()
+        pr_row.addWidget(QLabel("Keyingi ПР:"))
+        self._bj_pr = QLineEdit()
+        self._bj_pr.setFixedWidth(140)
+        pr_row.addWidget(self._bj_pr)
+        pr_row.addSpacing(16)
+        pr_row.addWidget(QLabel("Firma (kem vydano):"))
+        self._bj_firm = QLineEdit()
+        pr_row.addWidget(self._bj_firm)
+        save_bj = QPushButton("💾  Saqlash")
+        save_bj.clicked.connect(self._save_beydjik)
+        pr_row.addWidget(save_bj)
+        pr.add(pr_row)
+        self._bj_state = pr.note("")
+        root.addWidget(pr)
+        root.addStretch(1)
+
         # -- backup / restore ---------------------------------------------
         root = self._section("💾", "Zaxira")
         bk = Card("💾", "Zaxira nusxa",
@@ -442,6 +488,35 @@ class SettingsView(QWidget):
             f"✅  Sizning varag'ingiz:  {inn_blank}" if inn_own
             else "ℹ️  Dasturning varag'i ishlatilyapti.\n"
                  f"     Yuklash joyi:  {inn_blank_target()}")
+
+        from src.services.beydjik_service import (
+            KEY_FIRM as BJ_KEY_FIRM,
+        )
+        from src.services.beydjik_service import (
+            KEY_PR_NEXT as BJ_KEY_PR,
+        )
+        from src.services.beydjik_service import (
+            blank_source as bj_blank_source,
+        )
+        from src.services.beydjik_service import (
+            user_blank_path as bj_blank_target,
+        )
+
+        for code, note in getattr(self, "_bj_blank_states", {}).items():
+            bj_blank, bj_own = bj_blank_source(code)
+            note.setText(
+                f"✅  Sizning blankangiz:  {bj_blank}" if bj_own
+                else "ℹ️  Dasturning blankasi ishlatilyapti.\n"
+                     f"     Yuklash joyi:  {bj_blank_target(code)}")
+        if hasattr(self, "_bj_pr"):
+            nxt = str(self._settings.get(BJ_KEY_PR, "") or "")
+            if not self._bj_pr.text().strip():
+                self._bj_pr.setText(nxt)
+            if not self._bj_firm.text().strip():
+                self._bj_firm.setText(str(self._settings.get(BJ_KEY_FIRM, "") or ""))
+            self._bj_state.setText(
+                f"✅  Keyingi ПР: {nxt}" if nxt
+                else "⚠️  «ПР» raqami kiritilmagan — 1 dan boshlanadi.")
 
         backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
         if backups:
@@ -568,6 +643,54 @@ class SettingsView(QWidget):
         own.unlink()
         self._refresh_states()
         QMessageBox.information(self, "OK", "Dasturning varag'i ishlatiladi.")
+
+    def _import_bj_blank(self, region: str) -> None:
+        from src.services.beydjik_service import import_blank
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Beydjik blankasi — {region} (PDF)",
+            str(paths.desktop_dir()), "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            saved = import_blank(region, Path(path))
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        self._refresh_states()
+        QMessageBox.information(self, "OK", f"Blanka yuklandi:\n{saved}")
+
+    def _open_bj_folder(self, region: str) -> None:
+        from src.services.beydjik_service import user_blank_path
+
+        folder = user_blank_path(region).parent
+        folder.mkdir(parents=True, exist_ok=True)
+        _open_folder(folder)
+
+    def _reset_bj_blank(self, region: str) -> None:
+        from src.services.beydjik_service import user_blank_path
+
+        own = user_blank_path(region)
+        if not own.exists():
+            QMessageBox.information(self, "OK", "Allaqachon dasturnikini ishlatyapti.")
+            return
+        if QMessageBox.question(
+                self, "Qaytarish", f"{region} blankasi o'chirilsinmi?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        own.unlink()
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "Dasturning blankasi ishlatiladi.")
+
+    def _save_beydjik(self) -> None:
+        from src.services.beydjik_service import KEY_FIRM, KEY_PR_NEXT
+
+        digits = "".join(c for c in self._bj_pr.text() if c.isdigit())
+        if digits:
+            self._settings.set(KEY_PR_NEXT, int(digits))
+        self._settings.set(KEY_FIRM, self._bj_firm.text().strip())
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "Beydjik sozlamalari saqlandi.")
 
     def _save_dms(self) -> None:
         from src.services.dms_service import (
