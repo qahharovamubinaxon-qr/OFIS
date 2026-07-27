@@ -42,7 +42,51 @@ KEY_REGION, KEY_PREMIUM = "dms.region", "dms.premium"
 
 DEFAULT_REGION = "Москва"
 
-_TEMPLATE = paths.templates_dir() / "dms" / "blank.pdf"
+_BUNDLED_BLANK = paths.templates_dir() / "dms" / "blank.pdf"
+
+
+def user_blank_path() -> Path:
+    """Where the office drops its own clean scan of the blank.
+
+    Lives in AppData, NOT in the program folder, so a `git pull` or an EXE
+    rebuild never overwrites it.
+    """
+    return paths.user_templates_dir() / "dms" / "blank.pdf"
+
+
+def blank_source() -> tuple[Path, bool]:
+    """(the file to print on, True when it is the office's own upload)."""
+    own = user_blank_path()
+    if own.exists():
+        return own, True
+    return _BUNDLED_BLANK, False
+
+
+def import_blank(source: Path) -> Path:
+    """Adopt ``source`` as the blank, after checking it looks like the form."""
+    import shutil
+
+    try:
+        doc = fitz.open(source)
+    except Exception as exc:  # noqa: BLE001 - any unreadable file
+        raise OfisError("PDF ochilmadi — boshqa fayl tanlang.") from exc
+    try:
+        if len(doc) < 1:
+            raise OfisError("PDF bo'sh.")
+        rect = doc[0].rect
+        if not (560 < rect.width < 640 and 800 < rect.height < 880):
+            raise OfisError(
+                "Bu A4 emas — polis blankasining skanini yuklang "
+                f"(hozirgi o'lcham {rect.width:.0f}×{rect.height:.0f} pt).")
+    finally:
+        doc.close()
+
+    target = user_blank_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    log.info("ДМС blank replaced from %s", source)
+    return target
+
 
 # ------------------------------------------------------------ geometry
 _REG, _BOLD = "OfisArial", "OfisArialBold"
@@ -156,8 +200,9 @@ class DmsService:
         region: str | None = None,
         output_dir: Path | None = None,
     ) -> DmsResult:
-        if not _TEMPLATE.exists():
-            raise OfisError("ДМС бланкаси топилмади (templates/dms/blank.pdf).")
+        blank, _own = blank_source()
+        if not blank.exists():
+            raise OfisError("ДМС бланкаси топилмади. Sozlamalar → ДМС → «Бланк юклаш» орқали бланка PDF сини юкланг.")
         if not address.strip():
             raise OfisError("Рўйхатдан ўтиш манзилини киритинг.")
 
@@ -166,7 +211,7 @@ class DmsService:
         region = (region or str(self._settings.get(KEY_REGION, DEFAULT_REGION)
                                 or DEFAULT_REGION)).strip()
 
-        doc = fitz.open(_TEMPLATE)
+        doc = fitz.open(blank)
         try:
             page = doc[0]
             page.insert_font(fontname="dms_r", fontfile=str(_font_file(_REG)))

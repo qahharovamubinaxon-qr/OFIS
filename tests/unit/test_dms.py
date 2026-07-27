@@ -218,12 +218,78 @@ def test_the_blank_is_not_painted_over(svc) -> None:
     """The form's guilloche must show through — no flat filled patches."""
     import numpy as np
 
-    from src.services.dms_service import _TEMPLATE
+    from src.services.dms_service import blank_source
 
-    page = fitz.open(_TEMPLATE)[0]
+    blank, _own = blank_source()
+    page = fitz.open(blank)[0]
     pm = page.get_pixmap(dpi=200)
     a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width, pm.n)
     s = 200 / 72
     # a cleared value cell still varies in tone, like the paper around it
     cell = a[int(300 * s):int(315 * s), int(200 * s):int(400 * s), :3]
     assert cell.std() > 2.0, "the cell looks like a flat painted rectangle"
+
+
+# ------------------------------------------------------ replaceable blank
+
+
+def test_the_office_can_supply_its_own_blank(svc, tmp_path) -> None:
+    """A clean scan dropped in AppData wins over the bundled one, and the
+    program prints on it."""
+    from src.services.dms_service import blank_source, import_blank, user_blank_path
+
+    bundled, own = blank_source()
+    assert own is False, "no upload yet, so the bundled blank is used"
+
+    # a marked A4 stand-in for the office's own scan
+    mine = tmp_path / "clean.pdf"
+    doc = fitz.open()
+    doc.new_page(width=595, height=842).insert_text(
+        (60, 700), "MENING BLANKAM", fontsize=9)
+    doc.save(str(mine))
+    doc.close()
+
+    saved = import_blank(mine)
+    assert saved == user_blank_path()
+    assert saved.exists()
+
+    used, own = blank_source()
+    assert own is True and used == saved
+
+    text = fitz.open(_make(svc).pdf_path)[0].get_text()
+    assert "MENING BLANKAM" in text, "the upload was not used"
+    assert "Тошпулатов Худойберди Муродович" in text
+
+
+def test_the_blank_lives_outside_the_program_folder() -> None:
+    """An EXE rebuild or `git pull` must never wipe the office's blank."""
+    from src.config import paths
+    from src.services.dms_service import user_blank_path
+
+    own = user_blank_path()
+    assert paths.data_dir() in own.parents
+    assert paths.app_root() not in own.parents
+
+
+def test_a_non_a4_file_is_refused(tmp_path) -> None:
+    from src.common.errors import OfisError
+    from src.services.dms_service import import_blank
+
+    small = tmp_path / "small.pdf"
+    doc = fitz.open()
+    doc.new_page(width=200, height=200)
+    doc.save(str(small))
+    doc.close()
+    with pytest.raises(OfisError) as exc:
+        import_blank(small)
+    assert "A4" in exc.value.message
+
+
+def test_an_unreadable_file_is_refused(tmp_path) -> None:
+    from src.common.errors import OfisError
+    from src.services.dms_service import import_blank
+
+    junk = tmp_path / "junk.pdf"
+    junk.write_bytes(b"not a pdf at all")
+    with pytest.raises(OfisError):
+        import_blank(junk)

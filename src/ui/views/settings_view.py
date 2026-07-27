@@ -294,6 +294,25 @@ class SettingsView(QWidget):
         dm.note("Raqamlar tugaganda RESO'dan yangi oraliq oling va shu yerga "
                 "kiriting.")
         root.addWidget(dm)
+
+        # -- the blank itself ---------------------------------------------
+        bl = Card("📄", "Polis blankasi",
+                  "Toza blankangiz bo'lsa shu yerga yuklang — dastur o'shanga "
+                  "bosadi. Fayl AppData'da saqlanadi, EXE qayta yig'ilganda "
+                  "yoki «git pull» qilganda o'chmaydi.")
+        bl_row = QHBoxLayout()
+        pick_bl = QPushButton("📄  Blanka yuklash (PDF)")
+        pick_bl.clicked.connect(self._import_dms_blank)
+        open_bl = QPushButton("📂  Papkani ochish")
+        open_bl.clicked.connect(self._open_dms_blank_folder)
+        reset_bl = QPushButton("↩  Dasturnikiga qaytarish")
+        reset_bl.clicked.connect(self._reset_dms_blank)
+        for b in (pick_bl, open_bl, reset_bl):
+            bl_row.addWidget(b)
+        bl_row.addStretch(1)
+        bl.add(bl_row)
+        self._dms_blank_state = bl.note("")
+        root.addWidget(bl)
         root.addStretch(1)
 
         # -- backup / restore ---------------------------------------------
@@ -387,6 +406,13 @@ class SettingsView(QWidget):
             f"✅  Keyingi raqam: {nxt}  ·  qoldi: {left} ta" if nxt
             else "⚠️  Raqamlar oralig'i kiritilmagan — ДМС ishlamaydi.")
 
+        from src.services.dms_service import blank_source
+
+        blank, own = blank_source()
+        self._dms_blank_state.setText(
+            f"✅  Sizning blankangiz:  {blank}" if own
+            else f"ℹ️  Dasturning blankasi ishlatilyapti.\n     Yuklash joyi:  {blank}")
+
         backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
         if backups:
             newest = backups[-1]
@@ -436,6 +462,45 @@ class SettingsView(QWidget):
             self, "OK",
             "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
             "bot shunda ishga tushadi.")
+
+    def _import_dms_blank(self) -> None:
+        from src.services.dms_service import import_blank
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Polis blankasi (PDF)", str(paths.desktop_dir()), "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            saved = import_blank(Path(path))
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        self._refresh_states()
+        QMessageBox.information(
+            self, "OK", f"Blanka yuklandi:\n{saved}\n\nEndi ДМС shu blankaga bosadi.")
+
+    def _open_dms_blank_folder(self) -> None:
+        from src.services.dms_service import user_blank_path
+
+        folder = user_blank_path().parent
+        folder.mkdir(parents=True, exist_ok=True)
+        _open_folder(folder)
+
+    def _reset_dms_blank(self) -> None:
+        from src.services.dms_service import user_blank_path
+
+        own = user_blank_path()
+        if not own.exists():
+            QMessageBox.information(self, "OK", "Allaqachon dasturnikini ishlatyapti.")
+            return
+        if QMessageBox.question(
+                self, "Qaytarish",
+                "Yuklangan blanka o'chirilsinmi? Dastur o'zinikiga qaytadi."
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        own.unlink()
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "Dasturning blankasi ishlatiladi.")
 
     def _save_dms(self) -> None:
         from src.services.dms_service import (
