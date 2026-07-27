@@ -442,6 +442,82 @@ def test_a_missing_photo_leaves_the_frame_empty(svc) -> None:
     assert "Болтазода" in _flat(r.pdf_path)
 
 
+# ---------------------------------------------------------- the QR code
+
+
+def _decode(pdf) -> str:
+    """Read the badge's QR back off the printed page, as a scanner would."""
+    import cv2
+    import numpy as np
+
+    from src.services.beydjik_service import QR_BOX
+
+    page = fitz.open(pdf)[0]
+    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(*QR_BOX) + (-4, -4, 4, 4))
+    arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+        pm.height, pm.width, pm.n)[:, :, :3]
+    grey = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    return cv2.QRCodeDetector().detectAndDecode(grey)[0]
+
+
+def test_the_badge_carries_a_scannable_qr_of_the_worker(svc) -> None:
+    """The printed code must decode back to this worker, not the blank's."""
+    text = _decode(_make(svc).pdf_path)
+    for expected in ("Болтазода", "01.08.1994", "Таджикистан", "402565897",
+                     "772998449826", "2600586935", "4476661", "ООО СФЕРА",
+                     "24.06.2026"):
+        assert expected in text, (expected, text)
+
+
+def test_the_office_can_write_its_own_qr_text(svc, settings) -> None:
+    from src.services.beydjik_service import KEY_QR
+
+    settings.set(KEY_QR, "OFIS|{surname}|{pr}|{region}|{territory}")
+    assert _decode(_make(svc).pdf_path) == "OFIS|Болтазода|4476661|77|г. Москва"
+
+
+def test_an_unknown_placeholder_is_left_alone_rather_than_breaking(svc, settings):
+    """The operator types this by hand — a typo must not stop a badge."""
+    from src.services.beydjik_service import KEY_QR
+
+    settings.set(KEY_QR, "{surname} {nima_bu}")
+    assert _decode(_make(svc).pdf_path) == "Болтазода {nima_bu}"
+
+
+def test_our_code_covers_the_one_printed_on_the_blank(svc) -> None:
+    """Two readable QRs on one card would be a broken badge.
+
+    Our code is drawn with its own white quiet zone over a box that contains
+    every module of the printed one, so the old code cannot survive — this
+    measures the blank to prove the box really does contain it.
+    """
+    import numpy as np
+
+    from src.services.beydjik_service import QR_BOX, blank_source
+
+    blank, _own = blank_source("77")
+    page = fitz.open(blank)[0]
+    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(0, 195, 130, 300))
+    arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+        pm.height, pm.width, pm.n)[:, :, :3]
+    dark = arr.max(2) < 110
+    rows, cols = np.where(dark.sum(1) > 0)[0], np.where(dark.sum(0) > 0)[0]
+    s = 600 / 72
+    printed = (cols[0] / s, 195 + rows[0] / s, cols[-1] / s, 195 + rows[-1] / s)
+
+    assert QR_BOX[0] <= printed[0] and QR_BOX[1] <= printed[1]
+    assert QR_BOX[2] >= printed[2] and QR_BOX[3] >= printed[3]
+
+
+def test_a_badge_is_still_produced_when_the_qr_cannot_be_built(svc, settings):
+    from src.services.beydjik_service import KEY_QR
+
+    settings.set(KEY_QR, "x" * 6000)      # past what any QR can hold
+    r = _make(svc)
+    assert r.pdf_path.exists()
+    assert "Болтазода" in _flat(r.pdf_path)
+
+
 # ------------------------------------------------- the remote front ends
 
 

@@ -45,7 +45,20 @@ REGIONS: dict[str, dict] = {
 
 KEY_PR_NEXT = "beydjik.pr_next"
 KEY_FIRM = "beydjik.firm"
+KEY_QR = "beydjik.qr_template"
 DEFAULT_FIRM = "ООО СФЕРА"
+
+# What goes inside the badge's QR code. The office edits this in Settings, so
+# the placeholders below are the contract — every one of them is filled from
+# the badge that is being printed.
+QR_FIELDS = ("fio", "surname", "name", "patronymic", "birth", "citizenship",
+             "passport", "inn", "region", "personal_number", "pr", "firm",
+             "date", "territory", "dolzhnost")
+DEFAULT_QR_TEMPLATE = (
+    "{firm}; {fio}; {birth}; {citizenship}; {passport}; ИНН {inn}; "
+    "{region} {personal_number}; ПР {pr}; {date}")
+# past this the printed modules get too fine to scan at badge size
+_QR_MODULE_WARN = 57
 
 # ------------------------------------------------------------ geometry
 # Every number below was measured off the office's own filled badge, by
@@ -110,6 +123,9 @@ _FIRM_LINE = 10.1                     # a further line goes 10.1pt "higher"
 _FIRM_LEFT = 20.0
 _DATE_ORIGIN = (251.9, 246.85)
 _PR_ORIGIN = (210.4, 210.90)
+
+# the QR code's white block on the back, which our own code replaces entirely
+QR_BOX = (11.5, 208.7, 88.3, 286.0)
 
 # «Территория действия патента». Both blanks the office supplied carry
 # «Московская область» printed into the artwork, so the line is always cleared
@@ -198,6 +214,44 @@ class BeydjikService:
     def firm(self) -> str:
         return str(self._settings.get(KEY_FIRM, DEFAULT_FIRM) or DEFAULT_FIRM)
 
+    # -------------------------------------------------------- QR code
+    def qr_template(self) -> str:
+        return str(self._settings.get(KEY_QR, "") or "").strip() or DEFAULT_QR_TEMPLATE
+
+    def qr_text(self, passport: Passport, *, region: str, personal_number: str,
+                inn: str, issue_date: date, firm: str, pr: str,
+                dolzhnost: str = "") -> str:
+        """Fill the office's template with this badge's own values.
+
+        An unknown placeholder is left as it was typed rather than raising —
+        the operator edits this text by hand, and a typo must not stop a badge
+        from printing.
+        """
+        fields = {
+            "surname": _title(passport.surname or ""),
+            "name": _title(passport.name or ""),
+            "patronymic": _title(passport.patronymic or ""),
+            "birth": _date_dmy(passport.birth_date) if passport.birth_date else "",
+            "citizenship": _title(passport.nationality or ""),
+            "passport": f"{passport.series or ''}{passport.number or ''}".strip(),
+            "inn": inn.strip(),
+            "region": region,
+            "personal_number": personal_number.strip(),
+            "pr": pr,
+            "firm": firm,
+            "date": _date_dmy(issue_date),
+            "territory": REGIONS[region]["territory"],
+            "dolzhnost": dolzhnost.strip(),
+        }
+        fields["fio"] = " ".join(
+            x for x in (fields["surname"], fields["name"],
+                        fields["patronymic"]) if x)
+
+        text = self.qr_template()
+        for key in QR_FIELDS:
+            text = text.replace("{" + key + "}", fields.get(key, ""))
+        return " ".join(text.split(" "))
+
     # -------------------------------------------------------- generate
     def generate(
         self,
@@ -238,6 +292,10 @@ class BeydjikService:
             self._fill_back(page, font, serif, firm=firm, issue_date=issue_date,
                             pr=pr, territory=REGIONS[region]["territory"])
             self._place_photo(page, photo_path)
+            self._place_qr(page, self.qr_text(
+                passport, region=region, personal_number=personal_number.strip(),
+                inn=inn.strip(), issue_date=issue_date, firm=firm, pr=pr,
+                dolzhnost=dolzhnost.strip()))
             out = self._output_path(passport, region, output_dir)
             doc.save(str(out), garbage=4, deflate=True)
         finally:
@@ -405,6 +463,29 @@ class BeydjikService:
                              render_mode=2, border_width=_STROKE,
                              morph=cls._taller((x, top_y)))
             x -= serif.text_length(char, fontsize=_PR_SIZE) + _PR_TRACKING
+
+    @staticmethod
+    def _place_qr(page, text: str) -> None:
+        """Replace the blank's printed QR with one carrying this worker's data.
+
+        The code's own white quiet zone covers the old one, so nothing else has
+        to be cleared. A badge is never lost to this: if the code cannot be
+        built, the blank's own QR simply stays.
+        """
+        if not text.strip():
+            return
+        from src.pdf.qr import draw_qr, modules
+
+        try:
+            side = modules(text).shape[0]
+            if side > _QR_MODULE_WARN:
+                log.warning(
+                    "БЕЙДЖИК QR is %d modules wide — the printed squares will "
+                    "be about %.2f mm and may not scan; shorten the template.",
+                    side, (QR_BOX[2] - QR_BOX[0]) / 72 * 25.4 / (side + 8))
+            draw_qr(page, text, QR_BOX)
+        except Exception as exc:  # noqa: BLE001 - never lose a badge to the QR
+            log.warning("БЕЙДЖИК QR not drawn (%s) — keeping the blank's own", exc)
 
     @staticmethod
     def _place_photo(page, photo_path: Path | None) -> None:

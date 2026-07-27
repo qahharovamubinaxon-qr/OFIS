@@ -380,6 +380,28 @@ class SettingsView(QWidget):
         pr.add(pr_row)
         self._bj_state = pr.note("")
         root.addWidget(pr)
+
+        qr = Card("🔳", "Beydjik QR-kodi",
+                  "Beydjikning orqasidagi QR-kod ichida nima yozilishi. "
+                  "Jingalak qavs ichidagilar har beydjikning o'z ma'lumoti "
+                  "bilan almashadi.")
+        self._bj_qr = QLineEdit()
+        qr.add(self._bj_qr)
+        save_qr = QHBoxLayout()
+        save_qr_btn = QPushButton("💾  Saqlash")
+        save_qr_btn.clicked.connect(self._save_beydjik_qr)
+        reset_qr_btn = QPushButton("↩  Standart matn")
+        reset_qr_btn.clicked.connect(self._reset_beydjik_qr)
+        save_qr.addWidget(save_qr_btn)
+        save_qr.addWidget(reset_qr_btn)
+        save_qr.addStretch(1)
+        qr.add(save_qr)
+        from src.services.beydjik_service import QR_FIELDS as _BJ_QR_FIELDS
+
+        qr.note("Mavjud maydonlar:  "
+                + "  ".join("{" + f + "}" for f in _BJ_QR_FIELDS))
+        self._bj_qr_state = qr.note("")
+        root.addWidget(qr)
         root.addStretch(1)
 
         # -- backup / restore ---------------------------------------------
@@ -508,6 +530,17 @@ class SettingsView(QWidget):
                 f"✅  Sizning blankangiz:  {bj_blank}" if bj_own
                 else "ℹ️  Dasturning blankasi ishlatilyapti.\n"
                      f"     Yuklash joyi:  {bj_blank_target(code)}")
+        if hasattr(self, "_bj_qr"):
+            from src.services.beydjik_service import DEFAULT_QR_TEMPLATE
+            from src.services.beydjik_service import KEY_QR as BJ_KEY_QR
+
+            stored = str(self._settings.get(BJ_KEY_QR, "") or "").strip()
+            if not self._bj_qr.text().strip():
+                self._bj_qr.setText(stored or DEFAULT_QR_TEMPLATE)
+            self._bj_qr_state.setText(
+                "✅  Sizning matningiz" if stored
+                else "ℹ️  Dasturning standart matni ishlatilyapti.")
+
         if hasattr(self, "_bj_pr"):
             nxt = str(self._settings.get(BJ_KEY_PR, "") or "")
             if not self._bj_pr.text().strip():
@@ -691,6 +724,20 @@ class SettingsView(QWidget):
         self._settings.set(KEY_FIRM, self._bj_firm.text().strip())
         self._refresh_states()
         QMessageBox.information(self, "OK", "Beydjik sozlamalari saqlandi.")
+
+    def _save_beydjik_qr(self) -> None:
+        from src.services.beydjik_service import KEY_QR
+
+        self._settings.set(KEY_QR, self._bj_qr.text().strip())
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "QR-kod matni saqlandi.")
+
+    def _reset_beydjik_qr(self) -> None:
+        from src.services.beydjik_service import DEFAULT_QR_TEMPLATE, KEY_QR
+
+        self._settings.set(KEY_QR, "")
+        self._bj_qr.setText(DEFAULT_QR_TEMPLATE)
+        self._refresh_states()
 
     def _save_dms(self) -> None:
         from src.services.dms_service import (
