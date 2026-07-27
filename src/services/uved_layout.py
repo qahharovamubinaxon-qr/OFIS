@@ -12,14 +12,22 @@ So each blank is studied when the firm is added:
 * the rules that already carry a value (the employer block) are measured to
   learn the form's own house style: where a value starts, how far above its
   rule it sits, and at what size;
-* the AI reads the printed grey labels and reports where each one is, and every
-  field is snapped to the first rule below its own label.
+* the AI reads the four section headings and says where each begins — they are
+  large and unique, which is the one thing a model reads reliably here;
+* inside a section the form's own field order does the rest: the empty lines,
+  top to bottom, are that section's fields in order.
+
+That split matters. The form prints «Серия» and «Номер» twice — once for the
+passport, once for the patent — and asking a model to tell those apart left
+all three of them blank on a real уведомление. Section boundaries plus order
+cannot make that mistake.
 
 The result is a mapping in the same shape as the bundled one, saved beside that
 firm's template, so filling stays the plain `src.pdf.engine.fill` it always was.
 
-Nothing here guesses: a field whose label the AI did not find is left out and
-reported, rather than placed on whichever line happened to be free.
+Nothing here guesses across a boundary: if a section does not hold exactly the
+lines its fields need, those fields are reported missing and left blank rather
+than shifted onto whichever line happened to be free.
 """
 
 from __future__ import annotations
@@ -42,10 +50,13 @@ _WORKER = "2. Сведения об иностранном гражданине"
 _DOC = "3. Документ, удостоверяющий личность иностранного гражданина"
 _PATENT = "4. Сведения о разрешении на работу или патенте"
 _WORK = "5. Сведения о трудовой деятельности"
+# nothing of ours lives in section 6, but its heading is what stops section 5
+_MVD = "6. Выбор подразделения МВД России"
 
 # The worker values this module places, and the label printed above each on the
 # Госуслуги form. The key is what the AI is asked for; the id is the mapping id
 # `TrudService` already fills.
+
 FIELDS: tuple[tuple[str, str, str, str], ...] = (
     ("surname", "uved.surname", "Фамилия (рус.)", _WORKER),
     ("name", "uved.name", "Имя (рус.)", _WORKER),
@@ -68,6 +79,34 @@ FIELDS: tuple[tuple[str, str, str, str], ...] = (
      "Профессия, специальность, должность, вид трудовой деятельности по договору",
      _WORK),
     ("contract_date", "uved.contract_date", "Дата заключения договора", _WORK),
+)
+
+# The sections, in the order the form prints them, and every line each one
+# prints — not only the ones we fill. Госуслуги put «Вид документа» at the top
+# of section 3 and «Адрес места работы» at the foot of section 5, and one blank
+# even carries the literal «Не заполнено» on a line that is ours to write on.
+# Counting the whole sequence is what makes those harmless: our fields are
+# picked out of it by position, and a section whose line count does not match
+# is left alone rather than filled one row out.
+SECTIONS: tuple[tuple[str, str, tuple[str | None, ...]], ...] = (
+    ("worker", _WORKER, (
+        "surname", "name", "patronymic", "birth_date", "gender",
+        "citizenship", "birth_place")),
+    ("doc", _DOC, (
+        None,                                   # Вид документа
+        "passport_series", "passport_number",
+        "passport_issue_date", "passport_issued_by")),
+    ("patent", _PATENT, (
+        None,                                   # Документ
+        "patent_series", "patent_number", "patent_region",
+        "patent_blank_series", "patent_blank_number")),
+    ("work", _WORK, (
+        "profession",
+        None,                                   # Нет подходящей профессии
+        None,                                   # Вид договора
+        "contract_date",
+        None)),                                 # Адрес места работы
+    ("mvd", _MVD, ()),                          # boundary only — nothing of ours
 )
 
 # a study that finds fewer than this is not trustworthy enough to print from
@@ -200,36 +239,34 @@ def house_style(rules: list[Rule]) -> tuple[float, float, float]:
     return xs[len(xs) // 2], gaps[len(gaps) // 2], size
 
 
-# ------------------------------------------------------------------ labels
+# -------------------------------------------------------------- sections
 
 
-def label_prompt() -> str:
-    keys = "\n".join(f'  "{key}" — «{label}» в разделе «{section}»'
-                     for key, _id, label, section in FIELDS)
+def heading_prompt() -> str:
+    named = "\n".join(f'  "{key}" — раздел «{title}»'
+                     for key, title, _lines in SECTIONS)
     return (
         "Это страница российской формы Госуслуг «Уведомление о заключении "
-        "трудового договора с иностранным гражданином». Над каждой линией "
-        "напечатан СЕРЫЙ заголовок поля. Заголовки «Серия» и «Номер» "
-        "встречаются дважды — различай их по номеру раздела.\n"
+        "трудового договора с иностранным гражданином». Крупным шрифтом "
+        "напечатаны заголовки разделов, пронумерованные 1–6.\n"
         "Верни ТОЛЬКО JSON-объект, без пояснений и без markdown. Для каждого "
-        "заголовка, который ВИДЕН НА ЭТОЙ странице, дай долю высоты страницы "
-        "(число от 0 до 1, сверху вниз), на которой он напечатан. Заголовок, "
-        "которого на этой странице нет, НЕ включай в ответ.\n"
-        "Ключи и их заголовки:\n" + keys + "\n"
-        "Пример ответа: {\"surname\": 0.71, \"name\": 0.76}"
+        "заголовка раздела, который ВИДЕН НА ЭТОЙ странице, дай долю высоты "
+        "страницы (число от 0 до 1, сверху вниз), на которой он напечатан. "
+        "Раздел, которого на этой странице нет, НЕ включай в ответ.\n"
+        "Ключи и их разделы:\n" + named + "\n"
+        'Пример ответа: {"worker": 0.63}'
     )
 
 
-def read_labels(ai, doc) -> dict[str, tuple[int, float]]:
-    """key → (page, y in points) for every label the AI could find."""
+def read_headings(ai, doc) -> dict[str, tuple[int, float]]:
+    """key → (page, y in points) for each section heading the AI could find."""
     from src.domain.enums import DocType
 
+    known = {key for key, _title, _lines in SECTIONS}
     found: dict[str, tuple[int, float]] = {}
     for index, page in enumerate(doc):
         pm = page.get_pixmap(dpi=_DPI)
-        answer = ai.extract(pm.tobytes("png"), DocType.PASSPORT, label_prompt())
-        height = page.rect.height
-        known = {key for key, _id, _label, _section in FIELDS}
+        answer = ai.extract(pm.tobytes("png"), DocType.PASSPORT, heading_prompt())
         for key, raw in answer.fields.items():
             if key not in known or key in found:
                 continue
@@ -238,8 +275,63 @@ def read_labels(ai, doc) -> dict[str, tuple[int, float]]:
             except ValueError:
                 continue
             if 0.0 <= fraction <= 1.0:
-                found[key] = (index + 1, fraction * height)
+                found[key] = (index + 1, fraction * page.rect.height)
     return found
+
+
+def section_lines(rules: list[Rule],
+                  headings: dict[str, tuple[int, float]]) -> dict[str, list[Rule]]:
+    """Every line each section prints, in order, across a page break.
+
+    A section runs from its own heading to the next one. Lines the firm already
+    filled in are kept: they are part of the sequence, and leaving them out is
+    what let a pre-printed «Не заполнено» shift the rest of a section by one.
+    """
+    order = [key for key, _title, _lines in SECTIONS if key in headings]
+    snapped = {key: _snap(rules, *headings[key]) for key in order}
+    bounds = {}
+    for position, key in enumerate(order):
+        nxt = snapped[order[position + 1]] if position + 1 < len(order) else None
+        bounds[key] = (snapped[key], nxt)
+
+    buckets: dict[str, list[Rule]] = {key: [] for key in order}
+    for rule in sorted(rules, key=lambda r: (r.page, r.y)):
+        for key, (start, stop) in bounds.items():
+            if (rule.page, rule.y) <= start:
+                continue
+            if stop is not None and (rule.page, rule.y) >= stop:
+                continue
+            buckets[key].append(rule)
+            break
+    return buckets
+
+
+def _snap(rules: list[Rule], page: int, y: float) -> tuple[int, float]:
+    """Move a heading into the blank band it actually sits in.
+
+    A heading always falls in a wider-than-usual gap between two lines, so the
+    model only has to be roughly right: its answer is pulled to the middle of
+    the nearest such gap. Without this a heading reported a few points low
+    swallows the line above it and the whole section is refused.
+    """
+    same = sorted((r.y for r in rules if r.page == page))
+    if not same:
+        return page, y
+    gaps = [(0.0, same[0])] + list(zip(same, same[1:], strict=False))
+    pitch = min((b - a for a, b in gaps if b > a), default=40.0)
+    wide = [(a, b) for a, b in gaps if b - a > pitch * 1.4]
+    if not wide:
+        return page, y
+    best = min(wide, key=lambda g: abs((g[0] + g[1]) / 2 - y))
+    # only trust the correction when the model was in the neighbourhood
+    if not best[0] - 40 <= y <= best[1] + 40:
+        return page, y
+    return page, (best[0] + best[1]) / 2
+
+
+def _by_key() -> dict[str, tuple[str, str]]:
+    """AI key → (mapping id, label)."""
+    return {key: (field_id, label) for key, field_id, label, _s in FIELDS}
 
 
 # ------------------------------------------------------------------ study
@@ -264,34 +356,48 @@ def study(pdf_path: Path, ai) -> Study:
                 "Бланкада тўлдириладиган чизиқлар топилмади — Госуслуги "
                 "«Уведомление» PDF сини юкланг.")
         x, gap, size = house_style(rules)
-        labels = read_labels(ai, doc)
-        fields, missing, used = [], [], set()
-        for key, field_id, label, _section in FIELDS:
-            spot = labels.get(key)
-            if spot is None:
-                missing.append(label)
+        buckets = section_lines(rules, read_headings(ai, doc))
+        return Study(fields=_place(buckets, x, gap, size),
+                     missing=_missing(buckets), rules=len(rules), pages=len(doc))
+    finally:
+        doc.close()
+
+
+def _place(buckets: dict[str, list[Rule]], x: float, gap: float,
+           size: float) -> list[dict]:
+    """Pick our fields out of each section's printed line sequence.
+
+    A section that prints a different number of lines than the form is known to
+    have is skipped whole: shifting the rest of it by one is exactly the
+    mistake this module exists to prevent.
+    """
+    known = _by_key()
+    fields: list[dict] = []
+    for key, _title, sequence in SECTIONS:
+        lines = buckets.get(key, [])
+        if len(lines) != len(sequence):
+            continue
+        for slot, rule in zip(sequence, lines, strict=True):
+            if slot is None:                    # a line the firm fills, not us
                 continue
-            rule = _rule_below(rules, *spot)
-            if rule is None or (rule.page, rule.y) in used:
-                missing.append(label)
-                continue
-            used.add((rule.page, rule.y))
+            field_id, _label = known[slot]
             fields.append({
                 "id": field_id, "type": "text", "page": rule.page,
                 "x": round(x, 1), "y": round(rule.y - gap, 1),
                 "font": _FONT, "size": size, "align": "left",
             })
-        return Study(fields=fields, missing=missing, rules=len(rules),
-                     pages=len(doc))
-    finally:
-        doc.close()
+    return sorted(fields, key=lambda f: (f["page"], f["y"]))
 
 
-def _rule_below(rules: list[Rule], page: int, label_y: float) -> Rule | None:
-    """The field line this label belongs to: the first one under it."""
-    below = [r for r in rules
-             if r.page == page and 0 < r.y - label_y <= _LABEL_GAP_PT]
-    return min(below, key=lambda r: r.y) if below else None
+def _missing(buckets: dict[str, list[Rule]]) -> list[str]:
+    """The labels left blank, because their section did not add up."""
+    known = _by_key()
+    missing: list[str] = []
+    for key, _title, sequence in SECTIONS:
+        if len(buckets.get(key, [])) == len(sequence):
+            continue
+        missing.extend(known[slot][1] for slot in sequence if slot is not None)
+    return missing
 
 
 def save(study_result: Study, template: Path, target_dir: Path) -> Path:
