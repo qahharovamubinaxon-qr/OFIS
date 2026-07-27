@@ -190,6 +190,36 @@ def test_a_long_name_shrinks_instead_of_running_off_the_card(svc) -> None:
     assert span["size"] < citizenship["size"], "the name should have shrunk"
 
 
+def test_only_three_words_sit_beside_the_kem_vydano_label(svc) -> None:
+    """The office wants three words there and the rest underneath.
+
+    «ОБЩЕСТВО С ОГРАНИЧЕННОЙ» goes next to the label, «ОТВЕТСТВЕННОСТЬЮ
+    «СФЕРА»» below it — however much width the first line would have allowed.
+    """
+    from src.services.beydjik_service import _FIRM_BASE, _FIRM_FIRST_WORDS
+
+    r = _make(svc, firm='ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ "СФЕРА"')
+    page = fitz.open(r.pdf_path)[0]
+    spans = [sp for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]
+             if abs(sp["origin"][1] - _FIRM_BASE) < 22 and sp["text"].strip()]
+    first = next(sp for sp in spans if sp["text"].startswith("ОБЩЕСТВО"))
+    assert len(first["text"].split()) == _FIRM_FIRST_WORDS, first["text"]
+    assert first["text"] == "ОБЩЕСТВО С ОГРАНИЧЕННОЙ"
+    rest = next(sp for sp in spans if "ОТВЕТСТВЕННОСТЬЮ" in sp["text"])
+    assert rest["text"] == 'ОТВЕТСТВЕННОСТЬЮ "СФЕРА"'
+    # the back prints rotated, so the continuation sits *above* the first line
+    assert rest["origin"][1] < first["origin"][1]
+
+
+def test_a_short_firm_name_stays_on_one_line(svc) -> None:
+    page = fitz.open(_make(svc, firm="ООО СФЕРА").pdf_path)[0]
+    spans = [sp for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]
+             if "СФЕРА" in sp["text"]]
+    assert [sp["text"] for sp in spans] == ["ООО СФЕРА"]
+
+
 def test_a_long_firm_name_wraps_onto_a_second_line(svc) -> None:
     """«Кем выдано» is followed by the firm, which may need two lines.
 
@@ -618,6 +648,43 @@ def test_a_badge_is_still_produced_when_the_qr_cannot_be_built(svc, settings):
     r = _make(svc)
     assert r.pdf_path.exists()
     assert "Болтазода" in _flat(r.pdf_path)
+
+
+# ------------------------------------------------- the firms we have used
+
+
+def test_a_firm_is_remembered_the_first_time_it_is_used(svc) -> None:
+    _make(svc, firm="ООО ГРАД")
+    assert "ООО ГРАД" in svc.firms()
+
+
+def test_the_newest_firm_comes_first_and_is_never_duplicated(svc) -> None:
+    for name in ("ООО ГРАД", "ООО ВЕКТОР", "ООО ГРАД"):
+        _make(svc, firm=name)
+    firms = svc.firms()
+    assert firms[0] == "ООО ГРАД"
+    assert firms.count("ООО ГРАД") == 1
+    assert "ООО ВЕКТОР" in firms
+
+
+def test_the_office_s_default_firm_is_always_offered(svc) -> None:
+    from src.services.beydjik_service import DEFAULT_FIRM
+
+    assert DEFAULT_FIRM in svc.firms()
+
+
+def test_the_list_can_be_cleared(svc) -> None:
+    _make(svc, firm="ООО ГРАД")
+    svc.forget_firms()
+    assert "ООО ГРАД" not in svc.firms()
+
+
+def test_the_list_does_not_grow_without_bound(svc) -> None:
+    from src.services.beydjik_service import FIRM_HISTORY
+
+    for i in range(FIRM_HISTORY + 6):
+        svc.remember_firm(f"ООО ФИРМА {i}")
+    assert len(svc.firms()) <= FIRM_HISTORY + 1     # …plus the standing default
 
 
 # ------------------------------------------- the date, the serial, the region

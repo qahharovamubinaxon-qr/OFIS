@@ -47,8 +47,12 @@ REGIONS: dict[str, dict] = {
 
 KEY_PR_NEXT = "beydjik.pr_next"
 KEY_FIRM = "beydjik.firm"
+KEY_FIRMS = "beydjik.firms"
 KEY_QR = "beydjik.qr_template"
 DEFAULT_FIRM = "ООО СФЕРА"
+# the office runs several companies, so every name typed into «Кем выдано» is
+# remembered and offered back rather than retyped
+FIRM_HISTORY = 20
 
 # What goes inside the badge's QR code. The office edits this in Settings, so
 # the placeholders below are the contract — every one of them is filled from
@@ -131,6 +135,9 @@ _FIRM_FIRST_RIGHT = 196.1
 _FIRM_BASE = 315.90
 _FIRM_LINE = 10.1                     # a further line goes 10.1pt "higher"
 _FIRM_LEFT = 20.0
+# the office asked for at most three words beside the label, whatever the
+# width allows — «ОБЩЕСТВО С ОГРАНИЧЕННОЙ» there, the rest underneath
+_FIRM_FIRST_WORDS = 3
 _DATE_ORIGIN = (251.9, 246.85)
 _PR_ORIGIN = (210.4, 210.90)
 
@@ -231,6 +238,28 @@ class BeydjikService:
     def firm(self) -> str:
         return str(self._settings.get(KEY_FIRM, DEFAULT_FIRM) or DEFAULT_FIRM)
 
+    # --------------------------------------------------- firms we have used
+    def firms(self) -> list[str]:
+        """Every «Кем выдано» name the office has used, newest first."""
+        stored = self._settings.get(KEY_FIRMS, None)
+        names = [str(x).strip() for x in stored if str(x).strip()] if isinstance(
+            stored, list) else []
+        current = self.firm()
+        if current and current not in names:
+            names.append(current)
+        return names
+
+    def remember_firm(self, name: str) -> None:
+        """Keep ``name`` at the top of the list, without duplicating it."""
+        name = (name or "").strip()
+        if not name:
+            return
+        names = [n for n in self.firms() if n.casefold() != name.casefold()]
+        self._settings.set(KEY_FIRMS, [name, *names][:FIRM_HISTORY])
+
+    def forget_firms(self) -> None:
+        self._settings.set(KEY_FIRMS, [])
+
     # -------------------------------------------------------- QR code
     def qr_template(self) -> str:
         return str(self._settings.get(KEY_QR, "") or "").strip() or DEFAULT_QR_TEMPLATE
@@ -299,6 +328,7 @@ class BeydjikService:
 
         pr = self._take_pr()
         firm = (firm or self.firm()).strip()
+        self.remember_firm(firm)
         # the office types the patent territory per badge; the region's own
         # wording is only the starting suggestion
         territory = territory.strip() or REGIONS[region]["territory"]
@@ -376,12 +406,15 @@ class BeydjikService:
         """
         if not firm:
             return
-        lines, current = [], ""
-        for word in firm.split():
-            right = _FIRM_FIRST_RIGHT if not lines else _BACK_RIGHT
+        words = firm.split()
+        # at most three words sit beside the label; the rest go underneath and
+        # wrap on width from there
+        lines = [" ".join(words[:_FIRM_FIRST_WORDS])]
+        current = ""
+        for word in words[_FIRM_FIRST_WORDS:]:
             trial = f"{current} {word}".strip()
             if current and font.text_length(
-                    trial, fontsize=_SIZE) > right - _FIRM_LEFT:
+                    trial, fontsize=_SIZE) > _BACK_RIGHT - _FIRM_LEFT:
                 lines.append(current)
                 current = word
             else:

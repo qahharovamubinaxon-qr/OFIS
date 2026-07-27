@@ -18,8 +18,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -96,9 +98,22 @@ class BeydjikView(QWidget):
         form.addWidget(self._inn, 1, 1)
 
         form.addWidget(QLabel("Фирма (кем выдано):"), 1, 2)
+        firm_row = QHBoxLayout()
+        firm_row.setSpacing(4)
         self._firm = QLineEdit()
         self._firm.setText(self._c.firm())
-        form.addWidget(self._firm, 1, 3)
+        firm_row.addWidget(self._firm, stretch=1)
+        # the office runs several companies — the ones already used are offered
+        # back here instead of being retyped
+        self._firm_pick = QToolButton()
+        self._firm_pick.setText("▾")
+        self._firm_pick.setToolTip("Аввал ёзилган фирмалар")
+        self._firm_pick.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._firm_menu = QMenu(self._firm_pick)
+        self._firm_menu.aboutToShow.connect(self._fill_firm_menu)
+        self._firm_pick.setMenu(self._firm_menu)
+        firm_row.addWidget(self._firm_pick)
+        form.addLayout(firm_row, 1, 3)
 
         form.addWidget(QLabel("Территория действия патента:"), 2, 0)
         self._territory = QLineEdit()
@@ -167,6 +182,25 @@ class BeydjikView(QWidget):
 
     def _show_pr(self) -> None:
         self._pr.setText(self._c.next_pr())
+
+    def _fill_firm_menu(self) -> None:
+        """Rebuild the list each time — a badge just made may have added to it."""
+        self._firm_menu.clear()
+        firms = self._c.firms()
+        for name in firms:
+            self._firm_menu.addAction(name).triggered.connect(
+                lambda _=False, n=name: self._firm.setText(n))
+        if firms:
+            self._firm_menu.addSeparator()
+        clear = self._firm_menu.addAction("🗑  Рўйхатни тозалаш")
+        clear.setEnabled(bool(firms))
+        clear.triggered.connect(self._forget_firms)
+
+    def _forget_firms(self) -> None:
+        if QMessageBox.question(
+                self, "Тозалаш", "Сақланган фирмалар рўйхати ўчирилсинми?"
+        ) == QMessageBox.StandardButton.Yes:
+            self._c.forget_firms()
 
     def _issue_date(self) -> date:
         q = self._date.date()

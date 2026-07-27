@@ -41,6 +41,13 @@ class BeydjikController:
     def firm(self) -> str:
         return self._beydjik.firm()
 
+    def firms(self) -> list[str]:
+        """Every «Кем выдано» name used before, so it can be picked not typed."""
+        return self._beydjik.firms()
+
+    def forget_firms(self) -> None:
+        self._beydjik.forget_firms()
+
     def generate_from_image(
         self,
         passport_image: bytes,
