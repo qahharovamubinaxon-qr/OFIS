@@ -123,7 +123,7 @@ def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     passport, patent, back = _trio(state)
     r = ctx.ctl["trud"].generate_from_images(
         state["target"], passport, patent, back,
-        form_date=date.today(), profession=None)
+        form_date=state["answers"].get("form_date") or date.today(), profession=None)
     return [p for p in (r.trud_path, r.uved_path, getattr(r, "hod_path", None)) if p]
 
 
@@ -198,7 +198,8 @@ MODULES: tuple[Module, ...] = (
     Module("patent", "🛂 Патент PDF", _run_patent,
            targets=lambda c: c["process"].companies(),
            target_prompt="Фирмани танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS),
+           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
+           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("reg", "🏠 Регистрация", _run_reg,
            targets=lambda c: c["reg"].addresses(),
            target_prompt="Манзилни танланг:",
@@ -214,7 +215,8 @@ MODULES: tuple[Module, ...] = (
     Module("trud", "📑 Трудовой", _run_trud,
            targets=lambda c: c["trud"].firms(),
            target_prompt="Фирмани танланг:",
-           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS),
+           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
+           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -238,6 +240,27 @@ BY_BUTTON: dict[str, Module] = {m.button: m for m in MODULES}
 
 
 # ---------------------------------------------------------------- wiring
+
+
+PEREVOD_NOTARY_KEY = "perevod.notary_name"
+PEREVOD_TRANSLATOR_KEY = "perevod.translator_name"
+PEREVOD_CITY_KEY = "perevod.notary_city"
+
+
+def _perevod_cert(container):
+    """A getter for the certification-page names, read from settings each run."""
+    from src.config.settings_service import SettingsService
+
+    settings = container.resolve(SettingsService)
+
+    def cert() -> dict:
+        return {
+            "notary": str(settings.get(PEREVOD_NOTARY_KEY, "") or ""),
+            "translator": str(settings.get(PEREVOD_TRANSLATOR_KEY, "") or ""),
+            "city": str(settings.get(PEREVOD_CITY_KEY, "город Москва") or "город Москва"),
+        }
+
+    return cert
 
 
 def build_controllers(container, key_getter: Callable[[], str]) -> dict:
@@ -277,7 +300,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "svera": SveraController(
             container.resolve(ProfessionService), ocr,
             container.resolve(SveraService)),
-        "perevod": PerevodService(key_getter=key_getter),
+        "perevod": PerevodService(
+            key_getter=key_getter, cert_getter=_perevod_cert(container)),
         "photo": PhotoService(key_getter=key_getter),
         "ocr": ocr,
     }

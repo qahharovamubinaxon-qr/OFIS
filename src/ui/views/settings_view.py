@@ -227,6 +227,38 @@ class SettingsView(QWidget):
         root.addWidget(wa)
         root.addStretch(1)
 
+        # -- перевод certification names ----------------------------------
+        from src.controllers.ofis_modules import (
+            PEREVOD_CITY_KEY,
+            PEREVOD_NOTARY_KEY,
+            PEREVOD_TRANSLATOR_KEY,
+        )
+
+        root = self._section("🌐", "ПЕРЕВОД")
+        pv = Card("🌐", "Notarial tasdiq varag'i (3-sahifa)",
+                  "Перевод PDF'ining 3-sahifasidagi ismlar. Muhr, imzo va reyestr "
+                  "raqamini dastur QO'YMAYDI — ularni notarius o'zi qo'l bilan "
+                  "qo'yadi va muhrlaydi.")
+        pf = pv.form()
+        self._pv_notary = QLineEdit(str(self._settings.get(PEREVOD_NOTARY_KEY, "") or ""))
+        self._pv_notary.setPlaceholderText("масалан: Акимов Глеб Борисович")
+        self._pv_translator = QLineEdit(
+            str(self._settings.get(PEREVOD_TRANSLATOR_KEY, "") or ""))
+        self._pv_translator.setPlaceholderText("масалан: Варавва Мария Васильевна")
+        self._pv_city = QLineEdit(
+            str(self._settings.get(PEREVOD_CITY_KEY, "город Москва") or "город Москва"))
+        pf.addRow("Нотариус (Ф.И.О.):", self._pv_notary)
+        pf.addRow("Таржимон (Ф.И.О.):", self._pv_translator)
+        pf.addRow("Шаҳар:", self._pv_city)
+        save_pv = QPushButton("Saqlash")
+        save_pv.setObjectName("primaryButton")
+        save_pv.clicked.connect(self._save_perevod)
+        pv.add(_right(save_pv))
+        pv.note("Bo'sh qoldirsangiz — 3-sahifada ismlar o'rniga chiziq chiqadi, "
+                "notarius qo'lda to'ldiradi.")
+        root.addWidget(pv)
+        root.addStretch(1)
+
         # -- backup / restore ---------------------------------------------
         root = self._section("💾", "Zaxira")
         bk = Card("💾", "Zaxira nusxa",
@@ -359,6 +391,19 @@ class SettingsView(QWidget):
             self, "OK",
             "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
             "bot shunda ishga tushadi.")
+
+    def _save_perevod(self) -> None:
+        from src.controllers.ofis_modules import (
+            PEREVOD_CITY_KEY,
+            PEREVOD_NOTARY_KEY,
+            PEREVOD_TRANSLATOR_KEY,
+        )
+
+        self._settings.set(PEREVOD_NOTARY_KEY, self._pv_notary.text().strip())
+        self._settings.set(PEREVOD_TRANSLATOR_KEY, self._pv_translator.text().strip())
+        self._settings.set(PEREVOD_CITY_KEY,
+                           self._pv_city.text().strip() or "город Москва")
+        QMessageBox.information(self, "OK", "ПЕРЕВОД sozlamalari saqlandi.")
 
     def _save_webapp(self) -> None:
         from src.controllers.telegram_bot import KEY_WEBAPP

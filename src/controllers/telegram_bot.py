@@ -365,6 +365,12 @@ class TelegramBot:
             return
         ask = module.asks[state["ask_index"]]
         if ask.kind == "date":
+            # tapping «Тайёрла» at a date question means "use the suggested day"
+            if text == _BTN_RUN and ask.default_days is not None:
+                state["answers"][ask.field] = date.today() + timedelta(days=ask.default_days)
+                state["ask_index"] += 1
+                self._ask_or_run(chat_id, state, module)
+                return
             parsed = _parse_date(text)
             if parsed is None:
                 self._send(chat_id, "Сана формати: КК.ОО.ЙЙЙЙ (масалан 15.10.2026)")
@@ -382,7 +388,8 @@ class TelegramBot:
             hint = ""
             if ask.kind == "date" and ask.default_days is not None:
                 suggested = date.today() + timedelta(days=ask.default_days)
-                hint = f"\n(масалан {suggested.strftime('%d.%m.%Y')})"
+                hint = (f"\n(масалан {suggested.strftime('%d.%m.%Y')} — ёки "
+                        f"«{_BTN_RUN}» босинг, ўша сана қўйилади)")
             self._send(chat_id, ask.prompt + hint, _RUN_KB)
             return
         self._execute(chat_id, state, module)

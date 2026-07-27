@@ -193,8 +193,11 @@ def _order_fields(doc_type: str, fields: list[dict]) -> list[dict]:
 
 
 class PerevodService:
-    def __init__(self, key_getter) -> None:
+    def __init__(self, key_getter, cert_getter=None) -> None:
         self._key_getter = key_getter
+        # returns {"notary": str, "translator": str, "city": str} for the
+        # certification page (page 3); names are printed, never signed/stamped.
+        self._cert_getter = cert_getter
 
     def translate(
         self,
@@ -240,9 +243,10 @@ class PerevodService:
             base = folder / f"{stem}_{i:03d}"
             i += 1
 
+        cert = (self._cert_getter() if self._cert_getter else None) or {}
         pdf = self._to_pdf(base.with_suffix(".pdf"), title=title, lang=lang,
                            country=country, fields=fields, stamps=stamps,
-                           notes=notes, scans=list(zip(
+                           notes=notes, cert=cert, scans=list(zip(
                                images[:10],
                                list(crops) + [None] * len(images),
                                strict=False)))
@@ -266,7 +270,8 @@ class PerevodService:
 
     def _to_pdf(self, out: Path, *, title: str, lang: str, country: str,
                 fields: list[dict], stamps: list[str], notes: list[str],
-                scans: list[tuple[bytes, dict | None]]) -> Path:
+                scans: list[tuple[bytes, dict | None]],
+                cert: dict | None = None) -> Path:
         import fitz
 
         serif = fitz.Font(fontfile=str(_font_file("OfisSerif")))
@@ -356,7 +361,71 @@ class PerevodService:
                     tw.append((X0, y + 10.0), row, font=serif, fontsize=10.0)
                     y += 10.0 * LEAD
 
-        # No translator/date block: the office adds its own certification page.
+        # page 3 — the notarial certification, as a BLANK the notary completes.
+        # The program prints only the standard wording (and the office's usual
+        # notary/translator names, if configured). The registry number, the
+        # date, the fee, the sheet count, both signatures and the round seal are
+        # left empty — the notary fills and stamps them in person, exactly like
+        # the Госуслуги block on the hostel form. It never prints a seal, a
+        # signature or a registry number, so it is a draft to be certified, not
+        # a finished notarial act.
+        def left(text: str, font, size: float, dx: float = 0.0) -> None:
+            nonlocal y
+            room(size * LEAD)
+            tw.append((X0 + dx, y + size), text, font=font, fontsize=size)
+            y += size * LEAD
+
+        def rule(x0: float, x1: float, dy: float = -3.0) -> None:
+            page.draw_line((x0, y + dy), (x1, y + dy), color=(0, 0, 0), width=0.6)
+
+        cert = cert or {}
+        notary = str(cert.get("notary") or "").strip()
+        translator = str(cert.get("translator") or "").strip()
+        city = str(cert.get("city") or "город Москва").strip()
+        # header form (nominative) vs. the genitive used after «нотариус …»
+        city_head = city[:1].upper() + city[1:] if city else city
+        city_gen = ("города Москвы" if city.lower() in ("город москва", "москва")
+                    else city)
+        blank = "_" * 34
+
+        new_page()
+        left(f"Перевод данного текста выполнен переводчиком {translator or blank}",
+             serif, SIZE)
+        y += 30  # room for the translator's own signature (left blank)
+
+        y += 14
+        center("Российская Федерация", bold, SIZE)
+        center(city_head, bold, SIZE)
+        center("«____» ________________ 20____ года", serif, SIZE)
+        y += 16
+
+        who = notary or blank
+        body = [
+            f"Я, {who}, нотариус {city_gen}, свидетельствую подлинность подписи",
+            f"переводчика {translator or blank}.",
+            "Подпись сделана в моём присутствии.",
+            "Личность подписавшего документ установлена.",
+        ]
+        for para in body:
+            for row in wrapped(para, serif, SIZE, X0, width):
+                left(row, serif, SIZE)
+        y += 16
+        left("Зарегистрировано в реестре: № ___________________________", serif, SIZE)
+        y += 8
+        left("Уплачено за совершение нотариального действия: ________ руб. ____ коп.",
+             serif, SIZE)
+        y += 40
+
+        # notary signature line (left blank) with the name printed to its right
+        room(SIZE * LEAD)
+        rule(X0, X0 + 150, dy=SIZE - 2)
+        tw.append((X0 + 165, y + SIZE), notary or "", font=serif, fontsize=SIZE)
+        y += SIZE * LEAD
+        left("(подпись нотариуса)", serif, 8.0, dx=35)
+        y += 24
+        left("Всего прошнуровано, пронумеровано и", serif, SIZE)
+        left("скреплено печатью ______ листа(ов)", serif, SIZE)
+        left("Нотариус: ______________________", serif, SIZE)
 
         if page is not None and tw is not None:
             tw.write_text(page)

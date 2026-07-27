@@ -146,6 +146,16 @@ _TRANSLATION = {
 }
 
 
+def _valid_png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (600, 400), (200, 200, 200)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def test_translation_pdf_and_docx(monkeypatch) -> None:
     from src.services.perevod_service import PerevodService
 
@@ -154,22 +164,55 @@ def test_translation_pdf_and_docx(monkeypatch) -> None:
     monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
 
     svc = PerevodService(key_getter=lambda: "test-key")
-    result = svc.translate([b"fake-image"], doc_type="auto",
+    result = svc.translate([_valid_png()], doc_type="auto",
                            form_date=date(2026, 7, 26))
 
     assert result.doc_type == "passport"
     assert result.pdf_path.exists() and result.docx_path.exists()
 
-    text = "".join(p.get_text() for p in fitz.open(result.pdf_path))
-    assert "ПЕРЕВОД С УЗБЕКСКОГО ЯЗЫКА НА РУССКИЙ ЯЗЫК" in text.replace("\n", " ")
-    assert "ПАСПОРТ" in text
-    assert "ИСАКОВ" in text
-    assert "FA7822242" in text
-    assert "Отдел внутренних дел" in text
-    # the office adds its own certification sheet — the translation itself
-    # must carry no translator name and no date
-    assert "Переводчик" not in text
-    assert "Дата перевода" not in text
+    doc = fitz.open(result.pdf_path)
+    # page 1 = scan of the original, page 2 = translation, page 3 = certification
+    assert len(doc) == 3
+    translation = doc[1].get_text().replace("\n", " ")
+    assert "ПЕРЕВОД С УЗБЕКСКОГО ЯЗЫКА НА РУССКИЙ ЯЗЫК" in translation
+    assert "ПАСПОРТ" in translation and "ИСАКОВ" in translation
+    assert "FA7822242" in translation and "Отдел внутренних дел" in translation
+    # the translation page itself carries no translator name and no date —
+    # those belong on the separate certification sheet
+    assert "переводчик" not in translation.lower()
+    assert "нотариус" not in translation.lower()
+
+
+def test_certification_page_is_a_blank_the_notary_completes(monkeypatch) -> None:
+    """Page 3 prints the standard wording but NEVER a seal, a signature or a
+    registry number — the notary applies those in person."""
+    import re
+
+    from src.services.perevod_service import PerevodService
+
+    monkeypatch.setattr("src.services.perevod_service.ask",
+                        lambda *a, **k: json.dumps(_TRANSLATION))
+    monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
+
+    svc = PerevodService(
+        key_getter=lambda: "test-key",
+        cert_getter=lambda: {"notary": "Акимов Глеб Борисович",
+                             "translator": "Варавва Мария Васильевна",
+                             "city": "город Москва"})
+    result = svc.translate([_valid_png()], form_date=date(2026, 7, 26))
+    cert = fitz.open(result.pdf_path)[2].get_text()
+
+    # the wording and the configured names are printed …
+    assert "свидетельствую подлинность подписи" in cert.replace("\n", " ")
+    assert "нотариус города Москвы" in cert.replace("\n", " ")
+    assert "Акимов Глеб Борисович" in cert
+    assert "Варавва Мария Васильевна" in cert
+    # … but the registry number, fee and date are left blank
+    assert "Зарегистрировано в реестре: №" in cert.replace("\n", " ")
+    tail = cert.replace("\n", " ").split("реестре: №", 1)[1][:30]
+    assert not re.search(r"\d", tail), f"registry number must be blank: {tail!r}"
+    # no image is drawn on the page (no reproduced seal or signature)
+    assert not fitz.open(result.pdf_path)[2].get_images()
 
 
 def test_fields_follow_the_standard_order(monkeypatch) -> None:

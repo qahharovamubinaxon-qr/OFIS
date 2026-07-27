@@ -264,3 +264,49 @@ def test_module_failure_is_reported_not_crashed(ready, monkeypatch) -> None:
     _text(ready, "15.10.2026")
     assert "Хато" in _all(ready)
     assert ready._state[CHAT]["mode"] is None
+
+
+def test_patent_now_asks_for_the_date(ready, monkeypatch) -> None:
+    """Every producing module asks the date — patent used to skip it."""
+    seen = {}
+
+    def fake_generate(target, passport, patent, back, *, form_date, profession):
+        seen["form_date"] = form_date
+
+        class R:
+            pdf_path = paths.output_dir() / "p.pdf"
+            reg_number = "123"
+        R.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        R.pdf_path.write_bytes(b"%PDF-1.4\n")
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["process"], "generate_from_images", fake_generate)
+    _text(ready, "🛂 Патент PDF")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "сана" in _last(ready).lower()  # asked, did not run yet
+    _text(ready, "26.07.2026")
+    assert seen["form_date"] == date(2026, 7, 26)
+
+
+def test_tapping_run_at_a_date_uses_today(ready, monkeypatch) -> None:
+    seen = {}
+
+    def fake_generate(target, passport, patent, back, *, form_date, profession):
+        seen["form_date"] = form_date
+
+        class R:
+            pdf_path = paths.output_dir() / "p2.pdf"
+            reg_number = "1"
+        R.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        R.pdf_path.write_bytes(b"%PDF-1.4\n")
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["process"], "generate_from_images", fake_generate)
+    _text(ready, "🛂 Патент PDF")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")   # opens the date question
+    _text(ready, "✅ Тайёрла")   # accept the suggested (today)
+    assert seen["form_date"] == date.today()
