@@ -53,13 +53,15 @@ DEFAULT_FIRM = "ООО СФЕРА"
 # values remained. The blank's labels are Arial Bold; the values the office
 # typed are Arial Regular — 10pt in their Word original, which the badge's
 # own page scale renders at 7pt here.
-# The office then asked for the values one size up and in bold, so every value
-# is set in Arial Bold — the labels around them are bold too, and the card
-# reads better under lamination.
-_FONT_BOLD = "OfisArialBold"
-_SERIF_BOLD = "OfisSerifBold"
+# The office then asked for the values one size up and heavier — but the full
+# bold face turned out too heavy, so the values are set in the regular face and
+# stroked a little on top of the fill. That lands between regular and bold and,
+# unlike the bold face, keeps the regular widths the columns were measured for.
+_FONT = "OfisArial"
+_SERIF = "OfisSerif"
+_STROKE = 0.022                        # stroke width, as a fraction of the size
 _SIZE = 7.8                            # ФИО, даты, гражданство…
-_SERIA_SIZE = 9.0                      # the серия line runs a little larger
+_SERIA_SIZE = 10.0                     # the серия line runs a little larger
 _DATE_SIZE = 9.6                       # «Дата выдачи» is larger again
 _PR_SIZE = 15.6                        # «ПР» is Times, matching its own label
 _PR_TRACKING = 1.16                    # …and letterspaced, as on the sample
@@ -225,10 +227,10 @@ class BeydjikService:
         doc = fitz.open(blank)
         try:
             page = doc[0]
-            page.insert_font(fontname="bj", fontfile=str(_font_file(_FONT_BOLD)))
-            page.insert_font(fontname="bjs", fontfile=str(_font_file(_SERIF_BOLD)))
-            font = fitz.Font(fontfile=str(_font_file(_FONT_BOLD)))
-            serif = fitz.Font(fontfile=str(_font_file(_SERIF_BOLD)))
+            page.insert_font(fontname="bj", fontfile=str(_font_file(_FONT)))
+            page.insert_font(fontname="bjs", fontfile=str(_font_file(_SERIF)))
+            font = fitz.Font(fontfile=str(_font_file(_FONT)))
+            serif = fitz.Font(fontfile=str(_font_file(_SERIF)))
             self._fill_front(page, font, passport, region=region,
                              personal_number=personal_number.strip(),
                              inn=inn.strip(), dolzhnost=dolzhnost.strip())
@@ -366,6 +368,7 @@ class BeydjikService:
             while size > 5 and font.text_length(text, fontsize=size) > avail:
                 size -= 0.25
         page.insert_text((x, baseline), text, fontname="bj", fontsize=size,
+                         render_mode=2, border_width=_STROKE,
                          morph=cls._taller((x, baseline)))
 
     @classmethod
@@ -380,6 +383,7 @@ class BeydjikService:
             size -= 0.25
         page.insert_text((right_x, top_y), text, fontname=fontname,
                          fontsize=size, rotate=180,
+                         render_mode=2, border_width=_STROKE,
                          morph=cls._taller((right_x, top_y)))
 
     @classmethod
@@ -397,6 +401,7 @@ class BeydjikService:
         for char in number:
             page.insert_text((x, top_y), char, fontname="bjs",
                              fontsize=_PR_SIZE, rotate=180,
+                             render_mode=2, border_width=_STROKE,
                              morph=cls._taller((x, top_y)))
             x -= serif.text_length(char, fontsize=_PR_SIZE) + _PR_TRACKING
 

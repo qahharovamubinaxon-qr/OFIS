@@ -198,7 +198,14 @@ def test_the_values_are_stretched_taller_but_not_wider(svc) -> None:
     """
     import numpy as np
 
-    from src.services.beydjik_service import _ROW_DOB, _SIZE, _STRETCH, _X_WIDE
+    from src.services.beydjik_service import (
+        _FONT,
+        _ROW_DOB,
+        _SIZE,
+        _STRETCH,
+        _STROKE,
+        _X_WIDE,
+    )
 
     page = fitz.open(_make(svc).pdf_path)[0]
 
@@ -206,14 +213,15 @@ def test_the_values_are_stretched_taller_but_not_wider(svc) -> None:
     span = next(sp for b in page.get_text("dict")["blocks"]
                 for ln in b.get("lines", []) for sp in ln["spans"]
                 if sp["text"].strip() == "01.08.1994")
-    plain = fitz.Font(fontfile=str(_font_file("OfisArialBold"))).text_length(
+    plain = fitz.Font(fontfile=str(_font_file(_FONT))).text_length(
         "01.08.1994", fontsize=_SIZE)
     assert abs(span["bbox"][0] - _X_WIDE) < 0.5
     assert abs((span["bbox"][2] - span["bbox"][0]) - plain) < 0.5, "it got wider"
 
-    # height comes from the ink: a slice of the digits, clear of the label on
-    # the left and of the гражданство row below
-    clip = fitz.Rect(190, 101, 250, 112)
+    # height comes from the ink: a slice of the digits, clear of its own label
+    # and of the отчество descenders on the left, and of the гражданство row
+    # below
+    clip = fitz.Rect(196, 101, 250, 112)
     pm = page.get_pixmap(dpi=600, clip=clip)
     arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
         pm.height, pm.width, pm.n)[:, :, :3]
@@ -222,7 +230,40 @@ def test_the_values_are_stretched_taller_but_not_wider(svc) -> None:
 
     # the date has no descender, so the baseline is the bottom of the ink
     assert abs(bottom - _ROW_DOB) < 0.4, "the baseline moved"
-    assert abs((bottom - top) - _SIZE * 0.716 * _STRETCH) < 0.5, "not stretched"
+    # the stroke that gives the values their weight adds a hair on each side
+    stretched = _SIZE * 0.716 * _STRETCH + _SIZE * _STROKE
+    assert abs((bottom - top) - stretched) < 0.5, "not stretched"
+
+
+def test_the_values_are_heavier_than_plain_text_but_lighter_than_bold(svc) -> None:
+    """The weight comes from stroking the regular face, not from the bold one.
+
+    The full bold face read too heavy on the card, so the values are filled and
+    then stroked. Measuring ink is the only way to see that: the text layer
+    reports the regular font either way.
+    """
+    import numpy as np
+
+    from src.services.beydjik_service import _FONT, _SIZE, _STROKE
+
+    def ink(fontkey: str, stroke: float) -> float:
+        doc = fitz.open()
+        page = doc.new_page(width=200, height=60)
+        page.insert_font(fontname="a", fontfile=str(_font_file(fontkey)))
+        kw = dict(fontname="a", fontsize=_SIZE)
+        if stroke:
+            kw.update(render_mode=2, border_width=stroke)
+        page.insert_text((20, 40), "Болтазода", **kw)
+        pm = page.get_pixmap(dpi=1200)
+        arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+            pm.height, pm.width, pm.n)[:, :, :3]
+        return float((arr.max(2) < 110).sum())
+
+    plain, bold = ink(_FONT, 0.0), ink("OfisArialBold", 0.0)
+    ours = ink(_FONT, _STROKE)
+    assert plain < ours < bold, (plain, ours, bold)
+    # …and clearly nearer bold than plain, or the office would not see it
+    assert ours > plain + (bold - plain) * 0.4
 
 
 # ------------------------------------------------------------- numbering
