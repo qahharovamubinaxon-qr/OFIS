@@ -136,6 +136,19 @@ def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     return [p for p in (r.trud_path, r.uved_path, getattr(r, "hod_path", None)) if p]
 
 
+def _run_dms(ctx: RunContext, state: dict) -> list[Path]:
+    answers = state["answers"]
+    r = ctx.ctl["dms"].generate_from_images(
+        state["photos"][0],
+        start_date=answers.get("start_date") or date.today(),
+        phone=str(answers.get("phone") or ""),
+        address=str(answers.get("address") or ""),
+        region=str(answers.get("region") or "") or None)
+    ctx.note(f"Полис № {r.policy_number} · "
+             f"{r.start_date:%d.%m.%Y} — {r.end_date:%d.%m.%Y}")
+    return [r.pdf_path]
+
+
 def _run_svera(ctx: RunContext, state: dict) -> list[Path]:
     from src.config import paths
 
@@ -265,6 +278,14 @@ MODULES: tuple[Module, ...] = (
            target_prompt="Фирмани танланг:",
            photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
            asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("dms", "🏥 ДМС", _run_dms,
+           photo_prompt="Ишчининг паспорт расмини юборинг.",
+           photo_labels=("Паспорт",),
+           asks=(Ask("start_date", "Полис БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("phone", "Телефон рақами:", kind="text"),
+                 Ask("address", "Рўйхатдан ўтиш манзили:", kind="text"),
+                 Ask("region", "Патент ҳудуди (бўш — Москва):", kind="text"))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -327,6 +348,7 @@ def _perevod_cert(container):
 def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     """Build every controller the modules need. Qt-free, so it works from a
     background thread (the bot poller) as well as the HTTP server."""
+    from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
     from src.controllers.process_controller import ProcessController
     from src.controllers.registration_controller import RegistrationController
@@ -335,6 +357,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.config.settings_service import SettingsService
     from src.ocr.service import OcrService
     from src.services.company_service import CompanyService
+    from src.services.dms_service import DmsService
     from src.services.dover_service import DoverService
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
@@ -367,6 +390,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "perevod": PerevodService(
             key_getter=key_getter, cert_getter=_perevod_cert(container)),
         # Both are stateless services the desktop views build the same way.
+        "dms": DmsController(ocr, DmsService(container.resolve(SettingsService))),
         "umumiy": UmumiyService(key_getter=key_getter),
         "dover": DoverService(key_getter=key_getter,
                               settings=container.resolve(SettingsService)),

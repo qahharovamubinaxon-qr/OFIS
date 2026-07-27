@@ -259,6 +259,43 @@ class SettingsView(QWidget):
         root.addWidget(pv)
         root.addStretch(1)
 
+        # -- ДМС policy numbers -------------------------------------------
+        from src.services.dms_service import (
+            DEFAULT_REGION,
+            KEY_FROM,
+            KEY_NEXT,
+            KEY_REGION,
+            KEY_TO,
+        )
+
+        root = self._section("🏥", "ДМС")
+        dm = Card("🏥", "Polis raqamlari",
+                  "RESO agentligingizga ajratgan raqamlar oralig'i. Dastur faqat "
+                  "shu oraliqdagi raqamlarni ishlatadi va tugaganda to'xtaydi — "
+                  "o'zi raqam o'ylab topmaydi.")
+        df = dm.form()
+        self._dms_from = QLineEdit(str(self._settings.get(KEY_FROM, "") or ""))
+        self._dms_from.setPlaceholderText("50682676085")
+        self._dms_to = QLineEdit(str(self._settings.get(KEY_TO, "") or ""))
+        self._dms_to.setPlaceholderText("50682676999")
+        self._dms_next = QLineEdit(str(self._settings.get(KEY_NEXT, "") or ""))
+        self._dms_next.setPlaceholderText("keyingi ishlatiladigan raqam")
+        self._dms_region = QLineEdit(
+            str(self._settings.get(KEY_REGION, DEFAULT_REGION) or DEFAULT_REGION))
+        df.addRow("Раqamlar: dan", self._dms_from)
+        df.addRow("… gacha", self._dms_to)
+        df.addRow("Keyingi raqam:", self._dms_next)
+        df.addRow("Patent hududi:", self._dms_region)
+        save_dm = QPushButton("Saqlash")
+        save_dm.setObjectName("primaryButton")
+        save_dm.clicked.connect(self._save_dms)
+        dm.add(_right(save_dm))
+        self._dms_state = dm.note("")
+        dm.note("Raqamlar tugaganda RESO'dan yangi oraliq oling va shu yerga "
+                "kiriting.")
+        root.addWidget(dm)
+        root.addStretch(1)
+
         # -- backup / restore ---------------------------------------------
         root = self._section("💾", "Zaxira")
         bk = Card("💾", "Zaxira nusxa",
@@ -342,6 +379,14 @@ class SettingsView(QWidget):
             port = self._settings.get(KEY_PORT, DEFAULT_PORT)
             self._wa_state.setText(f"✅  Yoqilgan:  http://{lan_ip()}:{port}/?k=PAROL")
 
+        from src.services.dms_service import DmsService
+
+        dms = DmsService(self._settings)
+        nxt, left = dms.peek_number(), dms.remaining()
+        self._dms_state.setText(
+            f"✅  Keyingi raqam: {nxt}  ·  qoldi: {left} ta" if nxt
+            else "⚠️  Raqamlar oralig'i kiritilmagan — ДМС ishlamaydi.")
+
         backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
         if backups:
             newest = backups[-1]
@@ -391,6 +436,30 @@ class SettingsView(QWidget):
             self, "OK",
             "Telegram sozlamalari saqlandi.\nDasturni yopib qayta oching — "
             "bot shunda ishga tushadi.")
+
+    def _save_dms(self) -> None:
+        from src.services.dms_service import (
+            DEFAULT_REGION,
+            KEY_FROM,
+            KEY_NEXT,
+            KEY_REGION,
+            KEY_TO,
+        )
+
+        def digits(widget) -> str:
+            return "".join(c for c in widget.text() if c.isdigit())
+
+        low, high, nxt = digits(self._dms_from), digits(self._dms_to), digits(self._dms_next)
+        if low and high and int(high) < int(low):
+            QMessageBox.warning(self, "Xato", "«gacha» raqami «dan» dan kichik.")
+            return
+        self._settings.set(KEY_FROM, low)
+        self._settings.set(KEY_TO, high)
+        self._settings.set(KEY_NEXT, nxt or low)
+        self._settings.set(KEY_REGION,
+                           self._dms_region.text().strip() or DEFAULT_REGION)
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "ДМС sozlamalari saqlandi.")
 
     def _save_perevod(self) -> None:
         from src.controllers.ofis_modules import (

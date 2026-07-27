@@ -398,3 +398,38 @@ def test_modules_that_reject_pdf_say_so(ready) -> None:
     _pick(ready, 0)
     _pdf(ready)
     assert "pdf қабул қилмайди" in _last(ready).lower()
+
+
+def test_dms_flow_asks_everything_then_runs(ready, monkeypatch) -> None:
+    seen = {}
+
+    def fake_generate(image, *, start_date, phone, address, region):
+        seen.update(start_date=start_date, phone=phone, address=address,
+                    region=region)
+        out = paths.output_dir() / "dms.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.4\n")
+
+        class R:
+            pdf_path = out
+            policy_number = "50682676085"
+            start_date = date(2026, 7, 27)
+            end_date = date(2027, 7, 26)
+
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["dms"], "generate_from_images", fake_generate)
+
+    _text(ready, "🏥 ДМС")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "БОШЛАНИШ" in _last(ready)
+    _text(ready, "27.07.2026")
+    _text(ready, "+79683941008")
+    _text(ready, "Москва, Вяземская 1к1")
+    _text(ready, "Москва")
+    assert seen["start_date"] == date(2026, 7, 27)
+    assert seen["phone"] == "+79683941008"
+    assert seen["address"] == "Москва, Вяземская 1к1"
+    assert "50682676085" in _all(ready)
+    assert ready.files

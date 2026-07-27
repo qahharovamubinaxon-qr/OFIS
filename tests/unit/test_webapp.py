@@ -223,3 +223,11 @@ def test_dover_run_passes_the_chosen_type(server, monkeypatch) -> None:
     # an unknown value falls back to the first option rather than erroring
     server.run_module("dover", None, [b"img"], {"doc_type": "нет такого"})
     assert seen["doc_type"] == DOVER_TYPES[0]
+
+
+def test_dms_is_offered_with_its_questions(server) -> None:
+    by_key = {m["key"]: m for m in server.modules_payload()}
+    assert "dms" in by_key, "ДМС missing from the remote front ends"
+    fields = [a["field"] for a in by_key["dms"]["asks"]]
+    assert fields == ["start_date", "phone", "address", "region"]
+    assert by_key["dms"]["minPhotos"] == 1

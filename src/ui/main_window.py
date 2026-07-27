@@ -54,6 +54,7 @@ _NAV = [
     (None, "nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
     (None, "nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
+    (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
@@ -167,6 +168,15 @@ class MainWindow(QMainWindow):
                 self._container.resolve(TrudService),
             )
             return TrudView(trud_controller)
+        if key == "nav.dms":
+            from src.controllers.dms_controller import DmsController
+            from src.services.dms_service import DmsService
+            from src.ui.views.dms_view import DmsView
+
+            return DmsView(DmsController(
+                self._container.resolve(OcrService),
+                DmsService(self._settings),
+            ))
         if key == "nav.photo":
             from src.services.photo_service import PhotoService
 
