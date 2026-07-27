@@ -95,6 +95,30 @@ class RegistrationAddressRepository:
             ).fetchall()
         return [_row_to_address(r) for r in rows]
 
+    def list_archived(self, kind: str | None = None) -> list[RegistrationAddress]:
+        """Removed addresses are only hidden, never deleted — so an accidental
+        click can be undone."""
+        if kind is None:
+            rows = self._conn.execute(
+                "SELECT * FROM registration_addresses WHERE status != ? ORDER BY label",
+                (CompanyStatus.ACTIVE.value,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM registration_addresses WHERE status != ? AND kind = ? "
+                "ORDER BY label",
+                (CompanyStatus.ACTIVE.value, kind),
+            ).fetchall()
+        return [_row_to_address(r) for r in rows]
+
+    def restore(self, address_id: UUID) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE registration_addresses SET status=?, updated_at=? WHERE id=?",
+                (CompanyStatus.ACTIVE.value, now, str(address_id)),
+            )
+
     def archive(self, address_id: UUID) -> None:
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn:

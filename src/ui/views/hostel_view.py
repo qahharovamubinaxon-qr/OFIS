@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -156,6 +157,11 @@ class HostelView(QWidget):
         rm.setFixedWidth(40)
         rm.clicked.connect(self._remove)
         row.addWidget(rm)
+        restore = QPushButton("↩")
+        restore.setToolTip("O'chirilgan xostelni tiklash")
+        restore.setFixedWidth(40)
+        restore.clicked.connect(self._restore)
+        row.addWidget(restore)
         root.addLayout(row)
 
         dates = QHBoxLayout()
@@ -254,6 +260,35 @@ class HostelView(QWidget):
             return
         self.refresh()
         self._hostel.setCurrentIndex(self._hostel.count() - 1)
+
+    def _restore(self) -> None:
+        """Bring back a hostel that was removed by accident. The row is still
+        in the database — removal only hides it."""
+        archived = self._c.archived_addresses()
+        if not archived:
+            QMessageBox.information(
+                self, "Tiklash",
+                "O'chirilgan xostel yo'q.\n\nAgar xostelingiz ro'yxatda "
+                "ko'rinmasa va bu yerda ham bo'lmasa — bazaning o'zi "
+                "almashgan bo'lishi mumkin: Sozlamalar → Zaxira → "
+                "«Zaxiradan tiklash».")
+            return
+        labels = [a.label for a in archived]
+        choice, ok = QInputDialog.getItem(
+            self, "Tiklash", "Qaysi xostel tiklansin?", labels, 0, False)
+        if not ok:
+            return
+        address = archived[labels.index(choice)]
+        try:
+            self._c.restore_address(address.id)
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        self.refresh()
+        idx = self._hostel.findText(address.label)
+        if idx >= 0:
+            self._hostel.setCurrentIndex(idx)
+        QMessageBox.information(self, "OK", f"«{address.label}» tiklandi.")
 
     def _remove(self) -> None:
         address = self._selected()

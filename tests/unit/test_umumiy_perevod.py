@@ -112,20 +112,46 @@ def test_company_requisites_are_protected(monkeypatch, tmp_path) -> None:
     assert "9999999999" not in text
 
 
-def test_scanned_pdf_is_rejected_with_a_clear_message(monkeypatch, tmp_path) -> None:
+def _scan_pdf(tmp_path) -> Path:
+    """A PDF with no text layer at all — the shape a scan has."""
+    blank = tmp_path / "scan.pdf"
+    doc = fitz.open()
+    doc.new_page(width=595, height=842)
+    doc.save(str(blank))
+    doc.close()
+    return blank
+
+
+def test_scanned_pdf_is_read_as_images_not_rejected(monkeypatch, tmp_path) -> None:
+    """A scan used to dead-end with «matn topilmadi». Now the pages are read
+    visually and the worker's data is typed into the boxes the AI returns."""
+    from src.services.umumiy_service import UmumiyService
+
+    boxes = [{"page": 0, "text": "РАХИМОВ БАДРИДДИН", "field": "fio_full",
+              "box": {"x0": 0.1, "y0": 0.2, "x1": 0.6, "y1": 0.23}}]
+    monkeypatch.setattr("src.services.umumiy_templates.ask",
+                        lambda *a, **k: json.dumps(boxes))
+
+    svc = UmumiyService(key_getter=lambda: "test-key")
+    result = svc.generate(_scan_pdf(tmp_path), _passport(), None,
+                          form_date=date(2026, 7, 26))
+
+    assert result.replacements == 1
+    text = "".join(p.get_text() for p in fitz.open(result.pdf_path))
+    assert "ИСАКОВ" in text, "the new worker's name was not written in"
+
+
+def test_scan_with_no_worker_data_says_so(monkeypatch, tmp_path) -> None:
     from src.common.errors import OfisError
     from src.services.umumiy_service import UmumiyService
 
-    blank = tmp_path / "scan.pdf"
-    doc = fitz.open()
-    doc.new_page(width=595, height=842)  # no text at all
-    doc.save(str(blank))
-    doc.close()
-
+    monkeypatch.setattr("src.services.umumiy_templates.ask",
+                        lambda *a, **k: "[]")
     svc = UmumiyService(key_getter=lambda: "test-key")
     with pytest.raises(OfisError) as exc:
-        svc.generate(blank, _passport(), None, form_date=date(2026, 7, 26))
-    assert "matn" in exc.value.message.lower()
+        svc.generate(_scan_pdf(tmp_path), _passport(), None,
+                     form_date=date(2026, 7, 26))
+    assert "ma'lumot" in exc.value.message.lower()
 
 
 # -- ПЕРЕВОД ---------------------------------------------------------------

@@ -75,6 +75,49 @@ class RegistrationAddressService:
         self._repo.archive(address_id)
         log.info("Registration address archived: %s", address_id)
 
+    def list_archived(self, kind: str | None = None) -> list[RegistrationAddress]:
+        """Addresses removed from the picker — still fully recoverable."""
+        return self._repo.list_archived(kind)
+
+    def restore(self, address_id: UUID) -> RegistrationAddress:
+        """Bring a removed address back.
+
+        If its template file is gone (an address created before templates moved
+        to AppData — an EXE rebuild wiped the program folder), the blank is
+        re-printed from the address data that the database still holds.
+        """
+        address = self._repo.get(address_id)
+        if address is None:
+            raise ValidationError("Address not found", context={"id": str(address_id)})
+        self._repo.restore(address_id)
+        if not address.template_path.exists():
+            address = self._rebuild_template(address)
+            self._repo.upsert(address)
+        log.info("Registration address restored: %s", address.label)
+        return address
+
+    def _rebuild_template(self, address: RegistrationAddress) -> RegistrationAddress:
+        """Re-print the blank for an address whose template file went missing."""
+        if address.kind == "hostel":
+            from src.services.hostel_service import HostelTemplateBuilder
+
+            built = HostelTemplateBuilder().build(self._hostel_dest(address), address)
+        else:
+            from src.services.address_template_builder import AddressTemplateBuilder
+
+            dest_dir = (paths.user_templates_dir()
+                        / f"registration_{address.internal_code.lower()}")
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            built = AddressTemplateBuilder().build(
+                dest_dir / "template.pdf",
+                oblast=address.oblast, raion=address.raion, gorod=address.gorod,
+                ulitsa=address.ulitsa, dom=address.dom, korpus=address.korpus,
+                stroenie=address.stroenie, kvartira=address.kvartira,
+                host_fio=address.host_fio, regional_number=address.regional_number,
+            )
+        log.info("Template rebuilt for %s → %s", address.label, built)
+        return address.model_copy(update={"template_path": built})
+
     def create(
         self,
         address: RegistrationAddress,

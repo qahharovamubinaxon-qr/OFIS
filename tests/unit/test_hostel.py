@@ -219,3 +219,40 @@ def test_every_hostel_gets_the_start_date(container) -> None:
         )
         page2 = fitz.open(result.pdf_path)[1]
         assert page2.search_for("27.07.2026 00:00"), f"{address.label}: date missing"
+
+
+def test_removed_hostel_can_be_restored(container) -> None:
+    """Removing only hides the address — it must be recoverable."""
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    saved = svc.create_hostel(_hostel("restoreme"), None)
+
+    svc.archive(saved.id)
+    assert "restoreme" not in [a.internal_code for a in svc.list(kind="hostel")]
+    assert "restoreme" in [a.internal_code for a in svc.list_archived(kind="hostel")]
+
+    back = svc.restore(saved.id)
+    assert back.internal_code == "restoreme"
+    assert "restoreme" in [a.internal_code for a in svc.list(kind="hostel")]
+    assert svc.list_archived(kind="hostel") == []
+
+
+def test_restore_rebuilds_a_template_that_went_missing(container) -> None:
+    """An address created before templates moved to AppData lost its file on
+    an EXE rebuild — restoring re-prints the blank from the stored data."""
+    import fitz
+
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    saved = svc.create_hostel(_hostel("lostfile"), None)
+    saved.template_path.unlink()          # simulate the wiped program folder
+    svc.archive(saved.id)
+
+    back = svc.restore(saved.id)
+    assert back.template_path.exists(), "the template was not rebuilt"
+    # the form is a cell grid, so each glyph lands in its own box
+    squashed = "".join("".join(p.get_text() for p in fitz.open(back.template_path)).split())
+    assert "ДЯГИЛЕВА" in squashed, "the rebuilt blank lost the host details"
+    assert "780401098145" in squashed, "the rebuilt blank lost the ИНН"

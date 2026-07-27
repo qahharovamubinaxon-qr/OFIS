@@ -1,8 +1,15 @@
 """УМУМИЙ screen — reuse any office document for a new worker.
 
-Drop the existing document (text PDF), the new worker's passport (+ patent /
-migration card), pick the document date → RUN. The program finds the previous
-worker's details inside the document and replaces them with the new worker's.
+Two ways to work:
+
+* **Saved template** — add a document once («➕ Шаблон қўшиш»): the program
+  studies it, blanks the previous worker's details and remembers where each
+  value goes. Afterwards pick the template from the list, drop the new worker's
+  documents and RUN — no AI, instant, always the same layout.
+* **One-off** — drop a document straight into the left box, as before.
+
+Scanned PDFs work in both modes: with no text layer the pages are read as
+images instead of failing with «matn topilmadi».
 """
 
 from __future__ import annotations
@@ -12,9 +19,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QComboBox,
     QDateEdit,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -26,15 +36,19 @@ from src.common.errors import OfisError
 from src.common.threading import run_async
 from src.ocr.service import OcrService
 from src.services.umumiy_service import UmumiyResult, UmumiyService
+from src.services.umumiy_templates import UmumiyTemplateService
 from src.ui.widgets.multi_drop import PDF_EXTS, MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
 
 
 class UmumiyView(QWidget):
-    def __init__(self, ocr: OcrService, service: UmumiyService) -> None:
+    def __init__(self, ocr: OcrService, service: UmumiyService,
+                 templates: UmumiyTemplateService | None = None) -> None:
         super().__init__()
         self._ocr = ocr
         self._svc = service
+        self._templates = templates
+        self._items: list = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
@@ -43,6 +57,27 @@ class UmumiyView(QWidget):
         title = QLabel("УМУМИЙ — ҳужжатни янги ишчига мослаш")
         title.setObjectName("viewTitle")
         root.addWidget(title)
+
+        # -- saved templates --------------------------------------------
+        if self._templates is not None:
+            tpl_row = QHBoxLayout()
+            tpl_row.addWidget(QLabel("Шаблон:"))
+            self._tpl = QComboBox()
+            self._tpl.setMinimumWidth(320)
+            self._tpl.currentIndexChanged.connect(self._on_template_changed)
+            tpl_row.addWidget(self._tpl)
+            add = QPushButton("➕ Шаблон қўшиш")
+            add.setToolTip("Ҳужжатни юкланг — ишчи маълумотлари ўчирилиб, "
+                           "жойлари эсда сақланади")
+            add.clicked.connect(self._add_template)
+            tpl_row.addWidget(add)
+            self._del = QPushButton("🗑")
+            self._del.setFixedWidth(40)
+            self._del.setToolTip("Танланган шаблонни ўчириш")
+            self._del.clicked.connect(self._remove_template)
+            tpl_row.addWidget(self._del)
+            tpl_row.addStretch(1)
+            root.addLayout(tpl_row)
 
         # -- date --------------------------------------------------------
         row = QHBoxLayout()
@@ -84,13 +119,88 @@ class UmumiyView(QWidget):
         root.addWidget(line)
 
         self._status = QLabel(
-            "Ҳужжат матнли PDF бўлиши керак (скан эмас). Фирма реквизитлари "
-            "(ИНН, ОГРН, директор) ўзгартирилмайди — фақат ишчи маълумотлари."
+            "Шаблон танланг ёки чап томонга ҳужжат (PDF) юкланг. Скан PDF ҳам "
+            "бўлаверади. Фирма реквизитлари (ИНН, ОГРН, директор) "
+            "ўзгартирилмайди — фақат ишчи маълумотлари."
         )
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
         root.addStretch(1)
+
+        self.refresh()
+
+    # -- templates -----------------------------------------------------
+    def refresh(self) -> None:
+        if self._templates is None:
+            return
+        self._items = self._templates.list()
+        self._tpl.blockSignals(True)
+        self._tpl.clear()
+        self._tpl.addItem("— шаблонсиз (ҳужжатни ўзим юкламан) —", None)
+        for tpl in self._items:
+            self._tpl.addItem(tpl.label, tpl.slug)
+        self._tpl.blockSignals(False)
+        self._on_template_changed()
+
+    def _selected_slug(self) -> str | None:
+        if self._templates is None:
+            return None
+        return self._tpl.currentData()
+
+    def _on_template_changed(self) -> None:
+        using = self._selected_slug() is not None
+        self._dz_doc.setEnabled(not using)
+        self._del.setEnabled(using)
+        self._status.setText(
+            "Шаблон танланди — фақат ишчи ҳужжатларини юкланг."
+            if using else
+            "Шаблон танланг ёки чап томонга ҳужжат (PDF) юкланг. Скан PDF ҳам "
+            "бўлаверади."
+        )
+
+    def _add_template(self) -> None:
+        if not self._ocr.available():
+            self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Шаблон учун ҳужжат танланг", "", "PDF (*.pdf)")
+        if not path:
+            return
+        name, ok = QInputDialog.getText(
+            self, "Шаблон номи", "Бу ҳужжатни нима деб сақлайлик?",
+            text=Path(path).stem)
+        if not ok or not name.strip():
+            return
+
+        self._run.setEnabled(False)
+        self._status.setText("⏳ Шаблон ўрганилаяпти — ишчи маълумотлари "
+                             "топилиб, жойлари эсда сақланяпти…")
+        self._progress.start("Шаблон тайёрланяпти…")
+        run_async(self._templates.create, Path(path), name.strip(),
+                  on_success=self._template_added, on_error=self._failed)
+
+    def _template_added(self, tpl) -> None:
+        self._run.setEnabled(True)
+        self._progress.finish()
+        self.refresh()
+        idx = self._tpl.findData(tpl.slug)
+        if idx >= 0:
+            self._tpl.setCurrentIndex(idx)
+        self._status.setText(
+            f"✅ «{tpl.name}» сақланди — {tpl.fields} та майдон топилди."
+            + (" (скан ҳужжат)" if tpl.scanned else ""))
+
+    def _remove_template(self) -> None:
+        slug = self._selected_slug()
+        if slug is None:
+            return
+        name = self._tpl.currentText()
+        if QMessageBox.question(self, "Ўчириш",
+                                f"«{name}» ўчирилсинми?") != QMessageBox.StandardButton.Yes:
+            return
+        self._templates.delete(slug)
+        self.refresh()
 
     # ------------------------------------------------------------------
     def _form_date(self) -> date:
@@ -98,8 +208,9 @@ class UmumiyView(QWidget):
         return date(q.year(), q.month(), q.day())
 
     def _run_ai(self) -> None:
-        if not self._dz_doc.files:
-            self._warn("Аввал қайта ишланадиган ҳужжатни (PDF) юкланг.")
+        slug = self._selected_slug()
+        if slug is None and not self._dz_doc.files:
+            self._warn("Шаблон танланг ёки қайта ишланадиган ҳужжатни (PDF) юкланг.")
             return
         if not self._ocr.available():
             self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
@@ -109,9 +220,10 @@ class UmumiyView(QWidget):
                        "(паспорт, патент ёки миграционка).")
             return
 
-        source = self._dz_doc.files[0]
+        source = self._dz_doc.files[0] if self._dz_doc.files else None
         images = [f.read_bytes() for f in self._dz_worker.files]
         form_date = self._form_date()
+        templates = self._templates
 
         def work():
             # Any mix of worker documents is accepted: the first image is read
@@ -121,10 +233,18 @@ class UmumiyView(QWidget):
                 images[1] if len(images) > 1 else None,
                 images[2] if len(images) > 2 else None,
             )
+            if slug is not None:
+                path = templates.fill(slug, passport, patent, form_date=form_date)
+                tpl = templates.get(slug)
+                return UmumiyResult(pdf_path=path,
+                                    replacements=tpl.fields if tpl else 0,
+                                    surname=passport.surname)
             return self._svc.generate(source, passport, patent, form_date=form_date)
 
         self._run.setEnabled(False)
-        self._status.setText("⏳ AI ҳужжатни ўқияпти ва янги ишчига мослаяпти…")
+        self._status.setText(
+            "⏳ Шаблон тўлдирилаяпти…" if slug is not None
+            else "⏳ AI ҳужжатни ўқияпти ва янги ишчига мослаяпти…")
         self._progress.start("Ҳужжат тайёрланяпти…")
         run_async(work, on_success=self._done, on_error=self._failed)
 

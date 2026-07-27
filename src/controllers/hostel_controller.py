@@ -41,6 +41,13 @@ class HostelController:
     def archive_address(self, address_id: UUID) -> None:
         self._addresses.archive(address_id)
 
+    def archived_addresses(self) -> list[RegistrationAddress]:
+        """Hostels removed from the picker — still recoverable."""
+        return self._addresses.list_archived(kind="hostel")
+
+    def restore_address(self, address_id: UUID) -> RegistrationAddress:
+        return self._addresses.restore(address_id)
+
     def ai_available(self) -> bool:
         return self._ocr.available()
 

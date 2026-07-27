@@ -146,10 +146,13 @@ class UmumiyService:
         doc = fitz.open(source_pdf)
         lines = _page_lines(doc)
         if not lines:
+            # No text layer (a scan, or text stored as curves). Rather than
+            # giving up, build a one-off template by reading the pages as
+            # images — the same path the saved templates use.
             doc.close()
-            raise OfisError(
-                "Hujjatda matn topilmadi — u skan (rasm) bo'lishi mumkin. "
-                "Matnli PDF yuklang.")
+            return self._generate_from_scan(
+                source_pdf, passport, patent, form_date=form_date,
+                output_dir=output_dir)
 
         numbered = "\n".join(f"{i}: {ln['text']}" for i, ln in enumerate(lines))
         prompt = _PROMPT.format(
@@ -176,6 +179,36 @@ class UmumiyService:
                             surname=passport.surname)
 
     # ------------------------------------------------------------------
+    def _generate_from_scan(
+        self,
+        source_pdf: Path,
+        passport: Passport,
+        patent: Patent | None,
+        *,
+        form_date: date,
+        output_dir: Path | None,
+    ) -> UmumiyResult:
+        """Scanned PDF: locate the worker's data visually, blank it, retype."""
+        import shutil
+        import tempfile
+
+        from src.services.umumiy_templates import UmumiyTemplateService
+
+        svc = UmumiyTemplateService(self._key_getter)
+        scratch = Path(tempfile.mkdtemp(prefix="ofis_umumiy_"))
+        try:
+            tpl = svc.create(source_pdf, f"_tmp_{source_pdf.stem}")
+            out = svc.fill(tpl.slug, passport, patent, form_date=form_date,
+                           output_dir=output_dir)
+            fields = tpl.fields
+            svc.delete(tpl.slug)   # one-off: do not keep it in the library
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        log.info("Umumiy (scan): %s → %s (%d fields)",
+                 source_pdf.name, out.name, fields)
+        return UmumiyResult(pdf_path=out, replacements=fields,
+                            surname=passport.surname)
+
     def _apply(self, doc: fitz.Document, lines: list[dict],
                edits: list[dict]) -> int:
         """Redact every accepted old fragment, then retype the new value."""

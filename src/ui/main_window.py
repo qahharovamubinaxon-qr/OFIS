@@ -186,12 +186,14 @@ class MainWindow(QMainWindow):
             )
         if key == "nav.umumiy":
             from src.services.umumiy_service import UmumiyService
+            from src.services.umumiy_templates import UmumiyTemplateService
             from src.ui.views.umumiy_view import UmumiyView
 
+            gemini = lambda: str(self._settings.get("ai.gemini_key", "") or "")  # noqa: E731
             return UmumiyView(
                 self._container.resolve(OcrService),
-                UmumiyService(key_getter=lambda: str(
-                    self._settings.get("ai.gemini_key", "") or "")),
+                UmumiyService(key_getter=gemini),
+                UmumiyTemplateService(key_getter=gemini),
             )
         if key == "nav.perevod":
             from src.controllers.ofis_modules import _perevod_cert
