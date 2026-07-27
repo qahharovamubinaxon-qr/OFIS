@@ -116,7 +116,11 @@ _DPI = 150
 _RULE_MIN_PT = 120          # a field rule is at least this long…
 _RULE_MAX_PT = 400          # …and shorter than the page-wide header divider
 _VALUE_BAND_PT = 22.0       # how far above a rule its own value can sit
-_LABEL_GAP_PT = 46.0        # …and how far above the rule its label can sit
+# The column the form sets its values in. The window has to start left of it:
+# measuring from x=100 clipped the true left edge at 97 and pushed every value
+# we printed about 6pt right, which reads as a stray space before each one.
+_COLUMN_FROM_PT = 60.0
+_COLUMN_TO_PT = 380.0
 _FONT = "OfisSansRegular"
 
 
@@ -202,7 +206,8 @@ def _with_value(grey, scale: float, page: int, y: float) -> Rule:
 
     top = max(0, int((y - _VALUE_BAND_PT) * scale))
     bottom = max(top + 1, int((y - 1.0) * scale))
-    band = grey[top:bottom, int(100 * scale):int(380 * scale)]
+    band = grey[top:bottom,
+                int(_COLUMN_FROM_PT * scale):int(_COLUMN_TO_PT * scale)]
     dark = band < 120                      # a value is black; a label is grey
     rows = np.flatnonzero(dark.sum(1) > 2)
     if not len(rows):
@@ -210,7 +215,7 @@ def _with_value(grey, scale: float, page: int, y: float) -> Rule:
     cols = np.flatnonzero(dark.sum(0) > 0)
     return Rule(
         page=page, y=y,
-        value_x=100 + cols[0] / scale,
+        value_x=_COLUMN_FROM_PT + cols[0] / scale,
         value_baseline=top / scale + rows[-1] / scale,
         value_height=(rows[-1] - rows[0]) / scale,
     )
@@ -228,7 +233,6 @@ def house_style(rules: list[Rule]) -> tuple[float, float, float]:
         raise OfisError(
             "Бланкада тўлдирилган қатор топилмади — бу Госуслуги "
             "«Уведомление» бланкаси эканига ишонч ҳосил қилинг.")
-    xs = sorted(r.value_x for r in filled)
     gaps = sorted(r.y - r.value_baseline for r in filled)
     # Values that wrapped onto two lines measure far taller than the type they
     # are set in, so the tallest quarter is dropped before the height is read.
@@ -236,7 +240,27 @@ def house_style(rules: list[Rule]) -> tuple[float, float, float]:
     kept = heights[:max(1, len(heights) * 3 // 4)]
     cap = kept[len(kept) // 2] if kept else 7.2
     size = min(12.0, max(8.0, round(cap / 0.716 * 2) / 2))
-    return xs[len(xs) // 2], gaps[len(gaps) // 2], size
+    return _median(sorted(r.value_x for r in filled)), gaps[len(gaps) // 2], size
+
+
+def value_column(rules: list[Rule], pages: int) -> dict[int, float]:
+    """The left edge of the value column, page by page.
+
+    Госуслуги do not set every page to the same margin — on one blank page 1
+    starts its values at x≈102 and page 2 at x≈97. Writing them all at one x
+    left half the form looking as though a space had been typed in front of
+    each value, so each page is measured against its own filled rows.
+    """
+    overall = _median(sorted(r.value_x for r in rules if r.filled))
+    column: dict[int, float] = {}
+    for page in range(1, pages + 1):
+        here = sorted(r.value_x for r in rules if r.filled and r.page == page)
+        column[page] = _median(here) if here else overall
+    return column
+
+
+def _median(values: list[float]) -> float:
+    return values[len(values) // 2]
 
 
 # -------------------------------------------------------------- sections
@@ -355,15 +379,16 @@ def study(pdf_path: Path, ai) -> Study:
             raise OfisError(
                 "Бланкада тўлдириладиган чизиқлар топилмади — Госуслуги "
                 "«Уведомление» PDF сини юкланг.")
-        x, gap, size = house_style(rules)
+        _x, gap, size = house_style(rules)
+        column = value_column(rules, len(doc))
         buckets = section_lines(rules, read_headings(ai, doc))
-        return Study(fields=_place(buckets, x, gap, size),
+        return Study(fields=_place(buckets, column, gap, size),
                      missing=_missing(buckets), rules=len(rules), pages=len(doc))
     finally:
         doc.close()
 
 
-def _place(buckets: dict[str, list[Rule]], x: float, gap: float,
+def _place(buckets: dict[str, list[Rule]], column: dict[int, float], gap: float,
            size: float) -> list[dict]:
     """Pick our fields out of each section's printed line sequence.
 
@@ -383,7 +408,8 @@ def _place(buckets: dict[str, list[Rule]], x: float, gap: float,
             field_id, _label = known[slot]
             fields.append({
                 "id": field_id, "type": "text", "page": rule.page,
-                "x": round(x, 1), "y": round(rule.y - gap, 1),
+                "x": round(column.get(rule.page, 102.0), 1),
+                "y": round(rule.y - gap, 1),
                 "font": _FONT, "size": size, "align": "left",
             })
     return sorted(fields, key=lambda f: (f["page"], f["y"]))

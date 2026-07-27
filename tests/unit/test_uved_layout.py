@@ -103,6 +103,38 @@ def test_the_blanks_own_filled_rows_teach_the_house_style() -> None:
     assert 8.0 <= size <= 12.0, size
 
 
+def test_the_value_column_is_measured_page_by_page() -> None:
+    """Госуслуги do not set every page to the same left margin.
+
+    Writing them all at one x left half the form looking as though a space had
+    been typed in front of each value, so each page keeps its own column.
+    """
+    doc = fitz.open(BLANK)
+    try:
+        rules = uved_layout.detect_rules(doc)
+        column = uved_layout.value_column(rules, len(doc))
+    finally:
+        doc.close()
+
+    assert set(column) == {1, 2, 3}
+    for page, x in column.items():
+        own = [r.value_x for r in rules if r.filled and r.page == page]
+        if own:
+            assert min(own) - 1.0 <= x <= max(own) + 1.0, (page, x, own)
+
+
+def test_a_page_with_nothing_filled_borrows_the_documents_column() -> None:
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=871)
+    page.insert_text((97, 300), "ОБЩЕСТВО", fontsize=10)
+    page.draw_line((97, 304), (371, 304), width=0.7)
+    doc.new_page(width=595, height=871)          # nothing on it at all
+    rules = uved_layout.detect_rules(doc)
+    column = uved_layout.value_column(rules, len(doc))
+    doc.close()
+    assert column[2] == column[1]
+
+
 def test_a_pdf_with_no_filled_row_is_refused() -> None:
     """Without a worked example there is nothing to copy the style from."""
     doc = fitz.open()
