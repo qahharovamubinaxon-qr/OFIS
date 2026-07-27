@@ -164,3 +164,62 @@ def test_http_server_serves_the_page_and_guards_the_api(server, monkeypatch) -> 
         assert [m["key"] for m in modules][:2] == ["patent", "reg"]
     finally:
         server.stop()
+
+
+def test_catalogue_now_covers_the_whole_program(server) -> None:
+    """Every desktop module that can work remotely is offered."""
+    keys = [m["key"] for m in server.modules_payload()]
+    for expected in ("patent", "reg", "hostel", "trud", "svera", "perevod",
+                     "dover", "umumiy", "photo", "jpg2pdf", "summa"):
+        assert expected in keys, f"{expected} missing from the Mini App"
+    assert len(keys) >= 11
+
+
+def test_umumiy_exposes_its_pdf_slot_and_dover_its_options(server) -> None:
+    by_key = {m["key"]: m for m in server.modules_payload()}
+    assert by_key["umumiy"]["wantsPdf"] == 1
+    doc_type = next(a for a in by_key["dover"]["asks"] if a["field"] == "doc_type")
+    assert doc_type["kind"] == "choice"
+    assert len(doc_type["options"]) > 5
+    assert doc_type["options"][0].startswith("Авто")
+
+
+def test_umumiy_run_requires_a_pdf(server, monkeypatch) -> None:
+    from src.common.errors import OfisError
+
+    monkeypatch.setattr(server.ctl()["ocr"], "available", lambda: True)
+    with pytest.raises(OfisError) as exc:
+        server.run_module("umumiy", None, [b"img"], {}, [])
+    assert "PDF" in exc.value.message
+
+
+def test_dover_run_passes_the_chosen_type(server, monkeypatch) -> None:
+    from src.services.dover_service import DOVER_TYPES
+
+    seen = {}
+
+    def fake_generate(images, *, doc_type, description, form_date, output_dir=None):
+        seen.update(doc_type=doc_type, description=description)
+        out = paths.output_dir() / "d.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"x")
+
+        class R:
+            pdf_path = out
+            docx_path = out
+            series = ""
+            reestr = 0
+
+        return R()
+
+    monkeypatch.setattr(server.ctl()["ocr"], "available", lambda: True)
+    monkeypatch.setattr(server.ctl()["dover"], "generate_from_images", fake_generate)
+
+    result = server.run_module("dover", None, [b"img"], {
+        "doc_type": DOVER_TYPES[2], "description": "тест",
+        "form_date": "26.07.2026"})
+    assert result["ok"]
+    assert seen["doc_type"] == DOVER_TYPES[2]
+    # an unknown value falls back to the first option rather than erroring
+    server.run_module("dover", None, [b"img"], {"doc_type": "нет такого"})
+    assert seen["doc_type"] == DOVER_TYPES[0]

@@ -265,12 +265,18 @@ class TelegramBot:
             self._on_run(chat_id, state)
             return
 
-        # -- photos ---------------------------------------------------
+        # -- photos / PDFs --------------------------------------------
+        document = msg.get("document") or {}
+        mime = document.get("mime_type", "")
         file_id = None
         if msg.get("photo"):
             file_id = msg["photo"][-1]["file_id"]
-        elif (msg.get("document") or {}).get("mime_type", "").startswith("image/"):
-            file_id = msg["document"]["file_id"]
+        elif mime.startswith("image/"):
+            file_id = document["file_id"]
+        elif mime == "application/pdf" or str(
+                document.get("file_name", "")).lower().endswith(".pdf"):
+            self._on_pdf(chat_id, state, document["file_id"])
+            return
         if file_id:
             self._on_photo(chat_id, state, file_id)
             return
@@ -358,6 +364,23 @@ class TelegramBot:
         self._send(chat_id, f"✔ {label} қабул қилинди ({n}{total}). "
                             f"Тайёр бўлса «{_BTN_RUN}» босинг.")
 
+    def _on_pdf(self, chat_id: int, state: dict, file_id: str) -> None:
+        module = _BY_KEY.get(state.get("mode") or "")
+        if module is None or state.get("step") != "collect":
+            self._menu(chat_id, "Аввал бўлимни танланг.")
+            return
+        if not module.wants_pdf:
+            self._send(chat_id, f"«{module.button}» PDF қабул қилмайди — "
+                                "расм юборинг.")
+            return
+        data = self._download(file_id)
+        if not data:
+            self._send(chat_id, "PDF юклаб бўлмади — қайта юборинг.")
+            return
+        state.setdefault("pdfs", []).append(data)
+        self._send(chat_id, f"✔ PDF қабул қилинди ({len(state['pdfs'])}). "
+                            "Энди ишчининг ҳужжат расмларини юборинг.")
+
     def _on_answer(self, chat_id: int, state: dict, text: str) -> None:
         module = _BY_KEY.get(state.get("mode") or "")
         if module is None:
@@ -376,8 +399,21 @@ class TelegramBot:
                 self._send(chat_id, "Сана формати: КК.ОО.ЙЙЙЙ (масалан 15.10.2026)")
                 return
             state["answers"][ask.field] = parsed
+        elif ask.kind == "choice":
+            options = ask.options()
+            choice = options[0] if options else ""
+            if text.strip().isdigit():
+                idx = int(text.strip()) - 1
+                if not 0 <= idx < len(options):
+                    self._send(chat_id, f"1 дан {len(options)} гача рақам ёзинг.")
+                    return
+                choice = options[idx]
+            elif text != _BTN_RUN:  # tapping Тайёрла keeps «Авто»
+                match = [o for o in options if text.lower() in o.lower()]
+                choice = match[0] if match else options[0]
+            state["answers"][ask.field] = choice
         else:
-            state["answers"][ask.field] = text
+            state["answers"][ask.field] = "" if text == _BTN_RUN else text
         state["ask_index"] += 1
         self._ask_or_run(chat_id, state, module)
 
@@ -390,6 +426,12 @@ class TelegramBot:
                 suggested = date.today() + timedelta(days=ask.default_days)
                 hint = (f"\n(масалан {suggested.strftime('%d.%m.%Y')} — ёки "
                         f"«{_BTN_RUN}» босинг, ўша сана қўйилади)")
+            elif ask.kind == "choice":
+                options = ask.options()
+                hint = "\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options, 1))
+                hint += f"\n(«{_BTN_RUN}» босилса — 1-вариант)"
+            elif ask.kind == "text":
+                hint = f"\n(керак бўлмаса «{_BTN_RUN}» босинг)"
             self._send(chat_id, ask.prompt + hint, _RUN_KB)
             return
         self._execute(chat_id, state, module)
@@ -401,6 +443,9 @@ class TelegramBot:
             return
         if module.targets is not None and state.get("target") is None:
             self._send(chat_id, f"«{module.button}» учун рўйхатдан танланг.")
+            return
+        if module.wants_pdf and len(state.get("pdfs") or []) < module.wants_pdf:
+            self._send(chat_id, f"Аввал {module.wants_pdf} та PDF ҳужжат юборинг.")
             return
         if not module.text_only and len(state["photos"]) < module.min_photos:
             self._send(chat_id, f"Камида {module.min_photos} та расм юборинг "

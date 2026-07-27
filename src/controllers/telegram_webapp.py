@@ -165,15 +165,17 @@ class WebAppServer:
                 "hint": m.photo_prompt, "targetPrompt": m.target_prompt,
                 "needsTarget": m.targets is not None, "targets": targets,
                 "textOnly": m.text_only, "minPhotos": m.min_photos,
-                "photoLabels": list(m.photo_labels),
+                "photoLabels": list(m.photo_labels), "wantsPdf": m.wants_pdf,
                 "ready": (ai or not m.needs_ai),
-                "asks": [{"field": a.field, "prompt": a.prompt, "kind": a.kind}
+                "asks": [{"field": a.field, "prompt": a.prompt, "kind": a.kind,
+                          "options": a.options()}
                          for a in m.asks],
             })
         return out
 
     def run_module(self, key: str, target_index: int | None,
-                   images: list[bytes], answers: dict[str, str]) -> dict:
+                   images: list[bytes], answers: dict[str, str],
+                   pdfs: list[bytes] | None = None) -> dict:
         module = BY_KEY.get(key)
         if module is None:
             raise OfisError("Бўлим топилмади.")
@@ -184,11 +186,14 @@ class WebAppServer:
         state = new_state()
         state["mode"] = key
         state["photos"] = images
+        state["pdfs"] = pdfs or []
         if module.targets is not None:
             items = list(module.targets(ctl))
             if target_index is None or not 0 <= target_index < len(items):
                 raise OfisError("Рўйхатдан танланг.")
             state["target"] = items[target_index]
+        if module.wants_pdf and len(state["pdfs"]) < module.wants_pdf:
+            raise OfisError(f"{module.wants_pdf} та PDF ҳужжат юкланг.")
         if not module.text_only and len(images) < module.min_photos:
             raise OfisError(f"Камида {module.min_photos} та расм юкланг.")
 
@@ -199,6 +204,10 @@ class WebAppServer:
                 if parsed is None:
                     raise OfisError(f"Сана нотўғри: {ask.prompt}")
                 state["answers"][ask.field] = parsed
+            elif ask.kind == "choice":
+                options = ask.options()
+                state["answers"][ask.field] = (
+                    raw if raw in options else (options[0] if options else raw))
             else:
                 state["answers"][ask.field] = raw
 
@@ -277,19 +286,23 @@ class WebAppServer:
                     return
                 import base64
 
-                images = []
-                for item in payload.get("images", []):
-                    head, _, data = str(item).partition(",")
-                    try:
-                        images.append(base64.b64decode(data or head))
-                    except (ValueError, TypeError):
-                        continue
+                def decode(items) -> list[bytes]:
+                    out = []
+                    for item in items or []:
+                        head, _, data = str(item).partition(",")
+                        try:
+                            out.append(base64.b64decode(data or head))
+                        except (ValueError, TypeError):
+                            continue
+                    return out
+
                 try:
                     result = server.run_module(
                         payload.get("module", ""),
                         payload.get("target"),
-                        images,
+                        decode(payload.get("images")),
                         payload.get("answers") or {},
+                        decode(payload.get("pdfs")),
                     )
                 except OfisError as exc:
                     self._json({"ok": False, "error": exc.message})
@@ -378,7 +391,7 @@ if (tg) { tg.ready(); tg.expand(); }
 const KEY = new URLSearchParams(location.search).get('k') || '';
 const HEAD = {'Content-Type':'application/json','X-Ofis-Key':KEY,
               'X-Telegram-Init': (tg && tg.initData) || ''};
-let MODULES = [], picked = null, images = [];
+let MODULES = [], picked = null, images = [], pdfs = [];
 
 const el = (id) => document.getElementById(id);
 
@@ -393,7 +406,7 @@ async function load(){
 }
 
 function home(){
-  picked = null; images = [];
+  picked = null; images = []; pdfs = [];
   el('form').style.display='none'; el('home').style.display='grid';
   el('sub').textContent = 'Бўлимни танланг';
   el('home').innerHTML = MODULES.map((m,i)=>`
@@ -406,17 +419,29 @@ function home(){
 function open_(i){
   const m = MODULES[i];
   if(!m.ready){ return; }
-  picked = m; images = [];
+  picked = m; images = []; pdfs = [];
   el('home').style.display='none'; el('form').style.display='block';
   el('sub').textContent = m.icon+' '+m.title;
   const targets = m.needsTarget ? `<label>${m.targetPrompt}</label>
       <select id="target">${m.targets.map(t=>`<option value="${t.i}">${t.label}</option>`).join('')}</select>` : '';
-  const asks = m.asks.map(a=>`<label>${a.prompt}</label>
-      <input id="ask_${a.field}" ${a.kind==='date'?'placeholder="'+today()+'" value="'+today()+'"':'placeholder="27500,50"'}>`).join('');
+  const asks = m.asks.map(a=>{
+    if(a.kind === 'choice'){
+      return `<label>${a.prompt}</label><select id="ask_${a.field}">` +
+        (a.options||[]).map(o=>`<option value="${o}">${o}</option>`).join('') + '</select>';
+    }
+    if(a.kind === 'date'){
+      return `<label>${a.prompt}</label>
+        <input id="ask_${a.field}" placeholder="${today()}" value="${today()}">`;
+    }
+    return `<label>${a.prompt}</label><input id="ask_${a.field}" placeholder="…">`;
+  }).join('');
+  const pdfBox = m.wantsPdf ? `<label>📄 Ҳужжат (PDF)</label>
+      <input type="file" id="pdfs" accept="application/pdf" multiple onchange="addPdfs(this)">
+      <div class="hint" id="pdfnames"></div>` : '';
   const upload = m.textOnly ? '' : `<label>${m.hint}</label>
       <input type="file" id="files" accept="image/*" multiple onchange="addFiles(this)">
       <div class="thumbs" id="thumbs"></div>`;
-  el('form').innerHTML = `<div class="card">${targets}${upload}${asks}
+  el('form').innerHTML = `<div class="card">${targets}${pdfBox}${upload}${asks}
       <button id="go" onclick="run()">✅ Тайёрла</button>
       <button class="ghost" onclick="home()">← Орқага</button>
       <div id="out"></div></div>`;
@@ -440,12 +465,25 @@ function draw(){
     `<img src="${src}" onclick="images.splice(${i},1);draw()">`).join('');
 }
 
+function addPdfs(input){
+  for(const f of input.files){
+    const rd = new FileReader();
+    const name = f.name;
+    rd.onload = () => { pdfs.push(rd.result); drawPdfs(name); };
+    rd.readAsDataURL(f);
+  }
+  input.value='';
+}
+function drawPdfs(last){
+  el('pdfnames').textContent = pdfs.length ? `📄 ${pdfs.length} ta PDF (${last})` : '';
+}
+
 async function run(){
   const btn = el('go'); btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span>Тайёрланяпти…';
   const answers = {};
   picked.asks.forEach(a => answers[a.field] = (el('ask_'+a.field)||{}).value || '');
-  const body = {module: picked.key, images,
+  const body = {module: picked.key, images, pdfs,
                 target: picked.needsTarget ? Number(el('target').value) : null,
                 answers};
   try{

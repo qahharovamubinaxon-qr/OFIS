@@ -310,3 +310,91 @@ def test_tapping_run_at_a_date_uses_today(ready, monkeypatch) -> None:
     _text(ready, "✅ Тайёрла")   # opens the date question
     _text(ready, "✅ Тайёрла")   # accept the suggested (today)
     assert seen["form_date"] == date.today()
+
+
+# ----------------------------------------------------- umumiy / dover
+
+
+def _pdf(bot, chat_id: int = CHAT) -> None:
+    bot._handle({"update_id": 1, "message": {
+        "chat": {"id": chat_id},
+        "document": {"file_id": "d1", "mime_type": "application/pdf",
+                     "file_name": "dogovor.pdf"}}})
+
+
+def test_umumiy_takes_a_pdf_then_photos(ready, monkeypatch) -> None:
+    seen = {}
+
+    def fake_generate(source, passport, patent, *, form_date, output_dir=None):
+        seen["source"] = Path(source)
+        seen["form_date"] = form_date
+
+        class R:
+            pdf_path = paths.output_dir() / "umumiy_out.pdf"
+            replacements = 7
+            surname = "ИСАКОВ"
+        R.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        R.pdf_path.write_bytes(b"%PDF-1.4\n")
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["umumiy"], "generate", fake_generate)
+    monkeypatch.setattr(ready.ctl()["ocr"], "read_documents",
+                        lambda *a, **k: (object(), None))
+
+    _text(ready, "♻️ УМУМИЙ")
+    _pdf(ready)
+    assert "PDF қабул қилинди" in _last(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "сана" in _last(ready).lower()
+    _text(ready, "26.07.2026")
+    assert seen["form_date"] == date(2026, 7, 26)
+    assert seen["source"].read_bytes() == b"fake-image-bytes"
+    assert ready.files, "no PDF was sent back"
+
+
+def test_umumiy_run_without_a_pdf_says_so(ready) -> None:
+    _text(ready, "♻️ УМУМИЙ")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "pdf" in _last(ready).lower()
+
+
+def test_dover_asks_type_description_and_date(ready, monkeypatch) -> None:
+    from src.services.dover_service import DOVER_TYPES
+
+    seen = {}
+
+    def fake_generate(images, *, doc_type, description, form_date, output_dir=None):
+        seen.update(doc_type=doc_type, description=description, form_date=form_date)
+
+        class R:
+            pdf_path = paths.output_dir() / "dover.pdf"
+            docx_path = paths.output_dir() / "dover.docx"
+            series = "77 AB 1234567"
+            reestr = 12854
+        for p in (R.pdf_path, R.docx_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"x")
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["dover"], "generate_from_images", fake_generate)
+
+    _text(ready, "📜 Доверенность")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "тури" in _last(ready).lower()
+    _text(ready, "2")                       # pick by number
+    _text(ready, "Ака укасига машина учун")
+    _text(ready, "26.07.2026")
+    assert seen["doc_type"] == DOVER_TYPES[1]
+    assert seen["description"] == "Ака укасига машина учун"
+    assert seen["form_date"] == date(2026, 7, 26)
+    assert len(ready.files) == 2            # PDF + Word
+
+
+def test_modules_that_reject_pdf_say_so(ready) -> None:
+    _text(ready, "🏠 Регистрация")
+    _pick(ready, 0)
+    _pdf(ready)
+    assert "pdf қабул қилмайди" in _last(ready).lower()

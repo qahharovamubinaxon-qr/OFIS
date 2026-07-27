@@ -51,8 +51,16 @@ class Ask:
 
     field: str
     prompt: str
-    kind: str = "date"               # date | text
+    kind: str = "date"               # date | text | choice
     default_days: int | None = None  # date default = today + N days
+
+    def options(self) -> list[str]:
+        """Values a ``choice`` question accepts (empty for other kinds)."""
+        if self.kind != "choice":
+            return []
+        from src.services.dover_service import DOVER_TYPES
+
+        return list(DOVER_TYPES) if self.field == "doc_type" else []
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,7 @@ class Module:
     photo_prompt: str = "Расмларни юборинг."
     photo_labels: tuple[str, ...] = ()
     min_photos: int = 1
+    wants_pdf: int = 0               # PDF documents required as well (УМУМИЙ: 1)
     asks: tuple[Ask, ...] = ()
     text_only: bool = False          # no images — answers questions instead
     needs_ai: bool = True
@@ -81,7 +90,7 @@ class Module:
 
 
 def new_state() -> dict:
-    return {"mode": None, "step": None, "photos": [], "answers": {},
+    return {"mode": None, "step": None, "photos": [], "pdfs": [], "answers": {},
             "targets": None, "target": None, "ask_index": 0}
 
 
@@ -169,6 +178,45 @@ def _run_jpg2pdf(ctx: RunContext, state: dict) -> list[Path]:
     return [out]
 
 
+def _run_umumiy(ctx: RunContext, state: dict) -> list[Path]:
+    """Re-type an existing office PDF for a new worker."""
+    from src.config import paths
+
+    pdfs = state.get("pdfs") or []
+    if not pdfs:
+        raise OfisError("Аввал қайта ишланадиган ҳужжатни (PDF) юборинг.")
+    if not state["photos"]:
+        raise OfisError("Ишчининг камида битта ҳужжат расмини юборинг.")
+
+    source = paths.output_dir() / "umumiy" / f"src_{uuid.uuid4().hex[:8]}.pdf"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(pdfs[0])
+
+    images = state["photos"]
+    passport, patent = ctx.ctl["ocr"].read_documents(
+        images[0],
+        images[1] if len(images) > 1 else None,
+        images[2] if len(images) > 2 else None,
+    )
+    r = ctx.ctl["umumiy"].generate(
+        source, passport, patent,
+        form_date=state["answers"].get("form_date") or date.today())
+    ctx.note(f"{r.replacements} та жой алмаштирилди")
+    return [r.pdf_path]
+
+
+def _run_dover(ctx: RunContext, state: dict) -> list[Path]:
+    """Notarial draft composed from the dropped document photos."""
+    r = ctx.ctl["dover"].generate_from_images(
+        state["photos"],
+        doc_type=str(state["answers"].get("doc_type") or "Авто"),
+        description=str(state["answers"].get("description") or ""),
+        form_date=state["answers"].get("form_date") or date.today())
+    if r.series or r.reestr:
+        ctx.note(f"Серия {r.series} · реестр № {r.reestr}")
+    return [p for p in (r.pdf_path, r.docx_path) if p]
+
+
 def _run_summa(ctx: RunContext, state: dict) -> list[Path]:
     from src.utils.rus_words import (
         amount_to_words, date_to_words, format_amount, parse_amount,
@@ -225,6 +273,19 @@ MODULES: tuple[Module, ...] = (
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("perevod", "🌐 ПЕРЕВОД", _run_perevod,
            photo_prompt="Таржима қилинадиган ҳужжат расмларини юборинг."),
+    Module("dover", "📜 Доверенность", _run_dover,
+           photo_prompt=("Томонларнинг ҳужжат расмларини юборинг "
+                         "(паспортлар, СТС ва ҳ.к.)."),
+           asks=(Ask("doc_type", "Ҳужжат тури (рақамини ёзинг):", kind="choice"),
+                 Ask("description", "Ким, кимга, нима учун — қисқача ёзинг:",
+                     kind="text"),
+                 Ask("form_date", "Тузилган санаси (КК.ОО.ЙЙЙЙ):", default_days=0))),
+    Module("umumiy", "♻️ УМУМИЙ", _run_umumiy,
+           photo_prompt=("1️⃣ Аввал қайта ишланадиган ҳужжатни **PDF** қилиб "
+                         "юборинг.\n2️⃣ Кейин янги ишчининг ҳужжат расмларини "
+                         "(паспорт / патент)."),
+           wants_pdf=1,
+           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("photo", "📷 Расм 3×4", _run_photo34,
            photo_prompt="Ишчи расмини юборинг — 3×4 тайёрлаб бераман.",
            photo_labels=("Расм",), needs_ai=False),
@@ -271,8 +332,10 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.registration_controller import RegistrationController
     from src.controllers.svera_controller import SveraController
     from src.controllers.trud_controller import TrudController
+    from src.config.settings_service import SettingsService
     from src.ocr.service import OcrService
     from src.services.company_service import CompanyService
+    from src.services.dover_service import DoverService
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
     from src.services.perevod_service import PerevodService
@@ -282,6 +345,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.registration_service import RegistrationService
     from src.services.svera_service import SveraService
     from src.services.trud_service import TrudFirmService, TrudService
+    from src.services.umumiy_service import UmumiyService
 
     ocr = container.resolve(OcrService)
     return {
@@ -302,6 +366,10 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             container.resolve(SveraService)),
         "perevod": PerevodService(
             key_getter=key_getter, cert_getter=_perevod_cert(container)),
+        # Both are stateless services the desktop views build the same way.
+        "umumiy": UmumiyService(key_getter=key_getter),
+        "dover": DoverService(key_getter=key_getter,
+                              settings=container.resolve(SettingsService)),
         "photo": PhotoService(key_getter=key_getter),
         "ocr": ocr,
     }
