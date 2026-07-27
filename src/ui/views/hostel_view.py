@@ -227,6 +227,10 @@ class HostelView(QWidget):
         q = self._expiry.date()
         return date(q.year(), q.month(), q.day())
 
+    def _start_date(self) -> date:
+        q = self._start.date()
+        return date(q.year(), q.month(), q.day())
+
     def _hint(self) -> str:
         if not self._items:
             return "Xostel qo'shilmagan — «+ Yangi xostel» tugmasini bosing."
@@ -280,10 +284,11 @@ class HostelView(QWidget):
         back = (self._c.read_image(self._dz_patent_back.path)
                 if self._dz_patent_back.path else None)
         expiry = self._expiry_date()
+        start = self._start_date()
         self._busy("AI o'qiyapti va xostel PDF yaratyapti…")
         run_async(
             self._c.generate_from_images, address, passport, patent, back,
-            registration_expiry=expiry,
+            registration_expiry=expiry, registration_start=start,
             on_success=self._done, on_error=self._failed,
         )
 

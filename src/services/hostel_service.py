@@ -87,11 +87,16 @@ class HostelService:
         address: RegistrationAddress,
         *,
         registration_expiry: date,
+        registration_start: date | None = None,
         output_dir: Path | None = None,
     ) -> HostelResult:
         values = build_registration_values(
             passport, patent, registration_expiry=registration_expiry
         )
+        # Start of the stay, printed inside the «Отметка о подтверждении» box.
+        # Only the date — the registration number and the electronic-signature
+        # certificate are applied by МВД/Госуслуги after a real submission.
+        values["reg.stay_from"] = (registration_start or date.today()).isoformat()
         mapping = FieldMapping.load(_hostel_dir() / "mapping.v1.json")
         out_path = self._unique_output_path(address, passport, output_dir)
         fill(address.template_path, mapping, values, out_path)

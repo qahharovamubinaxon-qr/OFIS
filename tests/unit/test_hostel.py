@@ -151,3 +151,42 @@ def test_hostels_are_isolated_from_regular_addresses(container) -> None:
     # the seeded ПАРКОВАЯ address stays a regular one, ЛУЖСКАЯ a hostel
     assert "parkovaya55" in regular_codes
     assert "luzhskaya10" in hostel_codes
+
+
+def test_confirmation_box_carries_only_the_start_date(container) -> None:
+    """The «Отметка о подтверждении» box gets the start of the stay and nothing
+    else — no МВД registration number, no electronic-signature certificate."""
+    import fitz
+
+    from src.services.hostel_service import HostelService
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    saved = svc.create_hostel(_hostel("startdate1"), None)
+    result = HostelService().generate(
+        _passport(), None, saved,
+        registration_expiry=date(2026, 10, 25),
+        registration_start=date(2026, 7, 27),
+    )
+    page2 = fitz.open(result.pdf_path)[1]
+    hits = page2.search_for("27.07.2026 00:00")
+    assert hits, "start date missing from the confirmation box"
+    # …and it is drawn inside that box (x 311.8…558.0, y 170.6…284.0)
+    box = fitz.Rect(311.8, 170.6, 558.0, 284.0)
+    assert box.contains(hits[0]), f"date drawn outside the box: {hits[0]}"
+
+
+def test_start_date_defaults_to_today(container) -> None:
+    import fitz
+
+    from src.services.hostel_service import HostelService
+    from src.services.registration_address_service import RegistrationAddressService
+
+    svc = container.resolve(RegistrationAddressService)
+    saved = svc.create_hostel(_hostel("startdate2"), None)
+    result = HostelService().generate(
+        _passport(), None, saved, registration_expiry=date(2026, 10, 25)
+    )
+    today = date.today()
+    text = fitz.open(result.pdf_path)[1].get_text()
+    assert f"{today.day:02d}.{today.month:02d}.{today.year} 00:00" in text

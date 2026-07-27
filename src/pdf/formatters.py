@@ -80,6 +80,12 @@ def _date_dmy_g(v: object) -> str:
     return f"{d.day:02d}.{d.month:02d}.{d.year:04d} г." if d else ""
 
 
+def _date_dmy_t00(v: object) -> str:
+    """27.07.2026 00:00 — dotted date with a midnight timestamp."""
+    d = _parse_date(v)
+    return f"{d.day:02d}.{d.month:02d}.{d.year:04d} 00:00" if d else ""
+
+
 def _date_long_g(v: object) -> str:
     """06 ноября 2023 г. — long Russian date (genitive month)."""
     d = _parse_date(v)
@@ -92,6 +98,7 @@ FORMATTERS: dict[str, Callable[[object], str]] = {
     "date_yyyy": _date_yyyy,
     "date_dmy": _date_dmy,
     "date_dmy_g": _date_dmy_g,
+    "date_dmy_t00": _date_dmy_t00,
     "date_long_g": _date_long_g,
 }
 

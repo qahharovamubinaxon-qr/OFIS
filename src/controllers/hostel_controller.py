@@ -52,12 +52,15 @@ class HostelController:
         patent_back_image: bytes | None = None,
         *,
         registration_expiry: date,
+        registration_start: date | None = None,
     ) -> HostelResult:
         passport, patent = self._ocr.read_documents(
             passport_image, patent_image, patent_back_image
         )
         return self._hostel.generate(
-            passport, patent, address, registration_expiry=registration_expiry
+            passport, patent, address,
+            registration_expiry=registration_expiry,
+            registration_start=registration_start,
         )
 
     @staticmethod
