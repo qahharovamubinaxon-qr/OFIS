@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from uuid import UUID
 
+from src.common.errors import ValidationError
 from src.common.logging import get_logger
 from src.domain.trud_firm import TrudFirm
 from src.ocr.service import OcrService
@@ -30,6 +31,24 @@ class TrudController:
     def study_uved(self, firm: TrudFirm):
         """Read the firm's blank and learn where each worker value goes."""
         return self._firms.study_uved(firm, self._ocr.ai)
+
+    def study_trud(self, firm: TrudFirm):
+        """…and the same for a PDF трудовой договор."""
+        return self._firms.study_trud(firm, self._ocr.ai)
+
+    def study_templates(self, firm: TrudFirm) -> dict[str, object]:
+        """Study whatever of this firm's two templates can be studied.
+
+        A .docx contract needs none — it is filled by text — so its absence
+        from the result is not a failure.
+        """
+        out: dict[str, object] = {}
+        for name, study in (("uved", self.study_uved), ("trud", self.study_trud)):
+            try:
+                out[name] = study(firm)
+            except ValidationError:
+                out[name] = None          # a .docx template: nothing to study
+        return out
 
     def archive_firm(self, firm_id: UUID) -> None:
         self._firms.archive(firm_id)

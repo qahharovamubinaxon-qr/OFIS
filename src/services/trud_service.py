@@ -94,6 +94,23 @@ class TrudFirmService:
                              firm.uved_template_path.parent)
         return result
 
+    def study_trud(self, firm: TrudFirm, ai) -> "object":
+        """Learn where this firm's contract leaves room for the worker.
+
+        Only for a PDF contract — a .docx one is filled by text, which needs no
+        study and is exact.
+        """
+        from src.services import trud_layout
+
+        if firm.trud_template_path.suffix.lower() != ".pdf":
+            raise ValidationError("Only a PDF трудовой договор can be studied",
+                                  context={"path": str(firm.trud_template_path)})
+        result = trud_layout.study(firm.trud_template_path, ai)
+        if result.ok:
+            trud_layout.save(result, firm.trud_template_path,
+                             firm.trud_template_path.parent)
+        return result
+
     def create(self, name: str, code: str, trud_source: Path, uved_source: Path,
                hod_source: Path | None = None) -> TrudFirm:
         if self._repo.by_internal_code(code):
@@ -228,6 +245,41 @@ class TrudService:
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
         return TrudResult(trud_path=trud_path, uved_path=uved_path,
                           surname=passport.surname, hod_path=hod_path)
+
+    @staticmethod
+    def _trud_values(passport: Passport, patent: Patent | None, *,
+                     form_date: date, profession: str) -> dict[str, str]:
+        """What goes into each gap the contract leaves for the worker."""
+        from src.pdf.formatters import _MONTHS_GEN
+
+        fio = _title(" ".join(x for x in (passport.surname, passport.name,
+                                          passport.patronymic or "") if x))
+        initials = "".join(
+            w[0].upper() + "." for w in
+            f"{passport.name} {passport.patronymic or ''}".split()[:2])
+        values = {
+            "trud.worker_fio": fio,
+            "trud.position": profession,
+            "trud.req_fio": fio,
+            "trud.req_doc": "паспорт иностранного гражданина",
+            "trud.req_passport": f"{passport.series or ''} {passport.number}".strip(),
+            "trud.req_passport_issued": " ".join(x for x in (
+                _date_dmy(passport.issue_date) if passport.issue_date else "",
+                passport.issued_by or "") if x),
+            "trud.req_patent": " ".join(x for x in (
+                (patent.series if patent else "") or "",
+                (patent.number if patent else "") or "") if x),
+            "trud.req_patent_issued": " ".join(x for x in (
+                _date_dmy(patent.issue_date) if patent and patent.issue_date else "",
+                (patent.issued_by if patent else "") or "") if x),
+            "trud.sign_fio": f"{_title(passport.surname)} {initials}".strip(),
+        }
+        for part, text in (("day", f"{form_date.day:02d}"),
+                           ("month", _MONTHS_GEN[form_date.month - 1]),
+                           ("year", f"{form_date.year:04d}")):
+            values[f"trud.contract_date_{part}"] = text
+            values[f"trud.sign_date_{part}"] = text
+        return values
 
     @staticmethod
     def _worker_block(p: Passport) -> str:

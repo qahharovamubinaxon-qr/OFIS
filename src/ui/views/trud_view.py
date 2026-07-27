@@ -229,39 +229,49 @@ class TrudView(QWidget):
         self._study_uved(firm)
 
     def _study_uved(self, firm) -> None:
-        """Read the new firm's blank so its уведомление fills in the right rows.
+        """Read the new firm's templates so both documents fill the right gaps.
 
-        Every firm's Госуслуги blank is laid out differently, so this is what
-        stops a worker's surname landing on the «Отчество» line.
+        Every firm's Госуслуги blank is laid out differently — that is what
+        put a worker's surname on the «Отчество» line — and a PDF contract
+        leaves its gaps wherever the firm's Word document happened to.
         """
-        self._busy("Уведомление бланкаси ўрганилаяпти…")
-        run_async(self._c.study_uved, firm,
+        self._busy("Бланкалар ўрганилаяпти…")
+        run_async(self._c.study_templates, firm,
                   on_success=self._studied, on_error=self._study_failed)
 
-    def _studied(self, study) -> None:
+    def _studied(self, studies: dict) -> None:
         self._run.setEnabled(True)
         self._progress.finish()
-        found = len(study.fields)
-        if study.ok:
-            note = f"✅ Бланка ўрганилди: {found} та майдон топилди."
-            if study.missing:
-                note += ("\n⚠️ Топилмагани: " + ", ".join(study.missing)
-                         + " — бу қаторлар бўш қолади.")
-            self._status.setText(note)
-            QMessageBox.information(self, "Tayyor", note)
-            return
-        note = (f"⚠️ Бланкадан фақат {found} та майдон топилди — камлик "
-                "қиляпти, шунинг учун эски жойлашув ишлатилади.\n"
-                "Бланкани текшириб, қайта юкланг.")
+        lines, warned = [], False
+        for label, key in (("Уведомление", "uved"), ("Трудовой договор", "trud")):
+            study = studies.get(key)
+            if study is None:
+                lines.append(f"ℹ️ {label}: Word файл — ўрганиш керак эмас, "
+                             "матн бўйича тўлдирилади.")
+                continue
+            if study.ok:
+                lines.append(f"✅ {label}: {len(study.fields)} та жой топилди.")
+                if study.missing:
+                    lines.append("   ⚠️ Топилмагани: " + ", ".join(study.missing)
+                                 + " — бу жойлар бўш қолади.")
+                    warned = True
+            else:
+                lines.append(f"⚠️ {label}: етарли жой топилмади — эски "
+                             "жойлашув ишлатилади. Файлни текшириб қайта юкланг.")
+                warned = True
+        note = "\n".join(lines)
         self._status.setText(note)
-        QMessageBox.warning(self, "Diqqat", note)
+        if warned:
+            QMessageBox.warning(self, "Diqqat", note)
+        else:
+            QMessageBox.information(self, "Tayyor", note)
 
     def _study_failed(self, error: Exception) -> None:
         self._run.setEnabled(True)
         self._progress.fail()
         msg = error.message if isinstance(error, OfisError) else str(error)
-        self._status.setText("⚠️ Бланка ўрганилмади: " + msg)
-        QMessageBox.warning(self, "Diqqat", "Бланка ўрганилмади:\n" + msg)
+        self._status.setText("⚠️ Бланкалар ўрганилмади: " + msg)
+        QMessageBox.warning(self, "Diqqat", "Бланкалар ўрганилмади:\n" + msg)
 
     def _remove_firm(self) -> None:
         firm = self._selected_firm()
