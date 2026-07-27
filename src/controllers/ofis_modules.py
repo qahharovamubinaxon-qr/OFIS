@@ -182,6 +182,7 @@ def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
         issue_date=answers.get("issue_date") or date.today(),
         firm=str(answers.get("firm") or "") or None,
         dolzhnost=dolzhnost,
+        territory=str(answers.get("territory") or "").strip(),
         photo_path=photo)
     ctx.note(f"{r.surname} — ПР {r.pr_number} ({r.region})")
     return [r.pdf_path]
@@ -339,6 +340,8 @@ MODULES: tuple[Module, ...] = (
                  Ask("firm", "Фирма (кем выдано):", kind="text"),
                  Ask("dolzhnost", "Должность (фақат 50 учун, керак бўлмаса «-»):",
                      kind="text"),
+                 Ask("territory", "Территория действия патента "
+                     "(бўш — регионники):", kind="text"),
                  Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),

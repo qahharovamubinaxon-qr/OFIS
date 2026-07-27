@@ -77,12 +77,15 @@ _QR_MIN_MODULE_MM = 0.38
 # bold face turned out too heavy, so the values are set in the regular face and
 # stroked a little on top of the fill. That lands between regular and bold and,
 # unlike the bold face, keeps the regular widths the columns were measured for.
-_FONT = "OfisArial"
+_FONT, _FONT_BOLD = "OfisArial", "OfisArialBold"
 _SERIF = "OfisSerif"
 _STROKE = 0.022                        # stroke width, as a fraction of the size
 _SIZE = 7.8                            # ФИО, даты, гражданство…
 _SERIA_SIZE = 10.0                     # the серия line runs a little larger
-_DATE_SIZE = 9.6                       # «Дата выдачи» is larger again
+# the issue date is set to match its own «Дата выдачи» label exactly — the
+# blank prints that in Arial Bold 8.7, and unlike the card's other values it
+# is neither stretched nor stroked, so the two read as one line
+_DATE_SIZE = 8.7
 _PR_SIZE = 15.6                        # «ПР» is Times, matching its own label
 _PR_TRACKING = 1.16                    # …and letterspaced, as on the sample
 # …and then a little taller again, without widening: the glyphs are stretched
@@ -114,7 +117,7 @@ _ROW_CITIZEN = 119.29
 _ROW_DOC = 138.25                     # «паспорт № / ИНН», under its own label
 _ROW_DOLZH = 167.93                   # профессия, under its 3-line label (обл)
 _DOC_SIZE = 7.4                       # the документ line is set a touch smaller
-_DOLZH_SIZE = 7.0                     # …and профессия a size smaller again
+_DOLZH_SIZE = 6.2                     # …and профессия smaller again
 # the blanks already print the separating «/» at x 157.7–159.3, so the two
 # numbers are written on either side of it rather than with a slash of our own
 _DOC_PASSPORT_MAX_X = 156.2
@@ -213,6 +216,13 @@ class BeydjikService:
         except (TypeError, ValueError):
             return "1"
 
+    def set_pr(self, value: str | int) -> None:
+        """Start the badge serial at ``value`` — the office's own numbering."""
+        digits = "".join(c for c in str(value) if c.isdigit())
+        if not digits:
+            raise OfisError("«ПР» рақамини киритинг.")
+        self._settings.set(KEY_PR_NEXT, int(digits))
+
     def _take_pr(self) -> str:
         current = self.peek_pr()
         self._settings.set(KEY_PR_NEXT, int(current) + 1)
@@ -227,7 +237,7 @@ class BeydjikService:
 
     def qr_text(self, passport: Passport, *, region: str, personal_number: str,
                 inn: str, issue_date: date, firm: str, pr: str,
-                dolzhnost: str = "") -> str:
+                dolzhnost: str = "", territory: str = "") -> str:
         """Fill the office's template with this badge's own values.
 
         An unknown placeholder is left as it was typed rather than raising —
@@ -247,7 +257,7 @@ class BeydjikService:
             "pr": pr,
             "firm": firm,
             "date": _date_dmy(issue_date),
-            "territory": REGIONS[region]["territory"],
+            "territory": territory.strip() or REGIONS[region]["territory"],
             "region_name": REGIONS[region]["qr_region"],
             "dolzhnost": dolzhnost.strip(),
         }
@@ -273,6 +283,7 @@ class BeydjikService:
         issue_date: date,
         firm: str | None = None,
         dolzhnost: str = "",
+        territory: str = "",
         photo_path: Path | None = None,
         output_dir: Path | None = None,
     ) -> BeydjikResult:
@@ -288,11 +299,15 @@ class BeydjikService:
 
         pr = self._take_pr()
         firm = (firm or self.firm()).strip()
+        # the office types the patent territory per badge; the region's own
+        # wording is only the starting suggestion
+        territory = territory.strip() or REGIONS[region]["territory"]
 
         doc = fitz.open(blank)
         try:
             page = doc[0]
             page.insert_font(fontname="bj", fontfile=str(_font_file(_FONT)))
+            page.insert_font(fontname="bjb", fontfile=str(_font_file(_FONT_BOLD)))
             page.insert_font(fontname="bjs", fontfile=str(_font_file(_SERIF)))
             font = fitz.Font(fontfile=str(_font_file(_FONT)))
             serif = fitz.Font(fontfile=str(_font_file(_SERIF)))
@@ -300,12 +315,12 @@ class BeydjikService:
                              personal_number=personal_number.strip(),
                              inn=inn.strip(), dolzhnost=dolzhnost.strip())
             self._fill_back(page, font, serif, firm=firm, issue_date=issue_date,
-                            pr=pr, territory=REGIONS[region]["territory"])
+                            pr=pr, territory=territory)
             self._place_photo(page, photo_path)
             self._place_qr(page, self.qr_text(
                 passport, region=region, personal_number=personal_number.strip(),
                 inn=inn.strip(), issue_date=issue_date, firm=firm, pr=pr,
-                dolzhnost=dolzhnost.strip()))
+                dolzhnost=dolzhnost.strip(), territory=territory))
             out = self._output_path(passport, region, output_dir)
             doc.save(str(out), garbage=4, deflate=True)
         finally:
@@ -351,8 +366,7 @@ class BeydjikService:
                    pr: str, territory: str) -> None:
         self._rewrite_territory(page, font, territory)
         self._fill_firm(page, font, firm)
-        self._back_text(page, font, _date_dmy(issue_date), *_DATE_ORIGIN,
-                        size=_DATE_SIZE)
+        self._back_date(page, _date_dmy(issue_date))
         self._back_number(page, serif, pr, *_PR_ORIGIN)
 
     def _fill_firm(self, page, font, firm: str) -> None:
@@ -454,6 +468,19 @@ class BeydjikService:
                          fontsize=size, rotate=180,
                          render_mode=2, border_width=_STROKE,
                          morph=cls._taller((right_x, top_y)))
+
+    @staticmethod
+    def _back_date(page, text: str) -> None:
+        """The issue date, matching its label rather than the card's values.
+
+        The label «Дата выдачи» is Arial Bold 8.7 printed into the blank, so
+        the date beside it is drawn the same way — no stretch, no stroke —
+        which is what the office asked for after the first samples.
+        """
+        if not text:
+            return
+        page.insert_text(_DATE_ORIGIN, text, fontname="bjb",
+                         fontsize=_DATE_SIZE, rotate=180)
 
     @classmethod
     def _back_number(cls, page, serif, number: str, right_x: float,

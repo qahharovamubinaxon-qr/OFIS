@@ -620,6 +620,71 @@ def test_a_badge_is_still_produced_when_the_qr_cannot_be_built(svc, settings):
     assert "Болтазода" in _flat(r.pdf_path)
 
 
+# ------------------------------------------- the date, the serial, the region
+
+
+def test_the_issue_date_matches_its_own_label(svc) -> None:
+    """The office found the date too big beside «Дата выдачи».
+
+    The label is printed into the blank in Arial Bold 8.7, so the value beside
+    it is drawn the same — and, unlike the card's other values, neither
+    stretched nor stroked, so the pair reads as one line.
+    """
+    import numpy as np
+
+    from src.services.beydjik_service import _DATE_SIZE
+
+    def cap_height(page, clip):
+        pm = page.get_pixmap(dpi=600, clip=fitz.Rect(*clip))
+        arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+            pm.height, pm.width, pm.n)[:, :, :3]
+        rows = np.where((arr.max(2) < 110).sum(1) > 0)[0]
+        return (rows[-1] - rows[0]) / (600 / 72)
+
+    value = cap_height(fitz.open(_make(svc).pdf_path)[0], (190, 242, 262, 256))
+    # the label prints at _DATE_SIZE, so its digits stand this tall
+    assert abs(value - 0.716 * _DATE_SIZE) < 0.6, value
+    # …and it must not be carrying the stretch the card's other values have
+    from src.services.beydjik_service import _STRETCH
+
+    assert value < 0.716 * _DATE_SIZE * _STRETCH - 0.5, "the date was stretched"
+
+
+def test_the_serial_can_be_started_from_the_office_s_own_number(svc, settings):
+    """«ПР 4875056», then 4875057, then 4875058 — the office's own run."""
+    svc.set_pr("4875056")
+    assert svc.peek_pr() == "4875056"
+    assert [_make(svc).pr_number for _ in range(3)] == [
+        "4875056", "4875057", "4875058"]
+    assert settings.get("beydjik.pr_next") == 4875059
+
+
+def test_a_serial_that_is_not_a_number_is_refused(svc) -> None:
+    from src.common.errors import OfisError
+
+    with pytest.raises(OfisError):
+        svc.set_pr("   ")
+
+
+def test_the_operator_can_type_the_patent_territory(svc, settings) -> None:
+    """The line is theirs to write; the region only suggests the wording."""
+    flat = _flat(_make(svc, region="77", territory="Московская область").pdf_path)
+    assert "Московская область" in flat
+    assert "г. Москва" not in flat
+
+    # …and the typed wording is what the QR record carries as well
+    from src.services.beydjik_service import KEY_QR
+
+    settings.set(KEY_QR, "T={territory}")
+    assert _decode(_make(
+        svc, region="77", territory="Москва и область").pdf_path
+    ) == "T=Москва и область"
+
+
+def test_a_blank_territory_falls_back_to_the_region_s_own_wording(svc) -> None:
+    assert "г. Москва" in _flat(_make(svc, region="77", territory="  ").pdf_path)
+
+
 # ------------------------------------------------- the remote front ends
 
 
@@ -629,4 +694,5 @@ def test_the_module_is_offered_to_the_bot_and_mini_app() -> None:
     module = next(m for m in MODULES if m.key == "beydjik")
     assert module.min_photos == 2
     assert [a.field for a in module.asks] == [
-        "region", "personal_number", "inn", "firm", "dolzhnost", "issue_date"]
+        "region", "personal_number", "inn", "firm", "dolzhnost", "territory",
+        "issue_date"]

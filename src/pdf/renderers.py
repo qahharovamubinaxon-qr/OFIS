@@ -126,7 +126,7 @@ def _render_paragraph(
             else:
                 cur = cand
         lines.append(cur)
-    y = field.y
+    y = _first_baseline(field, extra, font, size, line_h, len(lines))
     for line in lines:
         x = x0
         if field.align in ("center", "right"):
@@ -134,6 +134,23 @@ def _render_paragraph(
             x = x0 + (width - lw) / 2 if field.align == "center" else x0 + width - lw
         page.insert_text((x, y), line, fontname=fontname, fontsize=size)
         y += line_h
+
+
+def _first_baseline(field: Field_, extra: dict, font: fitz.Font, size: float,
+                    line_h: float, count: int) -> float:
+    """Where the paragraph's first line sits.
+
+    Normally that is the field's own ``y``. A field that names the table cell
+    it lives in (``cell_top``/``cell_bottom``) is centred inside it instead, so
+    a value that wraps onto one line more or fewer still sits in the middle of
+    the box rather than drifting into the rule below it.
+    """
+    top, bottom = extra.get("cell_top"), extra.get("cell_bottom")
+    if top is None or bottom is None:
+        return field.y
+    ascender = font.ascender * size
+    block = ascender - font.descender * size + (count - 1) * line_h
+    return float(top) + (float(bottom) - float(top) - block) / 2 + ascender
 
 
 def render_image(page: fitz.Page, field: Field_, path: str) -> None:

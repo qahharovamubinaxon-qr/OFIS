@@ -202,3 +202,60 @@ def test_a_long_profession_wraps_instead_of_shrinking(
     one_line = _L_PROF_SIZE * _L_PROF_WIDTH / font.text_length(
         f"“{profession}”", fontsize=_L_PROF_SIZE)
     assert lines[0]["size"] > one_line * 1.5, (lines[0]["size"], one_line)
+
+
+@pytest.mark.skipif(not HAS_TEMPLATE, reason="СФЕРА template not bundled")
+def test_the_right_card_qualification_wraps_too() -> None:
+    """It was set on one shrunken line while only the left card wrapped."""
+    from src.pdf.svera_udo import _R_QUAL_SIZE, UdoData, render_udostoverenie
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    qualification = ("Монтажник по монтажу стальных и железобетонных "
+                     "конструкций 5 (пятого) разряда")
+    render_udostoverenie(page, UdoData(
+        number="110", fio_dative=["Бахриеву", "Сафарали", "Садулло Угли"],
+        profession="Монтажник", qualification=qualification,
+        issue_date="28.07.2026 г.", basis="—"))
+
+    lines = [sp for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]
+             if "Монтажник по монтажу" in sp["text"]
+             or "железобетонных конструкций" in sp["text"]]
+    assert len(lines) == 2, [sp["text"] for sp in lines]
+    assert lines[0]["size"] == lines[1]["size"]
+    # readable, where one squeezed line came out around 5pt
+    assert lines[0]["size"] > _R_QUAL_SIZE * 0.8, lines[0]["size"]
+    # and clear of the rule under it
+    assert max(sp["bbox"][3] for sp in lines) < 165.3
+
+
+@pytest.mark.skipif(not HAS_TEMPLATE, reason="СФЕРА template not bundled")
+def test_the_protocol_cells_are_centred_between_their_rules(container) -> None:
+    """A five-line qualification used to run over the row's bottom rule."""
+    from src.config.settings_service import SettingsService
+    from src.domain.profession import Profession
+
+    # the row of the protocol table, measured off the rendered page
+    top, bottom = 384.3, 448.5
+
+    svc = SveraService(container.resolve(SettingsService))
+    passport = Passport(surname="БАХРИЕВ", name="САФАРАЛИ",
+                        patronymic="САДУЛЛО УГЛИ", number="FA2552078")
+    profession = Profession(
+        name="Монтажник по монтажу стальных и железобетонных конструкций",
+        note=None, grade=5)
+    result = svc.generate(passport, profession, issue_date=date(2026, 7, 28),
+                          photo_path=None)
+
+    page = fitz.open(result.pdf_path)[0]
+    cell = [sp for b in page.get_text("dict")["blocks"]
+            for ln in b.get("lines", []) for sp in ln["spans"]
+            if sp["bbox"][0] > 380 and top < sp["bbox"][1] < bottom + 20]
+    assert cell, "the заключение cell is empty"
+    ink_top = min(sp["bbox"][1] for sp in cell)
+    ink_bottom = max(sp["bbox"][3] for sp in cell)
+
+    assert ink_bottom < bottom, "the text still runs over the rule"
+    assert abs((ink_top - top) - (bottom - ink_bottom)) < 1.0, (
+        f"not centred: {ink_top - top:.1f} above, {bottom - ink_bottom:.1f} below")

@@ -41,6 +41,13 @@ _L_PROF_SIZE = 11.0
 _L_PROF_WIDTH = 150.0     # the card's usable width, between photo and edge
 _L_PROF_ONE = 192.9       # baseline when it fits on one line
 _L_PROF_TWO = (187.4, 198.9)   # …and the pair of baselines when it does not
+# the qualification on the right card, under «присвоена (подтверждена)…» and
+# above its rule at y 165.3 — the same rule: wrap, do not shrink
+_R_QUAL_SIZE = 11.5
+_R_QUAL_ONE = 161.6
+_R_QUAL_TWO = (150.2, 161.6)
+_R_QUAL_WIDTH = 188.3     # one line stays over its rule…
+_R_QUAL_TWO_WIDTH = 218.0  # …two may use the card's full width
 # right card
 _R_LEFT, _R_RIGHT = 328.5, 551.3
 _R_CENTRE = 439.9
@@ -118,33 +125,46 @@ def _translucent_stamp(path: Path, alpha: float = 0.82) -> bytes | None:
 
 
 def _profession_lines(pen: "_Pen", profession: str) -> None:
-    """Set the profession, wrapping onto a second line instead of shrinking.
+    """The profession on the left card, in quotes under «…по профессии:»."""
+    if not profession:
+        return
+    _wrapped_block(pen, f"“{profession}”", font=_BI, size=_L_PROF_SIZE,
+                   width=_L_PROF_WIDTH, centre=_L_CENTRE,
+                   one=_L_PROF_ONE, two=_L_PROF_TWO)
 
-    A long trade name used to be squeezed down until it fit one line, which
-    left it too small to read on the card. It now breaks across two lines at
-    the word boundary that makes them most even, and both keep the full size
+
+def _wrapped_block(pen: "_Pen", text: str, *, font: str, size: float,
+                   width: float, centre: float, one: float,
+                   two: tuple[float, float],
+                   two_width: float | None = None) -> None:
+    """Set ``text`` centred, over one line or two — never shrunk to fit one.
+
+    A long trade name used to be squeezed down until it fit a single line,
+    which left it too small to read on the card. It now breaks across two lines
+    at the word boundary that makes them most even, and both keep the full size
     whenever the pair fits. Only a name too long even for two lines shrinks,
     and then both lines shrink together so they read as one block.
     """
-    if not profession:
+    if not text:
         return
-    quoted = f"“{profession}”"
-    if pen.width(quoted, _BI, _L_PROF_SIZE) <= _L_PROF_WIDTH:
-        pen.text(0, _L_PROF_ONE, quoted, font=_BI, size=_L_PROF_SIZE,
-                 centre=_L_CENTRE)
+    if pen.width(text, font, size) <= width:
+        pen.text(0, one, text, font=font, size=size, centre=centre)
         return
 
-    first, second = _balanced_split(pen, quoted)
-    size = _L_PROF_SIZE
-    widest = max(pen.width(first, _BI, size), pen.width(second, _BI, size))
-    while size > 6 and widest > _L_PROF_WIDTH:
+    # a broken line is no longer tied to the rule beneath it, so it may use
+    # whatever width the card itself allows
+    width = two_width if two_width is not None else width
+    first, second = _balanced_split(pen, text, font, size)
+    widest = max(pen.width(first, font, size), pen.width(second, font, size))
+    while size > 6 and widest > width:
         size -= 0.25
-        widest = max(pen.width(first, _BI, size), pen.width(second, _BI, size))
-    for baseline, line in zip(_L_PROF_TWO, (first, second), strict=True):
-        pen.text(0, baseline, line, font=_BI, size=size, centre=_L_CENTRE)
+        widest = max(pen.width(first, font, size), pen.width(second, font, size))
+    for baseline, line in zip(two, (first, second), strict=True):
+        pen.text(0, baseline, line, font=font, size=size, centre=centre)
 
 
-def _balanced_split(pen: "_Pen", text: str) -> tuple[str, str]:
+def _balanced_split(pen: "_Pen", text: str, font: str,
+                    size: float) -> tuple[str, str]:
     """Break ``text`` in two at the word boundary that evens the halves out."""
     words = text.split()
     if len(words) < 2:
@@ -153,8 +173,7 @@ def _balanced_split(pen: "_Pen", text: str) -> tuple[str, str]:
     for cut in range(1, len(words)):
         left = " ".join(words[:cut])
         right = " ".join(words[cut:])
-        worst = max(pen.width(left, _BI, _L_PROF_SIZE),
-                    pen.width(right, _BI, _L_PROF_SIZE))
+        worst = max(pen.width(left, font, size), pen.width(right, font, size))
         if best_worst is None or worst < best_worst:
             best, best_worst = cut, worst
     return " ".join(words[:best]), " ".join(words[best:])
@@ -200,8 +219,10 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
 
     pen.text(0, 137.5, "присвоена (подтверждена) квалификация:",
              font=_BOLD, size=10.5, centre=_R_CENTRE)
-    pen.text(0, 161.6, data.qualification, font=_BOLD, size=11.5,
-             centre=_R_CENTRE, fit=_R_RIGHT - 363.0)
+    _wrapped_block(pen, data.qualification, font=_BOLD, size=_R_QUAL_SIZE,
+                   width=_R_QUAL_WIDTH, centre=_R_CENTRE,
+                   one=_R_QUAL_ONE, two=_R_QUAL_TWO,
+                   two_width=_R_QUAL_TWO_WIDTH)
     pen.rule(363.0, 529.9, 165.3)
 
     # the three body lines share one size — the largest at which the longest

@@ -64,8 +64,11 @@ class BeydjikView(QWidget):
         self._date.setCalendarPopup(True)
         top.addWidget(self._date)
         top.addStretch(1)
-        self._pr = QLabel()
-        self._pr.setStyleSheet("color:#8a94a3;")
+        top.addWidget(QLabel("Кейинги ПР:"))
+        self._pr = QLineEdit()
+        self._pr.setPlaceholderText("4875056")
+        self._pr.setFixedWidth(110)
+        self._pr.setToolTip("Ҳар бейджикда автомат биттага ошади.")
         top.addWidget(self._pr)
         root.addLayout(top)
 
@@ -97,11 +100,16 @@ class BeydjikView(QWidget):
         self._firm.setText(self._c.firm())
         form.addWidget(self._firm, 1, 3)
 
+        form.addWidget(QLabel("Территория действия патента:"), 2, 0)
+        self._territory = QLineEdit()
+        self._territory.setPlaceholderText("г. Москва")
+        form.addWidget(self._territory, 2, 1, 1, 3)
+
         self._dolzh_label = QLabel("Должность:")
-        form.addWidget(self._dolzh_label, 2, 0)
+        form.addWidget(self._dolzh_label, 3, 0)
         self._dolzhnost = QLineEdit()
         self._dolzhnost.setPlaceholderText("Водитель")
-        form.addWidget(self._dolzhnost, 2, 1, 1, 3)
+        form.addWidget(self._dolzhnost, 3, 1, 1, 3)
         form.setColumnStretch(3, 1)
         root.addLayout(form)
 
@@ -133,8 +141,9 @@ class BeydjikView(QWidget):
 
         self._status = QLabel(
             "Шаблонни танланг, ишчининг расми ва паспортини юкланг. Ф.И.О., "
-            "туғилган санаси, фуқаролиги ва паспорт рақами паспортдан олинади; "
-            "«ПР» рақами ҳар бейджикда битта ошади.")
+            "туғилган санаси, фуқаролиги ва паспорт рақами паспортдан олинади. "
+            "«Кейинги ПР» га бошланғич рақамни ёзинг — ҳар бейджикда битта "
+            "ошиб боради.")
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
@@ -152,7 +161,12 @@ class BeydjikView(QWidget):
         self._dolzhnost.setVisible(wants)
         if not self._region_code.text().strip():
             self._region_code.setText(code)
-        self._pr.setText(f"Кейинги ПР: {self._c.next_pr()}")
+        # the region's own wording is a suggestion the operator may overwrite
+        self._territory.setText(self._c.territory(code))
+        self._show_pr()
+
+    def _show_pr(self) -> None:
+        self._pr.setText(self._c.next_pr())
 
     def _issue_date(self) -> date:
         q = self._date.date()
@@ -168,6 +182,12 @@ class BeydjikView(QWidget):
         if not self._personal.text().strip():
             self._warn("Шахсий номерни киритинг.")
             return
+        # the operator may retype the serial to start a new run of blanks
+        try:
+            self._c.set_next_pr(self._pr.text())
+        except OfisError as exc:
+            self._warn(exc.message)
+            return
 
         data = Path(self._passport.path).read_bytes()
         photo = Path(self._photo.path) if self._photo.path else None
@@ -182,6 +202,7 @@ class BeydjikView(QWidget):
             issue_date=self._issue_date(),
             firm=self._firm.text().strip() or None,
             dolzhnost=self._dolzhnost.text().strip(),
+            territory=self._territory.text().strip(),
             photo_path=photo,
             on_success=self._done, on_error=self._failed)
 
@@ -195,7 +216,7 @@ class BeydjikView(QWidget):
         self._status.setText(
             f"✅ {result.surname} — ПР {result.pr_number} "
             f"({result.region})\n{result.pdf_path}")
-        self._pr.setText(f"Кейинги ПР: {self._c.next_pr()}")
+        self._show_pr()
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)

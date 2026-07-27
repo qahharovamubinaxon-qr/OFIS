@@ -28,6 +28,16 @@ class BeydjikController:
     def next_pr(self) -> str:
         return self._beydjik.peek_pr()
 
+    def set_next_pr(self, value: str | int) -> None:
+        self._beydjik.set_pr(value)
+
+    @staticmethod
+    def territory(region: str) -> str:
+        """The wording this region's badges normally carry, as a starting point."""
+        from src.services.beydjik_service import REGIONS
+
+        return str(REGIONS.get(region, {}).get("territory", ""))
+
     def firm(self) -> str:
         return self._beydjik.firm()
 
@@ -41,6 +51,7 @@ class BeydjikController:
         issue_date: date,
         firm: str | None = None,
         dolzhnost: str = "",
+        territory: str = "",
         photo_path: Path | None = None,
     ) -> BeydjikResult:
         """ФИО, date of birth, citizenship and the passport number come off the
@@ -49,7 +60,7 @@ class BeydjikController:
         return self._beydjik.generate(
             passport, region=region, personal_number=personal_number, inn=inn,
             issue_date=issue_date, firm=firm, dolzhnost=dolzhnost,
-            photo_path=photo_path)
+            territory=territory, photo_path=photo_path)
 
     @staticmethod
     def read_image(path: Path) -> bytes:
