@@ -45,7 +45,7 @@ DEFAULT_REGION = "Москва"
 _TEMPLATE = paths.templates_dir() / "dms" / "blank.pdf"
 
 # ------------------------------------------------------------ geometry
-_REG, _BOLD = "OfisSerif", "OfisSerifBold"
+_REG, _BOLD = "OfisArial", "OfisArialBold"
 _VALUE_X = 170.0                 # every value column starts here
 _RED = (0.85, 0.10, 0.13)
 
@@ -73,14 +73,14 @@ _WIDE_W = 543.6 - _VALUE_X       # passport row spans the whole table
 # header: red number, barcode, digits under it
 _NUM_CENTRE = 271.0
 _NUM_BASE = 91.0
-_NUM_SIZE = 14.0
+_NUM_SIZE = 13.0
 _BARCODE = (424.6, 54.0, 503.5, 67.7)
 _BAR_DIGITS_BASE = 79.0
 
 # the validity sentence added under the premium table
 _SROK_X, _SROK_W = 48.0, 512.0
-_SROK_BASE, _SROK_LEAD = 637.0, 11.6
-_SROK_SIZE = 9.5
+_SROK_BASE, _SROK_LEAD = 636.0, 11.0
+_SROK_SIZE = 8.5
 
 
 @dataclass(frozen=True)
@@ -203,8 +203,8 @@ class DmsService:
             (_S_FIO, _S_ADDR, _S_PASS, _S_PHONE, _S_CITIZ),
             (_Z_FIO, _Z_ADDR, _Z_PASS, _Z_PHONE, _Z_CITIZ),
         ):
-            self._cell(page, fio, _VALUE_X, fio_row, _ADDR_W + 48, size=12.0)
-            self._cell(page, sex, _SEX_CENTRE, fio_row, _SEX_W, size=10.5, centre=True)
+            self._cell(page, fio, _VALUE_X, fio_row, _ADDR_W + 48, size=10.0)
+            self._cell(page, sex, _SEX_CENTRE, fio_row, _SEX_W, size=9.0, centre=True)
             self._cell(page, address, _VALUE_X, addr_row, _ADDR_W)
             self._cell(page, dob, _DOB_CENTRE, addr_row, _DOB_W, centre=True)
             self._cell(page, pass_line, _VALUE_X, pass_row, _WIDE_W)
@@ -234,7 +234,7 @@ class DmsService:
             y += _SROK_LEAD
 
     def _cell(self, page, text: str, x: float, row: tuple[float, float],
-              width: float, *, size: float = 11.0, centre: bool = False) -> None:
+              width: float, *, size: float = 9.5, centre: bool = False) -> None:
         if not text:
             return
         baseline = (row[0] + row[1]) / 2 + size * 0.34   # visually centred

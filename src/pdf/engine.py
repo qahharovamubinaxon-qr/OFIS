@@ -40,12 +40,18 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     "OfisSerifBold": {"nt": ("timesbd.ttf",), "bundled": "OfisSerif-Bold.ttf"},
     "OfisSerifItalic": {"nt": ("timesi.ttf",), "bundled": "OfisSerif-Italic.ttf"},
     "OfisSerifBoldItalic": {"nt": ("timesbi.ttf",), "bundled": "OfisSerif-BoldItalic.ttf"},
+    # Arial proper. The bundled fallback is Liberation Sans, which is
+    # metric-compatible with Arial, so text measures the same either way.
+    "OfisArial": {"nt": ("arial.ttf",), "bundled": "OfisSans-Regular.ttf"},
+    "OfisArialBold": {"nt": ("arialbd.ttf",), "bundled": "OfisSans-Bold.ttf"},
 }
 
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
 _FONT_IDS = {
     "OfisSans": "ofis_sans",
     "OfisSansRegular": "ofis_sans_r",
+    "OfisArial": "ofis_arial",
+    "OfisArialBold": "ofis_arial_b",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",

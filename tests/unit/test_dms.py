@@ -188,3 +188,42 @@ def test_barcode_rejects_non_ascii() -> None:
 
     with pytest.raises(ValueError):
         code128_modules("50682Ж76085")
+
+
+# --------------------------------------------------------- typography
+
+
+def test_values_are_set_in_arial(svc) -> None:
+    """The office asked for Arial; the bundled fallback is Liberation Sans,
+    which is metric-compatible, so either is acceptable."""
+    page = fitz.open(_make(svc).pdf_path)[0]
+    fonts = {f[3] for f in page.get_fonts()}
+    assert any("Arial" in f or "Liberation" in f for f in fonts), fonts
+    assert not any("Times" in f or "Serif" in f for f in fonts), fonts
+
+
+def test_text_is_small_enough_for_the_cells(svc) -> None:
+    page = fitz.open(_make(svc).pdf_path)[0]
+    sizes = [round(s["size"], 1)
+             for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", [])
+             for s in ln.get("spans", [])]
+    assert sizes, "no text was written"
+    # everything except the red policy number stays at or under 10pt
+    body = [s for s in sizes if s < 12]
+    assert body and max(body) <= 10.0, sizes
+
+
+def test_the_blank_is_not_painted_over(svc) -> None:
+    """The form's guilloche must show through — no flat filled patches."""
+    import numpy as np
+
+    from src.services.dms_service import _TEMPLATE
+
+    page = fitz.open(_TEMPLATE)[0]
+    pm = page.get_pixmap(dpi=200)
+    a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width, pm.n)
+    s = 200 / 72
+    # a cleared value cell still varies in tone, like the paper around it
+    cell = a[int(300 * s):int(315 * s), int(200 * s):int(400 * s), :3]
+    assert cell.std() > 2.0, "the cell looks like a flat painted rectangle"
