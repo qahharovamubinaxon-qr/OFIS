@@ -453,11 +453,14 @@ def _decode(pdf) -> str:
     from src.services.beydjik_service import QR_BOX
 
     page = fitz.open(pdf)[0]
-    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(*QR_BOX) + (-4, -4, 4, 4))
+    # generously past the frame: the quiet zone is drawn *outside* QR_BOX so
+    # the code itself fills the frame, and a short text makes it wider still
+    pm = page.get_pixmap(dpi=600, clip=fitz.Rect(*QR_BOX) + (-18, -18, 18, 18))
     arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
         pm.height, pm.width, pm.n)[:, :, :3]
     grey = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    return cv2.QRCodeDetector().detectAndDecode(grey)[0]
+    # a code may carry a trailing space: see the self-check in src/pdf/qr.py
+    return cv2.QRCodeDetector().detectAndDecode(grey)[0].strip()
 
 
 def test_the_badge_carries_a_scannable_qr_of_the_worker(svc) -> None:
@@ -480,8 +483,32 @@ def test_an_unknown_placeholder_is_left_alone_rather_than_breaking(svc, settings
     """The operator types this by hand — a typo must not stop a badge."""
     from src.services.beydjik_service import KEY_QR
 
-    settings.set(KEY_QR, "{surname} {nima_bu}")
-    assert _decode(_make(svc).pdf_path) == "Болтазода {nima_bu}"
+    settings.set(KEY_QR, "{surname} {yoq_maydon}")
+    assert _decode(_make(svc).pdf_path) == "Болтазода {yoq_maydon}"
+
+
+def test_the_code_fills_the_frame_it_is_given(svc) -> None:
+    """The office wanted the code to fill the frame, not sit shrunken in it.
+
+    Its dark modules must reach the frame's edges; the white quiet zone the
+    standard asks for is drawn outside, over the guilloche.
+    """
+    import numpy as np
+
+    from src.services.beydjik_service import QR_BOX
+
+    page = fitz.open(_make(svc).pdf_path)[0]
+    box = fitz.Rect(*QR_BOX)
+    pm = page.get_pixmap(dpi=600, clip=box)
+    arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(
+        pm.height, pm.width, pm.n)[:, :, :3]
+    dark = arr.max(2) < 110
+    rows, cols = np.where(dark.sum(1) > 0)[0], np.where(dark.sum(0) > 0)[0]
+    s = 600 / 72
+    width, height = (cols[-1] - cols[0]) / s, (rows[-1] - rows[0]) / s
+
+    assert width > box.width * 0.9, f"{width:.1f}pt of {box.width:.1f}pt"
+    assert height > box.height * 0.9, f"{height:.1f}pt of {box.height:.1f}pt"
 
 
 def test_our_code_covers_the_one_printed_on_the_blank(svc) -> None:
@@ -507,6 +534,23 @@ def test_our_code_covers_the_one_printed_on_the_blank(svc) -> None:
 
     assert QR_BOX[0] <= printed[0] and QR_BOX[1] <= printed[1]
     assert QR_BOX[2] >= printed[2] and QR_BOX[3] >= printed[3]
+
+
+def test_a_code_that_would_not_read_back_is_rebuilt_until_it_does(svc, settings):
+    """OpenCV's encoder can emit a symbol its own detector cannot read.
+
+    «Болтазода {nima_bu}» is one such payload — the raw grid fails to decode.
+    A badge carrying an unreadable code is worse than useless, so the code is
+    checked and rebuilt with a trailing space until it reads.
+    """
+    from src.pdf.qr import _decodes, modules
+    from src.services.beydjik_service import KEY_QR
+
+    bad = "Болтазода {nima_bu}"
+    assert not _decodes(modules(bad)), "pick another payload — this one now reads"
+
+    settings.set(KEY_QR, "{surname} {nima_bu}")
+    assert _decode(_make(svc).pdf_path) == bad
 
 
 def test_a_badge_is_still_produced_when_the_qr_cannot_be_built(svc, settings):

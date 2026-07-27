@@ -52,6 +52,48 @@ def modules(text: str):
     return (np.asarray(grid) < 128).astype(np.uint8)
 
 
+def _decodes(grid) -> bool:
+    """True when the grid we just built reads back as a QR code.
+
+    OpenCV's encoder occasionally emits a symbol its own detector cannot read —
+    a rare payload-specific quirk, but a badge with an unreadable code is worse
+    than useless, so every code is checked before it is drawn.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:  # pragma: no cover - both ship with the app
+        return True
+    padded = np.pad(grid, QUIET_MODULES, constant_values=0)
+    image = np.where(padded > 0, 0, 255).astype(np.uint8)
+    big = cv2.resize(image, (image.shape[1] * 8, image.shape[0] * 8),
+                     interpolation=cv2.INTER_NEAREST)
+    try:
+        return bool(cv2.QRCodeDetector().detectAndDecode(big)[0])
+    except cv2.error:  # pragma: no cover - detector gave up
+        return False
+
+
+def verified(text: str) -> tuple[object, str]:
+    """(module grid, the text actually encoded) — readable back, if possible.
+
+    When a payload produces a symbol that will not read, a trailing space is
+    added and the code rebuilt: harmless to the text, and it moves the encoder
+    off the pattern that tripped it.
+    """
+    candidate = text
+    for attempt in range(3):
+        grid = modules(candidate)
+        if _decodes(grid):
+            if attempt:
+                log.info("QR rebuilt with %d trailing space(s) to stay readable",
+                         attempt)
+            return grid, candidate
+        candidate += " "
+    log.warning("QR for %r did not read back — drawing it anyway", text[:40])
+    return modules(text), text
+
+
 def png_bytes(text: str, *, pixels_per_module: int = 12,
               quiet: int = QUIET_MODULES) -> bytes:
     """The code as a black-on-white PNG, quiet zone included."""
@@ -70,17 +112,24 @@ def png_bytes(text: str, *, pixels_per_module: int = 12,
 
 
 def draw_qr(page, text: str, rect, *, quiet: int = QUIET_MODULES) -> None:
-    """Draw ``text`` as a QR code filling ``rect`` (a fitz.Rect or 4-tuple).
+    """Draw ``text`` as a QR code whose **dark modules** fill ``rect``.
 
-    The white quiet zone is part of the image, so the box may be dropped
-    straight onto artwork — nothing else needs clearing.
+    The quiet zone is drawn *outside* ``rect``, so the code itself fills the
+    frame it was given rather than sitting shrunken inside it. The zone is
+    white and part of the image, so the result may be dropped straight onto
+    artwork — nothing else needs clearing — at the cost of a thin white margin
+    around the frame, which is what the standard's four modules amount to.
     """
     import fitz
 
     box = rect if isinstance(rect, fitz.Rect) else fitz.Rect(*rect)
+    grid, text = verified(text)
+    side = grid.shape[0]
+    module = min(box.width, box.height) / side
+    outer = fitz.Rect(box.x0 - quiet * module, box.y0 - quiet * module,
+                      box.x0 + (side + quiet) * module,
+                      box.y0 + (side + quiet) * module)
     # aim for roughly 600 dpi at the printed size, so the modules stay square
-    side_modules = modules(text).shape[0] + 2 * quiet
-    target_px = max(1, int(box.width / 72 * 600))
-    per_module = max(4, target_px // side_modules)
-    page.insert_image(box, stream=png_bytes(text, pixels_per_module=per_module,
-                                            quiet=quiet), overlay=True)
+    per_module = max(4, int(outer.width / 72 * 600) // (side + 2 * quiet))
+    page.insert_image(outer, stream=png_bytes(text, pixels_per_module=per_module,
+                                              quiet=quiet), overlay=True)
