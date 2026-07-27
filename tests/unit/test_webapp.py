@@ -231,3 +231,10 @@ def test_dms_is_offered_with_its_questions(server) -> None:
     fields = [a["field"] for a in by_key["dms"]["asks"]]
     assert fields == ["start_date", "phone", "address", "region"]
     assert by_key["dms"]["minPhotos"] == 1
+
+
+def test_inn_is_offered_with_its_questions(server) -> None:
+    by_key = {m["key"]: m for m in server.modules_payload()}
+    assert "inn" in by_key, "ИНН missing from the remote front ends"
+    assert [a["field"] for a in by_key["inn"]["asks"]] == ["inn", "form_date"]
+    assert by_key["inn"]["minPhotos"] == 1

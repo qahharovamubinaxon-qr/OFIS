@@ -149,6 +149,16 @@ def _run_dms(ctx: RunContext, state: dict) -> list[Path]:
     return [r.pdf_path]
 
 
+def _run_inn(ctx: RunContext, state: dict) -> list[Path]:
+    answers = state["answers"]
+    r = ctx.ctl["inn"].generate_from_image(
+        state["photos"][0],
+        inn=str(answers.get("inn") or ""),
+        form_date=answers.get("form_date") or date.today())
+    ctx.note(f"{r.surname} — ИНН {r.inn}")
+    return [r.pdf_path]
+
+
 def _run_svera(ctx: RunContext, state: dict) -> list[Path]:
     from src.config import paths
 
@@ -286,6 +296,11 @@ MODULES: tuple[Module, ...] = (
                  Ask("phone", "Телефон рақами:", kind="text"),
                  Ask("address", "Рўйхатдан ўтиш манзили:", kind="text"),
                  Ask("region", "Патент ҳудуди (бўш — Москва):", kind="text"))),
+    Module("inn", "🔢 ИНН", _run_inn,
+           photo_prompt="Ишчининг паспорти ёки патенти расмини юборинг.",
+           photo_labels=("Паспорт/патент",),
+           asks=(Ask("inn", "ИНН рақами (12 та рақам):", kind="text"),
+                 Ask("form_date", "Кун (КК.ОО.ЙЙЙЙ):", default_days=0))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -350,6 +365,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     background thread (the bot poller) as well as the HTTP server."""
     from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
+    from src.controllers.inn_controller import InnController
     from src.controllers.process_controller import ProcessController
     from src.controllers.registration_controller import RegistrationController
     from src.controllers.svera_controller import SveraController
@@ -361,6 +377,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.dover_service import DoverService
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
+    from src.services.inn_service import InnService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
     from src.services.profession_service import ProfessionService
@@ -391,6 +408,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             key_getter=key_getter, cert_getter=_perevod_cert(container)),
         # Both are stateless services the desktop views build the same way.
         "dms": DmsController(ocr, DmsService(container.resolve(SettingsService))),
+        "inn": InnController(ocr, InnService()),
         "umumiy": UmumiyService(key_getter=key_getter),
         "dover": DoverService(key_getter=key_getter,
                               settings=container.resolve(SettingsService)),

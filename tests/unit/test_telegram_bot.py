@@ -433,3 +433,32 @@ def test_dms_flow_asks_everything_then_runs(ready, monkeypatch) -> None:
     assert seen["address"] == "Москва, Вяземская 1к1"
     assert "50682676085" in _all(ready)
     assert ready.files
+
+
+def test_inn_flow_asks_the_number_and_date(ready, monkeypatch) -> None:
+    seen = {}
+
+    def fake_generate(image, *, inn, form_date):
+        seen.update(inn=inn, form_date=form_date)
+        out = paths.output_dir() / "inn.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.4\n")
+
+        class R:
+            pdf_path = out
+            inn = "770912345678"
+            surname = "ИСАКОВ"
+
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["inn"], "generate_from_image", fake_generate)
+
+    _text(ready, "🔢 ИНН")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "ИНН рақами" in _last(ready)
+    _text(ready, "770912345678")
+    _text(ready, "27.07.2026")
+    assert seen == {"inn": "770912345678", "form_date": date(2026, 7, 27)}
+    assert "770912345678" in _all(ready)
+    assert ready.files

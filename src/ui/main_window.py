@@ -55,6 +55,7 @@ _NAV = [
     (None, "nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
+    (None, "nav.inn", "ИНН", "Ишчининг ИНН рақами варағи → PDF", "🔢"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
@@ -168,6 +169,13 @@ class MainWindow(QMainWindow):
                 self._container.resolve(TrudService),
             )
             return TrudView(trud_controller)
+        if key == "nav.inn":
+            from src.controllers.inn_controller import InnController
+            from src.services.inn_service import InnService
+            from src.ui.views.inn_view import InnView
+
+            return InnView(InnController(
+                self._container.resolve(OcrService), InnService()))
         if key == "nav.dms":
             from src.controllers.dms_controller import DmsController
             from src.services.dms_service import DmsService

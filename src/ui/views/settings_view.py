@@ -315,6 +315,27 @@ class SettingsView(QWidget):
         root.addWidget(bl)
         root.addStretch(1)
 
+        # -- ИНН sheet ------------------------------------------------------
+        root = self._section("🔢", "ИНН")
+        inn = Card("🔢", "ИНН varag'i",
+                   "Ishchining ИНН raqami saqlanadigan varaq. Yangi dizayn "
+                   "qilsangiz shu yerga yuklang — AppData'da saqlanadi, EXE "
+                   "qayta yig'ilganda o'chmaydi.")
+        inn_row = QHBoxLayout()
+        pick_inn = QPushButton("📄  Blanka yuklash (PDF)")
+        pick_inn.clicked.connect(self._import_inn_blank)
+        open_inn = QPushButton("📂  Papkani ochish")
+        open_inn.clicked.connect(self._open_inn_blank_folder)
+        reset_inn = QPushButton("↩  Dasturnikiga qaytarish")
+        reset_inn.clicked.connect(self._reset_inn_blank)
+        for b in (pick_inn, open_inn, reset_inn):
+            inn_row.addWidget(b)
+        inn_row.addStretch(1)
+        inn.add(inn_row)
+        self._inn_blank_state = inn.note("")
+        root.addWidget(inn)
+        root.addStretch(1)
+
         # -- backup / restore ---------------------------------------------
         root = self._section("💾", "Zaxira")
         bk = Card("💾", "Zaxira nusxa",
@@ -413,6 +434,15 @@ class SettingsView(QWidget):
             f"✅  Sizning blankangiz:  {blank}" if own
             else f"ℹ️  Dasturning blankasi ishlatilyapti.\n     Yuklash joyi:  {blank}")
 
+        from src.services.inn_service import blank_source as inn_blank_source
+        from src.services.inn_service import user_blank_path as inn_blank_target
+
+        inn_blank, inn_own = inn_blank_source()
+        self._inn_blank_state.setText(
+            f"✅  Sizning varag'ingiz:  {inn_blank}" if inn_own
+            else "ℹ️  Dasturning varag'i ishlatilyapti.\n"
+                 f"     Yuklash joyi:  {inn_blank_target()}")
+
         backups = sorted(paths.backups_dir().glob("OFIS_backup_*.zip"))
         if backups:
             newest = backups[-1]
@@ -501,6 +531,43 @@ class SettingsView(QWidget):
         own.unlink()
         self._refresh_states()
         QMessageBox.information(self, "OK", "Dasturning blankasi ishlatiladi.")
+
+    def _import_inn_blank(self) -> None:
+        from src.services.inn_service import import_blank
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "ИНН varag'i (PDF)", str(paths.desktop_dir()), "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            saved = import_blank(Path(path))
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        self._refresh_states()
+        QMessageBox.information(self, "OK", f"Varaq yuklandi:\n{saved}")
+
+    def _open_inn_blank_folder(self) -> None:
+        from src.services.inn_service import user_blank_path
+
+        folder = user_blank_path().parent
+        folder.mkdir(parents=True, exist_ok=True)
+        _open_folder(folder)
+
+    def _reset_inn_blank(self) -> None:
+        from src.services.inn_service import user_blank_path
+
+        own = user_blank_path()
+        if not own.exists():
+            QMessageBox.information(self, "OK", "Allaqachon dasturnikini ishlatyapti.")
+            return
+        if QMessageBox.question(
+                self, "Qaytarish", "Yuklangan varaq o'chirilsinmi?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        own.unlink()
+        self._refresh_states()
+        QMessageBox.information(self, "OK", "Dasturning varag'i ishlatiladi.")
 
     def _save_dms(self) -> None:
         from src.services.dms_service import (
