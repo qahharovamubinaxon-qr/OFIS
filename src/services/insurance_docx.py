@@ -895,83 +895,471 @@ def _note_signature(doc, report: Report) -> None:
             return
 
 
-# ------------------------------------------------------------------ public
+# ------------------------------------------------- a line, however it is drawn
+#
+# The Bank of Russia's form asks for the срок twice — «Срок страхования с … по
+# …» and «Страхование распространяется … с … по …» — and leaves it to the
+# insurer how to print the eight digits of each date. Three ways turn up in the
+# office's folder:
+#
+#   * as text, «15.07.2026», which needs nothing clever;
+#   * one digit per table cell, interleaved with cells holding the form's own
+#     «.» and «.20» — «с | 2 | 8 | . | 0 | 6 | .20 | 2 | 4 | г.»;
+#   * one digit per little text box, drawn side by side in a group, in whatever
+#     order they happened to be created.
+#
+# A fourth turns up inside the third: four boxes floating *over* a line, which
+# Word anchors at the start of the paragraph they sit in the middle of.
+#
+# All four are read here as one thing — a *strip*: the characters of one
+# printed line, in the order the form is read, each remembering the run it came
+# from. A date found in a strip can then be written back digit over digit,
+# which is the whole point: the tabs, the dots and the «20» the template
+# printed itself must not move, or the digits stop landing in their boxes.
 
+#: One piece of a printed line: the run lists that spell it, and the slice of
+#: their text it contributes. There is more than one run list when Word keeps
+#: several copies of the same box — the one it draws and the picture older
+#: readers fall back on — and every copy has to end up saying the same thing.
+_Piece = tuple[list[list], int, int]
+
+_DML = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_VML = "{urn:schemas-microsoft-com:vml}"
+_WPG = "{http://schemas.microsoft.com/office/word/2010/wordprocessingGroup}"
+_WPS = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
+_GROUP_TAGS = (_WPG + "wgp", _VML + "group")
+_SHAPE_TAGS = (_WPS + "wsp", _VML + "shape", _VML + "rect", _VML + "roundrect")
+
+
+def _own_runs(paragraph) -> list:
+    """A paragraph's own runs — not those of a box floating over it.
+
+    :func:`~src.services.docx_worker.runs_of` walks everything underneath a
+    paragraph, and a text box anchored in it hangs there too. On one insurer's
+    form the four boxes holding the end date's day and month are anchored at
+    the *start* of the line they are drawn in the middle of, so read that way
+    the line begins «2706». They are read where they are drawn instead — see
+    :func:`_spliced`.
+    """
+    from docx.oxml.ns import qn
+    from docx.text.run import Run
+
+    floating = (qn("w:drawing"), qn("w:pict"))
+    out = []
+    for element in paragraph._p.iter(qn("w:r")):
+        node = element.getparent()
+        while node is not None and node is not paragraph._p:
+            if node.tag in floating:
+                break
+            node = node.getparent()
+        else:
+            out.append(Run(element, paragraph))
+    return out
+
+
+def _paragraph_pieces(paragraph) -> list[_Piece]:
+    runs = _own_runs(paragraph)
+    return [([runs], 0, len(text_of(runs)))] if runs else []
+
+
+def _row_pieces(row) -> list[_Piece]:
+    """A table row read across, cell by cell.
+
+    This is the row of boxes: the date is spelled by cells that hold one
+    character each, and the cells between them hold the form's own «.» and
+    «.20». Read cell by cell it comes back out as «28.06.2024».
+    """
+    return [piece for cell in _cells(row)
+            for paragraph in cell.paragraphs
+            for piece in _paragraph_pieces(paragraph)]
+
+
+def _strip_text(pieces: list[_Piece]) -> tuple[str, list[tuple[int, int]], list[bool]]:
+    """The pieces read as one line, with the whitespace taken out.
+
+    ``(text, where, fresh)`` — ``where[i]`` is the piece and offset character
+    ``i`` came from, and ``fresh[i]`` whether a space, a tab or a new piece
+    stood in front of it. The whitespace has to go, or «2 8 . 0 6 . 20 2 4»
+    never looks like a date; ``fresh`` is what is left of it, and it is what
+    tells «в течение срока страхования с 15.07.2026» from a word that merely
+    ends in «с».
+    """
+    text: list[str] = []
+    where: list[tuple[int, int]] = []
+    fresh: list[bool] = []
+    for index, (runs, lo, hi) in enumerate(pieces):
+        gap = True
+        for offset, char in enumerate(text_of(runs[0])[lo:hi], start=lo):
+            if char.isspace():
+                gap = True
+                continue
+            text.append(char)
+            where.append((index, offset))
+            fresh.append(gap)
+            gap = False
+    return "".join(text), where, fresh
+
+
+def _strip_raw(pieces: list[_Piece]) -> str:
+    """The same line with its wording intact — for reading it, never writing."""
+    return " ".join(part for runs, lo, hi in pieces
+                    if (part := " ".join(text_of(runs[0])[lo:hi].split())))
+
+
+def _put(pieces: list[_Piece], where: list[tuple[int, int]],
+         lo: int, hi: int, new: str) -> None:
+    """Write ``new`` over characters [lo, hi) of a strip — one for one.
+
+    Never more and never fewer characters, so every tab, dot and «20» the
+    template printed itself stays exactly where it was and each digit keeps
+    landing in its own box.
+    """
+    for index, char in zip(range(lo, hi), new, strict=True):
+        piece, offset = where[index]
+        for runs in pieces[piece][0]:
+            replace_span(runs, offset, offset + 1, char)
+
+
+# ---------------------------------------------------------- boxes in a group
+
+
+def _shape_box(shape) -> tuple[int, int, int, int] | None:
+    """Where inside its group a shape is drawn — (left, top, width, height).
+
+    Word writes the same group twice: in DrawingML, where the numbers are EMU
+    on ``<a:off>``/``<a:ext>``, and as a VML picture, where they are group
+    units in the ``style`` attribute. Only the order they give matters here,
+    and both orders are the same.
+    """
+    for xfrm in shape.iter(_DML + "xfrm"):
+        off, ext = xfrm.find(_DML + "off"), xfrm.find(_DML + "ext")
+        if off is None or ext is None:
+            return None
+        return (int(off.get("x")), int(off.get("y")),
+                int(ext.get("cx")), int(ext.get("cy")))
+    style = dict(part.split(":", 1) for part in
+                 (shape.get("style") or "").split(";") if ":" in part)
+    try:
+        return (round(float(style["left"])), round(float(style["top"])),
+                round(float(style["width"])), round(float(style["height"])))
+    except (KeyError, ValueError):
+        return None
+
+
+def _band_strips(group) -> list[list[_Piece]]:
+    """One group of little text boxes, read as the lines it draws.
+
+    «Срок страхования с», the hour, the minute, the day, the month, the year:
+    each is its own box, and they are stored in the order they were drawn,
+    which is not the order they are read. Put back down the page and then
+    across, they spell the row again.
+
+    A separator the form draws once for both rows — the «.» between day and
+    month, the «. 20» before the year — is one box tall enough to reach both,
+    holding a paragraph for each: its first line belongs to the first row and
+    its second to the second. Reading the whole box into both rows instead
+    gives «28..03.20.2026», which is no date at all.
+    """
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+
+    shapes: list[tuple[tuple[int, int, int, int], list[list[_Piece]]]] = []
+    seen: set[tuple] = set()
+    for shape in group.iter(*_SHAPE_TAGS):
+        box = _shape_box(shape)
+        if box is None:
+            continue
+        lines = [pieces for content in shape.iter(qn("w:txbxContent"))
+                 for element in content.iter(qn("w:p"))
+                 if (pieces := _paragraph_pieces(Paragraph(element, None)))]
+        # the same box drawn twice over is one box, not two
+        if not lines or (key := (box, tuple(map(_strip_raw, lines)))) in seen:
+            continue
+        seen.add(key)
+        shapes.append((box, lines))
+    if not shapes:
+        return []
+
+    height = min(box[3] for box, _lines in shapes)     # the shortest box is one row
+    tops: list[int] = []
+    for top in sorted({box[1] for box, _lines in shapes}):
+        if not tops or top - tops[-1] > height // 2:
+            tops.append(top)
+
+    bands: list[list[tuple[int, list[_Piece]]]] = [[] for _top in tops]
+    for box, lines in shapes:
+        spans = [i for i, top in enumerate(tops)
+                 if box[1] < top + height and box[1] + box[3] > top]
+        if not spans:
+            continue
+        # a box as tall as the rows it reaches has a line for each of them;
+        # anything else is one box on its own row
+        share = (list(zip(spans, lines, strict=True)) if len(lines) == len(spans)
+                 else [(spans[0], [piece for line in lines for piece in line])])
+        for band, pieces in share:
+            bands[band].append((box[0], pieces))
+    return [[piece for _left, pieces in sorted(row, key=lambda item: item[0])
+             for piece in pieces] for row in bands]
+
+
+# ------------------------------------------------- boxes floating over a line
+
+
+#: A cover date whose day and month were left to boxes floating over the line —
+#: «по . .20 2 5» — with a year still printed, so there is something to check
+#: the boxes against. The blank extra periods the form offers underneath («с .
+#: . 20 г. по . .20 г.») have no year and are left alone.
+_HOLLOW = re.compile(r"(?:с|c|по)\.\.(?=\d{4}(?!\d))", re.IGNORECASE)
+
+#: How many digits such a hole wants back: a day and a month.
+_HOLLOW_DIGITS = 4
+
+
+def _paragraph_element(runs: list):
+    from docx.oxml.ns import qn
+
+    node = runs[0]._r if runs else None
+    while node is not None and node.tag != qn("w:p"):
+        node = node.getparent()
+    return node
+
+
+def _floating_boxes(pieces: list[_Piece]) -> list[list[list]]:
+    """Rows of single-character boxes drawn over a line, one list per copy.
+
+    Empty when there are none, and empty too when the copies do not all hold
+    the same thing: that is a template already saying two things, and picking
+    one of them would be a guess.
+    """
+    from docx.oxml.ns import qn
+    from docx.table import Table
+
+    grids: list[list[list]] = []
+    spelled: set[str] = set()
+    seen: set[int] = set()
+    for runs, _lo, _hi in pieces:
+        element = _paragraph_element(runs[0])
+        if element is None or id(element) in seen:
+            continue
+        seen.add(id(element))
+        for tbl in element.iter(qn("w:tbl")):
+            for row in Table(tbl, None).rows:
+                cells = _boxes(_cells(row))
+                joined = "".join(cell.text.strip() for cell in cells)
+                if len(cells) != _HOLLOW_DIGITS or not joined.isdigit():
+                    continue
+                grids.append([runs_of(cell.paragraphs[0]) for cell in cells])
+                spelled.add(joined)
+    return grids if len(spelled) == 1 else []
+
+
+def _spliced(pieces: list[_Piece]) -> list[_Piece] | None:
+    """A line whose day and month float over it in boxes, read whole.
+
+    One insurer prints the end of «Страхование распространяется … по …» as four
+    little boxes drawn on top of the line. The line itself reads «по . .20 2
+    5»: the day and the month are simply not in it, and the boxes that hold
+    them are anchored, as Word anchors them, at the start of the paragraph.
+    Read with the boxes back in their holes it says «по 27.06.2025» again —
+    a date that can be recognised, checked and written over.
+
+    ``None`` when there is no such hole, when the boxes are not there, or when
+    the two dots are not on one piece: filling a hole on a guess would leave
+    the policy carrying a date that was never anybody's cover.
+    """
+    text, where, _fresh = _strip_text(pieces)
+    hole = _HOLLOW.search(text)
+    if hole is None:
+        return None
+    grids = _floating_boxes(pieces)
+    if not grids:
+        return None
+    (index, first), (again, second) = where[hole.end() - 2], where[hole.end() - 1]
+    if index != again:
+        return None
+    runs, lo, hi = pieces[index]
+    day, month = ([[grid[i] for grid in grids] for i in range(2)],
+                  [[grid[i] for grid in grids] for i in (2, 3)])
+    return (pieces[:index]
+            + [(runs, lo, first)] + [(copies, 0, 1) for copies in day]
+            + [(runs, first, second)] + [(copies, 0, 1) for copies in month]
+            + [(runs, second, hi)]
+            + pieces[index + 1:])
+
+
+# ------------------------------------------------------- which date is a срок
 
 #: «14.07.2027г.» — the «г.» runs straight into the year on some forms,
 #: so a word boundary would miss it.
 _DMY = re.compile(r"(?<!\d)\d{2}\.\d{2}\.\d{4}(?!\d)")
+
+#: A date the form itself introduces with «с …» or «по …», through the insurer's
+#: own «00 ч. 01 мин.» where there is one. That is what tells the cover apart
+#: from «Дата заключения договора 28.06.2024 г.» and «Дата выдачи полиса», which
+#: carry the same date and are not the срок.
+_COVER = re.compile(r"(?:с|c|по)(?:\d{1,2}ч\.\d{1,2}мин\.)?"
+                    rf"({_DMY.pattern})", re.IGNORECASE)
+
+#: «Действителен с 08.12.2025 по 07.05.2027» under an insurer's certificate is
+#: how long their signing key lasts, not how long the car is covered.
+_VALIDITY = re.compile(r"Действител[а-яё]*(?:с|до)", re.IGNORECASE)
+
+
+def _cover_on(text: str, fresh: list[bool]) -> list[tuple[int, int, str]]:
+    """The cover dates in a strip's squashed text, as (start, end, value)."""
+    if _VALIDITY.search(text):
+        return []
+    return [(m.start(1), m.end(1), m.group(1)) for m in _COVER.finditer(text)
+            # a word that merely ends in «с» is not the form saying «с»
+            if fresh[m.start()]]
+
+
+def _cover_dates(pieces: list[_Piece]) -> list[tuple[int, int, str]]:
+    """The cover dates on one line, as (start, end, value) in its squashed text."""
+    text, _where, fresh = _strip_text(pieces)
+    return _cover_on(text, fresh)
+
+
+# --------------------------------------------------------------- every line
+
+
+def _strips(doc):
+    """Every printed line of the policy, in the order the form is read."""
+    from docx.oxml.ns import qn
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    for element in doc.element.body.iter(qn("w:p"), qn("w:tbl"), *_GROUP_TAGS):
+        if element.tag == qn("w:p"):
+            found = [_paragraph_pieces(Paragraph(element, doc))]
+        elif element.tag == qn("w:tbl"):
+            found = [_row_pieces(row) for row in Table(element, doc).rows]
+        else:
+            found = _band_strips(element)
+        for pieces in found:
+            if not pieces:
+                continue
+            yield pieces
+            if (spliced := _spliced(pieces)) is not None:
+                yield spliced
+
+
+# ------------------------------------------------------------------ public
+
+
 #: Capitalised: the same words appear mid-sentence in the small print.
 _TERM = re.compile(r"(?<![А-Яа-яЁё])Срок\s+страхования")
+#: The form asks for the same срок a second time, in a row of its own — and
+#: that is the row the office kept getting back with the previous cover on it.
+_SPREAD = re.compile(r"Страхование\s+распространяется")
 _SIGNED_ON = re.compile(r"Дата\s+(?:заключения\s+договора|выдачи\s+полиса)",
                         re.IGNORECASE)
 _LONG_DATE = re.compile(
     r"«?\d{1,2}»?\s+[А-Яа-яЁё]{3,8}\s+\d{4}", re.IGNORECASE)
 
 
-def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
-    """Write the policy's own dates wherever the form prints them as text.
+def _runs_forward(start: str, end: str) -> bool:
+    """Whether a pair of dates could be a cover — the end after the start."""
+    def order(dmy: str) -> tuple[int, ...]:
+        day, month, year = dmy.split(".")
+        return int(year), int(month), int(day)
 
-    The «Срок страхования» line carries two: the first is the start, the second
-    the end. Where an insurer prints those dates one digit per box instead, the
-    boxes are reported rather than half-filled — a date with three of its eight
-    digits changed is worse than one the operator finishes by hand.
+    return order(start) < order(end)
+
+
+def _names_the_term(pieces: list[_Piece]) -> bool:
+    """Whether a line is one of the two the form asks for the срок on."""
+    wording = _strip_raw(pieces)
+    return bool(_TERM.search(wording) or _SPREAD.search(wording))
+
+
+def _previous_cover(lines: list[list[_Piece]]) -> tuple[str, str] | None:
+    """What the blank's own cover ran — its start, and its end.
+
+    The first two different dates the form introduces with «с …» and «по …»,
+    once it has named the срок. Reading them off the blank is what lets every
+    other copy of them be found by value rather than by position, and a form
+    prints the pair in more places than any one rule would find: twice over on
+    the face of it, and twice again in the copy Word keeps of every text box.
+
+    ``None`` when the pair does not run forwards, or when there is no pair —
+    a blank whose boxes were never filled in has nothing to match, and is
+    handed to the operator rather than guessed at.
     """
-    lines = [(r, t) for p in _all_paragraphs(doc)
-             if (r := runs_of(p)) and (t := text_of(r)).strip()]
-
-    # «Срок страхования с … 15.07.2026 г.» and «по … 14.07.2027 г.» are one
-    # field, but an insurer may wrap them onto two lines — so the pair of dates
-    # is taken across the lines that follow, not only the one with the label.
-    for i, (_runs, text) in enumerate(lines):
-        if not _TERM.search(text):
+    seen: list[str] = []
+    named = False
+    for pieces in lines:
+        if not named and not (named := _names_the_term(pieces)):
             continue
-        wanted = [start, end]
-        for runs, line in lines[i:i + 3]:
-            if not wanted:
-                break
-            if line is not text and (_TERM.search(line) or not _DMY.search(line)):
-                break
-            # right to left, and only the date itself — the words around it are
-            # the insurer's and are never rewritten
-            found = list(_DMY.finditer(line))[:len(wanted)]
-            for m, value in reversed(list(zip(found, wanted))):
-                replace_span(runs, m.start(), m.end(), value)
+        for _lo, _hi, value in _cover_dates(pieces):
+            if value in seen:
+                continue
+            seen.append(value)
+            if len(seen) == 2:
+                return (seen[0], seen[1]) if _runs_forward(*seen) else None
+    return None
+
+
+def _cover(doc, *, start: str, end: str, report: Report) -> None:
+    """Put this policy's cover wherever the blank printed the one before it.
+
+    The form asks for the срок twice — «Срок страхования с … по …» and
+    «Страхование распространяется … с … по …» — and leaves each insurer to
+    print the eight digits of a date however it likes: as text, one digit per
+    table cell, one digit per little text box, or with four of the digits in
+    boxes floating over the line. :func:`_strips` reads all of them back as the
+    line they spell, and the new date goes in digit over digit, so not one tab,
+    dot or «20» of the template moves and every digit keeps its own box.
+
+    Only a date that *is* the previous start or the previous end is written
+    over. That is what keeps «Дата заключения договора 28.06.2024 г.» — the
+    same date, a different field — out of it, and it is what makes each write
+    all eight digits or none: a date the program cannot read whole cannot be
+    matched either, so it is reported instead of half-changed.
+    """
+    lines = list(_strips(doc))
+    previous = _previous_cover(lines)
+    swap = dict(zip(previous, (start, end), strict=True)) if previous else {}
+    for pieces in lines:
+        text, where, fresh = _strip_text(pieces)
+        for lo, hi, value in _cover_on(text, fresh):
+            # one character for one, or the digits stop landing in their boxes
+            if (new := swap.get(value)) is not None and len(new) == hi - lo:
+                _put(pieces, where, lo, hi, new)
                 report.filled["term"] = f"{start} — {end}"
-            del wanted[:len(found)]
-        break
+
+    if not any(_names_the_term(pieces) for pieces in lines):
+        return                      # this form does not ask for a срок at all
+    left = any(value in swap for pieces in lines
+               for _lo, _hi, value in _cover_dates(pieces))
+    # a hole no boxes could fill: the day and the month are simply not on the
+    # line, and the four digits that belong in them were not to be found
+    hollow = any(_HOLLOW.search(_strip_text(pieces)[0]) and _spliced(pieces) is None
+                 for pieces in lines)
+    if previous is None or left or hollow:
+        report.skipped.append(
+            "Срок страхования — бланкада катак-катак ёзилган, қўлда тўлдиринг")
+
+
+def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
+    """Write the policy's own dates wherever the form prints them."""
+    _cover(doc, start=start, end=end, report=report)
 
     for paragraph in _all_paragraphs(doc):
         runs = runs_of(paragraph)
         text = text_of(runs)
-        if not text.strip():
+        if not text.strip() or not _SIGNED_ON.search(text):
             continue
-        if _SIGNED_ON.search(text):
-            # only the date; «Дата заключения договора» and everything else on
-            # the line belongs to the insurer's own wording
-            edits = []
-            m = _LONG_DATE.search(text)
-            if m:
-                edits.append((m.start(), m.end(), _long(signed)))
-            m = _DMY.search(text)
-            if m:
-                edits.append((m.start(), m.end(), signed))
-            for lo, hi, value in sorted(edits, reverse=True):
-                replace_span(runs, lo, hi, value)
-                report.filled["signed_on"] = signed
-            continue
-
-    if "term" in report.filled:
-        return
-    # No line carried the dates as text: this insurer prints them one digit per
-    # box. Say so rather than change three of the eight digits. Wherever the
-    # form asks for the срок — a row of boxes, a text box, anywhere — the
-    # operator has to be told; one insurer's boxes are in neither a table nor
-    # the body, and the policy came back with the previous cover's dates on it
-    # and nothing said about them.
-    if any(_TERM.search(text_of(runs_of(p))) for p in _all_paragraphs(doc)):
-        report.skipped.append(
-            "Срок страхования — бланкада катак-катак ёзилган, қўлда тўлдиринг")
+        # only the date; «Дата заключения договора» and everything else on the
+        # line belongs to the insurer's own wording
+        edits = []
+        if (m := _LONG_DATE.search(text)) is not None:
+            edits.append((m.start(), m.end(), _long(signed)))
+        if (m := _DMY.search(text)) is not None:
+            edits.append((m.start(), m.end(), signed))
+        for lo, hi, value in sorted(edits, reverse=True):
+            replace_span(runs, lo, hi, value)
+            report.filled["signed_on"] = signed
 
 
 _MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня",
