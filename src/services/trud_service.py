@@ -165,6 +165,8 @@ class TrudService:
             docx_path = _unique(folder / f"{stem}_ТРУДОВОЙ.docx")
             TrudDocxEditor().fill_trudovoy(
                 firm.trud_template_path, docx_path,
+                worker=self._docx_values(passport, patent, form_date=form_date,
+                                         profession=prof),
                 form_date=form_date, fio_upper=fio_u,
                 citizenship_upper=(passport.nationality or "").upper(),
                 sign_abbr=f"{passport.surname.upper()} {initials}",
@@ -189,26 +191,11 @@ class TrudService:
         if firm.uved_template_path.suffix.lower() == ".docx":
             from src.services.docx_editor import TrudDocxEditor, docx_to_pdf
 
-            uv = self._uved_values(passport, patent, form_date=form_date, profession=prof)
             docx_uv = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.docx")
-            TrudDocxEditor().fill_uvedomlenie(firm.uved_template_path, docx_uv, {
-                "surname": uv.get("uved.surname", ""), "name": uv.get("uved.name", ""),
-                "patronymic": uv.get("uved.patronymic", ""),
-                "birth_date": uv.get("uved.birth_date", ""),
-                "gender": uv.get("uved.gender", ""),
-                "citizenship": uv.get("uved.citizenship", ""),
-                "birth_place": uv.get("uved.birth_place", ""),
-                "pass_series": uv.get("uved.passport.series", ""),
-                "pass_number": uv.get("uved.passport.number", ""),
-                "pass_issue_date": uv.get("uved.passport.issue_date", ""),
-                "pass_issued_by": uv.get("uved.passport.issued_by", ""),
-                "pat_series": uv.get("uved.patent.series", ""),
-                "pat_number": uv.get("uved.patent.number", ""),
-                "region": uv.get("uved.patent.region", ""),
-                "blank_series": uv.get("uved.patent.blank_series", ""),
-                "blank_number": uv.get("uved.patent.blank_number", ""),
-                "profession": prof, "contract_date": uv.get("uved.contract_date", ""),
-            })
+            TrudDocxEditor().fill_uvedomlenie(
+                firm.uved_template_path, docx_uv,
+                self._docx_values(passport, patent, form_date=form_date,
+                                  profession=prof, contract=False))
             uved_path = docx_to_pdf(docx_uv) or docx_uv
         else:
             uved_path = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.pdf")
@@ -245,6 +232,46 @@ class TrudService:
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
         return TrudResult(trud_path=trud_path, uved_path=uved_path,
                           surname=passport.surname, hod_path=hod_path)
+
+    @staticmethod
+    def _docx_values(passport: Passport, patent: Patent | None, *,
+                     form_date: date, profession: str,
+                     contract: bool = True) -> dict[str, str]:
+        """What the Госуслуги labels inside a Word template should now read.
+
+        The same labels appear in both documents, so one table serves the
+        уведомление and the трудовой/ГПХ договор alike. ``address`` is the
+        worker's own home address, which the office types into Word by hand —
+        it is cleared so the previous worker's address cannot travel into the
+        next worker's contract.
+        """
+        uv = TrudService._uved_values(passport, patent,
+                                      form_date=form_date, profession=profession)
+        values = {
+            "surname": uv.get("uved.surname", ""),
+            "name": uv.get("uved.name", ""),
+            "patronymic": uv.get("uved.patronymic", ""),
+            "birth_date": uv.get("uved.birth_date", ""),
+            "gender": uv.get("uved.gender", ""),
+            "citizenship": uv.get("uved.citizenship", ""),
+            "birth_place": uv.get("uved.birth_place", ""),
+            "pass_series": uv.get("uved.passport.series", ""),
+            "pass_number": uv.get("uved.passport.number", ""),
+            "pass_issue_date": uv.get("uved.passport.issue_date", ""),
+            "pass_issued_by": uv.get("uved.passport.issued_by", ""),
+            "pat_series": uv.get("uved.patent.series", ""),
+            "pat_number": uv.get("uved.patent.number", ""),
+            "region": uv.get("uved.patent.region", ""),
+            "blank_series": uv.get("uved.patent.blank_series", ""),
+            "blank_number": uv.get("uved.patent.blank_number", ""),
+            "profession": profession,
+            "contract_date": uv.get("uved.contract_date", ""),
+            "work_address": patent_region(patent),
+        }
+        values = {k: v for k, v in values.items() if v}
+        if contract:
+            values["address"] = ""
+        return values
 
     @staticmethod
     def _trud_values(passport: Passport, patent: Patent | None, *,

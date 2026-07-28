@@ -1,10 +1,13 @@
 """Word (.docx) трудовой/уведомление templates: swap the old worker for the new.
 
 Pattern-based like the PDF trud editor — no fixed positions, so any firm's docx
-works: the «гражданин республики … именуемый» clause, contract dates, long
-Russian dates, the signature «ФАМИЛИЯ И.О.» and the уведомление's label/value
-paragraphs are found by text, old values removed, new ones written in place
-(keeping each paragraph's original formatting via its first run).
+works. The Госуслуги labels the worker's data always carries («Фамилия (рус.)»,
+«Дата рождения», «Серия … Номер … Кем выдан») are handled by
+:mod:`src.services.docx_worker`, which rewrites only the value beside each label
+and so keeps its font. What that leaves — the «гражданин республики … именуемый»
+clause, «Срок договора», the signature «ФАМИЛИЯ И.О.» — is picked up afterwards
+by the older text heuristics, which never touch a paragraph the label pass
+already handled.
 """
 
 from __future__ import annotations
@@ -14,6 +17,11 @@ from datetime import date
 from pathlib import Path
 
 from src.pdf.formatters import _date_dmy, _date_long_g
+from src.services.docx_worker import (
+    iter_paragraphs as _iter_paragraphs,
+    swap_header_date,
+    swap_worker,
+)
 
 _FIO_CLAUSE = re.compile(
     r"(гражданин(?:ка)?\s+республики\s+).+?(\s+именуем)", re.IGNORECASE | re.DOTALL
@@ -40,23 +48,6 @@ def _set_text(paragraph, text: str) -> None:
         paragraph.add_run(text)
 
 
-def _iter_paragraphs(doc):
-    yield from doc.paragraphs
-    # Merged cells repeat the same underlying element; keep hard references so
-    # id() values stay unique (a GC'd element's id can be reused otherwise).
-    seen_ids: set[int] = set()
-    keep: list = []
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                tc = cell._tc
-                if id(tc) in seen_ids:
-                    continue
-                seen_ids.add(id(tc))
-                keep.append(tc)
-                yield from cell.paragraphs
-
-
 class TrudDocxEditor:
     def fill_trudovoy(
         self,
@@ -73,14 +64,26 @@ class TrudDocxEditor:
         birth_date: date | None = None,
         passport_number: str = "",
         passport_issue: date | None = None,
+        worker: dict[str, str] | None = None,
     ) -> Path:
         import docx
 
         doc = docx.Document(str(template))
         long_date = _date_long_g(form_date)
+
+        # First the labelled values — any firm's contract writes them the same
+        # way, and this keeps each value's own font.
+        report = swap_worker(doc, worker or {})
+        header = swap_header_date(doc, long_date.removesuffix(" г."))
+        done = set(report.touched)
+        if header is not None:
+            done.add(header)
+
         srok_done = False
         bare_dates = 0  # 1st bare dd.mm.yyyy cell = start, 2nd = contract end
         for p in _iter_paragraphs(doc):
+            if id(p._p) in done:
+                continue
             text = p.text
             stripped = text.strip()
             if not stripped:
@@ -143,64 +146,20 @@ class TrudDocxEditor:
         doc.save(str(out))
         return out
 
-    def fill_uvedomlenie(self, template: Path, out: Path, values: dict[str, str]) -> Path:
+    def fill_uvedomlenie(self, template: Path, out: Path,
+                         values: dict[str, str]) -> Path:
         """``values`` keys: surname, name, patronymic, birth_date, gender,
         citizenship, birth_place, pass_series, pass_number, pass_issue_date,
         pass_issued_by, pat_series, pat_number, region, blank_series,
-        blank_number, profession, contract_date."""
+        blank_number, profession, contract_date, work_address.
+
+        The employer block above it (наименование, ОГРН, ИНН, КПП, ОКВЭД,
+        телефон) is the firm's and is never touched.
+        """
         import docx
 
         doc = docx.Document(str(template))
-        paras = [p for p in _iter_paragraphs(doc)]
-        section = "passport"
-        pending: str | None = None
-
-        def label_for(stripped: str) -> tuple[str, str] | None:
-            nonlocal section
-            if stripped.startswith("Сведения о разрешении"):
-                section = "patent"
-                return None
-            table = [
-                ("Фамилия (рус.)", "surname"), ("Имя (рус.)", "name"),
-                ("Отчество (рус.)", "patronymic"), ("Дата рождения", "birth_date"),
-                ("Пол", "gender"), ("Гражданство", "citizenship"),
-                ("Место рождения", "birth_place"),
-                ("Серия бланка", "blank_series"), ("Номер бланка", "blank_number"),
-                ("Дата выдачи", "pass_issue_date"), ("Кем выдан", "pass_issued_by"),
-                ("Регион", "region"),
-                ("Дата заключения договора", "contract_date"),
-                ("Профессия", "profession"),
-                ("Серия", "pass_series" if section == "passport" else "pat_series"),
-                ("Номер", "pass_number" if section == "passport" else "pat_number"),
-            ]
-            for label, key in table:
-                if stripped.startswith(label):
-                    return label, key
-            return None
-
-        for p in paras:
-            stripped = p.text.strip()
-            if not stripped:
-                continue
-            if pending is not None:
-                if pending in values:
-                    _set_text(p, values[pending])
-                pending = None
-                continue
-            hit = label_for(stripped)
-            if hit is None:
-                continue
-            label, key = hit
-            rest = stripped[len(label):].strip()
-            if key == "profession":
-                # two-line label; the value is the next non-empty paragraph
-                pending = key
-                continue
-            if rest:
-                if key in values:
-                    _set_text(p, f"{label} {values[key]}")
-            else:
-                pending = key
+        swap_worker(doc, values)
         out.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out))
         return out
