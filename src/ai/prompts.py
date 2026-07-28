@@ -24,7 +24,8 @@ _PASSPORT = _COMMON + (
     'ТАДЖИКИСТАН, ОШ→КИРГИЗИЯ). '
     'Keys: {"document_type":"passport","surname","name","patronymic",'
     '"nationality","birth_date","birth_place","gender","series","number","issue_date",'
-    '"expiry_date","issued_by"}'
+    '"expiry_date","issued_by","mrz_line1","mrz_line2"}\n'
+    'IMPORTANT — the two lines of the machine-readable zone at the very bottom of the passport (they are 44 characters each and full of «<»). Copy them into mrz_line1 and mrz_line2 EXACTLY as printed, character for character, keeping every «<» and changing nothing. They are checked arithmetically, so a guess is worse than an empty string — leave them empty if you cannot read them cleanly.'
 )
 
 # Patent FRONT: the worker's ФИО (in Russian on the patent — the reliable name

@@ -124,6 +124,25 @@ class GeminiProvider(IAiProvider):
             return result
         raise AiError(_friendly(last_exc)) from last_exc
 
+    def check(self) -> str:
+        """A tiny live call, for the «Tekshirish» button in Settings."""
+        api_key = self._key()
+        if not api_key:
+            raise AiAuthError("Gemini калити киритилмаган")
+        try:
+            import google.generativeai as genai  # lazy: optional dependency
+        except ImportError as exc:  # pragma: no cover - env-dependent
+            raise AiError("google-generativeai ўрнатилмаган") from exc
+        genai.configure(api_key=api_key)
+        last: Exception | None = None
+        for model_name in self._candidates()[:3]:
+            try:
+                genai.GenerativeModel(model_name).generate_content("ping")
+                return f"Gemini ишлаяпти ({model_name})"
+            except Exception as exc:  # noqa: BLE001 - try the next model
+                last = exc
+        raise AiError(_friendly(last))
+
     def _call(self, genai, model_name, image, prompt, doc_type, *, retries: int) -> AiRawResult:
         for attempt in range(retries + 1):
             try:

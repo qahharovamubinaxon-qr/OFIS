@@ -84,14 +84,26 @@ def build_container() -> Container:
     container.register_instance(TrudFirmService, TrudFirmService(trud_firm_repo))
     container.register_instance(TrudService, TrudService())
 
-    # AI / OCR — Gemini keyed from settings (or GEMINI_API_KEY env); the OCR
-    # service degrades to "use manual fill" when no key is present.
+    # AI / OCR — a chain of three, tried in this order, each keyed from settings
+    # (or its own env var). Mistral does document OCR, so it reads small print
+    # and the machine-readable zone best; Groq answers fastest; Gemini stays as
+    # the backstop the office has been using all along. A provider with no key
+    # is skipped, and the service degrades to «use manual fill» only when none
+    # of the three has one.
     from src.ai.gemini_provider import GeminiProvider
+    from src.ai.groq_provider import GroqProvider
     from src.ai.manager import AiManager
+    from src.ai.mistral_provider import MistralProvider
     from src.ocr.service import OcrService
 
-    gemini = GeminiProvider(key_getter=lambda: str(settings.get("ai.gemini_key", "") or ""))
-    ai_manager = AiManager([gemini])
+    def _key_getter(name: str):
+        return lambda: str(settings.get(f"ai.{name}_key", "") or "")
+
+    ai_manager = AiManager([
+        MistralProvider(key_getter=_key_getter("mistral")),
+        GroqProvider(key_getter=_key_getter("groq")),
+        GeminiProvider(key_getter=_key_getter("gemini")),
+    ])
     container.register_instance(AiManager, ai_manager)
     container.register_instance(OcrService, OcrService(ai_manager))
 

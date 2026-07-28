@@ -1,8 +1,10 @@
-"""Settings screen — Gemini key, theme, language, output folder.
+"""Settings screen — AI keys, theme, language, output folder.
 
-The Gemini key is stored via SettingsService (the DB); entering it makes AI mode
-available without a restart of the OCR layer on next generation build. Theme
-applies live; language change asks for a restart (view strings rebuild on start).
+Three provider keys (Mistral · Groq · Gemini) are stored via SettingsService,
+the same settings table the Gemini key has always used. Entering one takes
+effect on the next read — no restart — and «Tekshirish» proves it with a tiny
+live request. Keys are shown masked and are never logged or written to a file.
+Theme applies live; a language change asks for a restart.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -33,6 +36,32 @@ from src.config import constants, paths
 from src.config.settings_service import SettingsService
 from src.services.backup_service import BackupService
 from src.ui.widgets.card import Card
+
+#: provider key · field label · placeholder. Order = the order they are tried.
+AI_PROVIDERS: tuple[tuple[str, str, str], ...] = (
+    ("mistral", "Mistral API kalit:", "hujjat-OCR — eng aniq"),
+    ("groq", "Groq API kalit:", "gsk_… — eng tez"),
+    ("gemini", "Gemini API kalit:", "AIza… — zaxira"),
+)
+
+
+def _probe(provider: str, key: str) -> str:
+    """One tiny live request, to say whether a key actually works.
+
+    The key is passed in and used once; it is never logged and never written
+    anywhere but the settings table the operator typed it into.
+    """
+    if provider == "mistral":
+        from src.ai.mistral_provider import MistralProvider
+
+        return MistralProvider(api_key=key).check()
+    if provider == "groq":
+        from src.ai.groq_provider import GroqProvider
+
+        return GroqProvider(api_key=key).check()
+    from src.ai.gemini_provider import GeminiProvider
+
+    return GeminiProvider(api_key=key).check()
 
 
 def _right(widget: QWidget) -> QHBoxLayout:
@@ -100,21 +129,19 @@ class SettingsView(QWidget):
         # -- AI ---------------------------------------------------------
         root = self._section("🤖", "Sun'iy intellekt")
         ai = Card("🤖", "Sun'iy intellekt",
-                  "Hujjatlarni o'qish, tarjima va matn tayyorlash uchun Gemini kaliti.")
-        key_row = QHBoxLayout()
-        self._key = QLineEdit(str(self._settings.get("ai.gemini_key", "") or ""))
-        self._key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._key.setPlaceholderText("AIza…")
-        save_key = QPushButton("Saqlash")
-        save_key.setObjectName("primaryButton")
-        save_key.clicked.connect(self._save_key)
-        key_row.addWidget(QLabel("Gemini API kalit:"))
-        key_row.addWidget(self._key, stretch=1)
-        key_row.addWidget(save_key)
-        ai.add(key_row)
+                  "Hujjatlarni o'qish uchun uchta provayder. Yuqoridagisi "
+                  "birinchi ishlaydi; xato bersa yoki kaliti bo'lmasa "
+                  "keyingisiga o'tiladi.")
+        self._keys: dict[str, QLineEdit] = {}
+        self._key_states: dict[str, QLabel] = {}
+        for provider, label, hint in AI_PROVIDERS:
+            ai.add(self._key_row(provider, label, hint))
+            self._key_states[provider] = ai.note("")
+        # kept under its old name: the rest of the view already refers to it
+        self._key = self._keys["gemini"]
         self._ai_state = ai.note("")
-        ai.note("Kalit: aistudio.google.com/apikey — bepul limit tugasa "
-                "billing yoqiladi.")
+        ai.note("Kalitlar: console.mistral.ai · console.groq.com · "
+                "aistudio.google.com/apikey")
         root.addWidget(ai)
         root.addStretch(1)
 
@@ -468,9 +495,11 @@ class SettingsView(QWidget):
         """Show at a glance what is configured and what is not."""
         from src.controllers.telegram_bot import KEY_TOKEN
 
-        has_key = bool(str(self._settings.get("ai.gemini_key", "") or "").strip())
-        self._ai_state.setText("✅  Kalit kiritilgan — AI ishlaydi." if has_key
-                               else "⚠️  Kalit yo'q — AI bo'limlari ishlamaydi.")
+        ready = [provider.capitalize() for provider, _l, _h in AI_PROVIDERS
+                 if str(self._settings.get(f"ai.{provider}_key", "") or "").strip()]
+        self._ai_state.setText(
+            "✅  Zanjir: " + " → ".join(ready) if ready
+            else "⚠️  Birorta kalit yo'q — AI bo'limlari ishlamaydi.")
 
         has_token = bool(str(self._settings.get(KEY_TOKEN, "") or "").strip())
         self._tg_state.setText("✅  Token kiritilgan — bot ishga tushadi." if has_token
@@ -559,10 +588,55 @@ class SettingsView(QWidget):
         else:
             self._bk_state.setText("⚠️  Hali zaxira olinmagan.")
 
-    def _save_key(self) -> None:
-        self._settings.set("ai.gemini_key", self._key.text().strip())
+    # ------------------------------------------------------------ AI keys
+    def _key_row(self, provider: str, label: str, hint: str):
+        """One provider's key: hidden field, «Saqlash», «Tekshirish»."""
+        row = QHBoxLayout()
+        field = QLineEdit(str(self._settings.get(f"ai.{provider}_key", "") or ""))
+        field.setEchoMode(QLineEdit.EchoMode.Password)
+        field.setPlaceholderText(hint)
+        self._keys[provider] = field
+
+        save = QPushButton("Saqlash")
+        save.setObjectName("primaryButton")
+        save.clicked.connect(lambda _=False, p=provider: self._save_ai_key(p))
+        check = QPushButton("Tekshirish")
+        check.clicked.connect(lambda _=False, p=provider: self._check_ai_key(p))
+
+        row.addWidget(QLabel(label))
+        row.addWidget(field, stretch=1)
+        row.addWidget(save)
+        row.addWidget(check)
+        return row
+
+    def _save_ai_key(self, provider: str) -> None:
+        """Stored exactly like the Gemini key always was — same settings table."""
+        self._settings.set(f"ai.{provider}_key", self._keys[provider].text().strip())
         self._refresh_states()
-        QMessageBox.information(self, "OK", "Gemini kaliti saqlandi. Keyingi PDF'da ishlaydi.")
+        QMessageBox.information(self, "OK", f"{provider.capitalize()} kaliti saqlandi.")
+
+    def _check_ai_key(self, provider: str) -> None:
+        """Send a tiny live request and say plainly whether it worked."""
+        key = self._keys[provider].text().strip()
+        state = self._key_states[provider]
+        if not key:
+            state.setText("⚠️  Kalit kiritilmagan.")
+            return
+        state.setText("⏳  Tekshirilyapti…")
+        QApplication.processEvents()
+        try:
+            message = _probe(provider, key)
+        except OfisError as exc:
+            state.setText("❌  " + exc.message)
+            return
+        except Exception as exc:  # noqa: BLE001 - surface whatever went wrong
+            state.setText("❌  " + str(exc)[:160])
+            return
+        state.setText("✅  " + message)
+
+    def _save_key(self) -> None:
+        """Kept for callers that still know only about the Gemini field."""
+        self._save_ai_key("gemini")
 
     def _save_theme(self, theme: str) -> None:
         self._settings.set("theme", theme)
