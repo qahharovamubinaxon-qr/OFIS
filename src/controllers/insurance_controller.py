@@ -62,14 +62,24 @@ class InsuranceController:
         licences: list[bytes],
         *,
         start: date,
-        unlimited: bool,
+        unlimited: bool | None = None,
         policy_holder: str = "",
     ) -> InsuranceResult:
+        """``unlimited=None`` lets the upload decide, which is the normal case.
+
+        No licence photographs means the policy covers anyone; one to four
+        means it names them. Asking the operator to say so as well only made it
+        possible to answer one way and upload the other — which is exactly what
+        stopped RUN.
+        """
         sts = self._ocr.read_sts(sts_front, sts_back)
         drivers: list[DriverLicence] = [
             self._ocr.read_licence(image) for image in licences if image]
+        named = [d for d in drivers if not d.is_empty()]
+        if unlimited is None:
+            unlimited = not named
         return self._insurance.generate(
-            sts, drivers, template, start=start, unlimited=unlimited,
+            sts, named, template, start=start, unlimited=unlimited,
             policy_holder=policy_holder)
 
     def generate(self, template: InsuranceTemplate, sts: Sts,

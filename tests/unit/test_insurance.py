@@ -299,3 +299,113 @@ def test_a_plate_typed_in_either_alphabet_is_recognised() -> None:
             assert pattern.search("X526AY550")      # latin look-alikes
             assert pattern.search("Т566ВЕ40")       # cyrillic
             assert not pattern.search("ЯЯ123ЯЯ")
+
+
+# ------------------------------------------------ what the upload decides
+
+
+class _Reader:
+    """Stands in for the OCR chain: an СТС photo and licence photos."""
+
+    def __init__(self) -> None:
+        self.licences = 0
+
+    def available(self) -> bool:
+        return True
+
+    def read_sts(self, front, back=None):
+        return STS
+
+    def read_licence(self, image):
+        self.licences += 1
+        return DriverLicence(surname=f"ВОДИТЕЛЬ{self.licences}", name="ИМЯ",
+                             series="AF", number=f"111111{self.licences}")
+
+
+def _controller(tmp_path):
+    from src.controllers.insurance_controller import InsuranceController
+    from src.database.connection import Database
+    from src.database.repositories.insurance_template_repo import (
+        InsuranceTemplateRepository,
+    )
+
+    db = Database(tmp_path / "o.db")
+    db.migrate()
+    templates = InsuranceTemplateService(InsuranceTemplateRepository(db))
+    templates.seed_bundled()
+    return InsuranceController(templates, _Reader(), InsuranceService()), templates
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_only_the_car_means_the_policy_covers_anyone(code, tmp_path) -> None:
+    """No licence photograph — «неограниченного количества лиц» is ticked."""
+    controller, templates = _controller(tmp_path)
+    template = next(t for t in templates.list() if t.internal_code == code)
+
+    result = controller.generate_from_images(
+        template, b"front", b"back", [], start=date(2026, 7, 10))
+
+    assert result.drivers == 0
+    body = _read(result.docx_path)
+    assert _ticked(body, unlimited=True), (code, body[:400])
+
+
+@pytest.mark.parametrize("count", [1, 2, 4])
+def test_a_licence_photograph_names_the_drivers_instead(count, tmp_path) -> None:
+    """The upload decides — the operator is not asked to say it twice."""
+    controller, templates = _controller(tmp_path)
+    template = next(t for t in templates.list()
+                    if t.internal_code == "ingosstrah")
+
+    result = controller.generate_from_images(
+        template, b"front", b"back", [b"p"] * count, start=date(2026, 7, 10))
+
+    assert result.drivers == count
+    body = _read(result.docx_path)
+    assert _ticked(body, unlimited=False)
+    assert not _ticked(body, unlimited=True)
+    for i in range(1, count + 1):
+        assert f"ВОДИТЕЛЬ{i}" in body
+
+
+def test_uploading_only_the_car_no_longer_refuses_to_run(tmp_path) -> None:
+    """This is what stopped RUN: the form said «named», the upload said none."""
+    controller, templates = _controller(tmp_path)
+    template = templates.list()[0]
+    result = controller.generate_from_images(
+        template, b"front", b"back", [], start=date(2026, 7, 10))
+    assert result.docx_path.exists()
+
+
+_MARK = __import__("re").compile(r"\s*(\[[XХxх]\]|[XХxх✔✓])")
+
+
+def _ticked(body: str, unlimited: bool) -> bool:
+    """Is the mark right after that option — the box the form actually offers?
+
+    The two options overlap in wording («неограниченного количества **лиц,
+    допущенных к управлению**»), so the option is located the same way the
+    program locates it rather than by a naive search.
+    """
+    pattern = (insurance_docx._UNLIMITED if unlimited
+               else insurance_docx._LIMITED)
+    for line in body.split("\n"):
+        for match in pattern.finditer(line):
+            if _MARK.match(line[match.end():match.end() + 6]):
+                return True
+    return False
+
+
+# ---------------------------------------------------------------- the screen
+
+
+def test_the_screen_reads_the_drop_zones_the_way_they_are_declared() -> None:
+    """DropZone.path is a property; calling it crashed RUN before it began."""
+    import inspect
+
+    from src.ui.views import insurance_view, template_view
+    from src.ui.widgets.drop_zone import DropZone
+
+    assert isinstance(DropZone.path, property)
+    for module in (insurance_view, template_view):
+        assert ".path()" not in inspect.getsource(module), module.__name__

@@ -215,7 +215,7 @@ class TemplateView(QWidget):
         if self._study is None or self._template is None:
             self._status.setText("⚠️ Аввал шаблонни таҳлил қилинг.")
             return
-        if self._dz_passport.path() is None:
+        if self._dz_passport.path is None:
             self._status.setText("⚠️ Паспорт расмини юкланг.")
             return
         if not self._c.ai_available():
@@ -228,9 +228,9 @@ class TemplateView(QWidget):
         self._run.setEnabled(False)
         self._progress.start("Ҳужжатлар ўқиляпти…")
         run_async(self._c.fill_from_images, self._study, self._template, out,
-                  self._c.read_image(self._dz_passport.path()),
-                  self._c.read_image(self._dz_patent.path())
-                  if self._dz_patent.path() else None,
+                  self._c.read_image(self._dz_passport.path),
+                  self._c.read_image(self._dz_patent.path)
+                  if self._dz_patent.path else None,
                   form_date=date(q.year(), q.month(), q.day()),
                   profession=self._profession.text().strip(),
                   on_success=self._filled, on_error=self._failed)

@@ -70,9 +70,13 @@ _NOTE = re.compile(r"^\s*\(?\s*(?:полное наименование|фами
 
 #: «неограниченного количества лиц…» / «лиц, допущенных…» — the one choice the
 #: operator makes that changes what the policy means.
-_UNLIMITED = re.compile(r"неограниченн\w*\s+количеств\w*\s+лиц", re.IGNORECASE)
-_LIMITED = re.compile(r"(?<!количества\s)(?<!\w)лиц,\s*допущенн\w+\s+к\s+управлению",
-                      re.IGNORECASE)
+#: The mark goes after the WHOLE option, not after the first few words of it —
+#: putting it after «…к управлению» landed it in the middle of the sentence and
+#: left the real box untouched.
+_OPTION_TAIL = r"лиц,?\s*допущенн\w+\s+к\s+управлению\s+транспортным\s+средством\s*\d*"
+_UNLIMITED = re.compile(r"неограниченн\w*\s+количеств\w*\s+" + _OPTION_TAIL,
+                        re.IGNORECASE)
+_LIMITED = re.compile(r"(?<!количества\s)(?<!\w)" + _OPTION_TAIL, re.IGNORECASE)
 _TICKS = ("X", "Х", "[X]", "[Х]", "[x]", "[х]", "V", "✔", "✓")
 _EMPTY_TICK = ("[ ]", "[]", "□", "")
 

@@ -1,9 +1,13 @@
 """СТРАХОВКА МАШИНАГА — ОСАГО for the workers who drive the firm's cars.
 
-Pick the insurer's template, drop in six photographs (the СТС front and back and
-up to four driving licences), set the day cover starts — the end date follows by
-itself, one year to the day before — choose whether the policy names its drivers
-or covers anyone, and RUN.
+Pick the insurer's template, drop in the photographs and set the day cover
+starts — the end date follows by itself, one year to the day before.
+
+Who the policy covers is not a question the operator answers: it follows from
+what they uploaded. The СТС alone means «неограниченного количества лиц»; add
+one to four driving licences and the policy names those drivers instead. Asking
+for the answer as well only made it possible to say one thing and upload
+another, which is what used to stop RUN before it started.
 """
 
 from __future__ import annotations
@@ -26,7 +30,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -142,20 +145,16 @@ class InsuranceView(QWidget):
         dates.addWidget(self._holder)
         root.addLayout(dates)
 
+        # «Договор заключен в отношении» is not a question the operator has to
+        # answer: it follows from what they uploaded. No licences means the
+        # policy covers anyone; one to four means it names them.
         choice = QFrame()
         choice_box = QVBoxLayout(choice)
         choice_box.setContentsMargins(0, 0, 0, 0)
         choice_box.addWidget(QLabel("Договор заключен в отношении:"))
-        self._unlimited = QRadioButton(
-            "неограниченного количества лиц, допущенных к управлению "
-            "транспортным средством")
-        self._limited = QRadioButton(
-            "лиц, допущенных к управлению транспортным средством "
-            "(рўйхатдаги ҳайдовчилар)")
-        self._limited.setChecked(True)
-        self._unlimited.toggled.connect(self._coverage_changed)
-        choice_box.addWidget(self._unlimited)
-        choice_box.addWidget(self._limited)
+        self._coverage = QLabel()
+        self._coverage.setWordWrap(True)
+        choice_box.addWidget(self._coverage)
         root.addWidget(choice)
 
         grid = QGridLayout()
@@ -168,6 +167,7 @@ class InsuranceView(QWidget):
                           for i in range(MAX_DRIVERS)]
         for i, zone in enumerate(self._licences):
             grid.addWidget(zone, 1 + i // 2, i % 2)
+            zone.changed.connect(self._coverage_changed)
         root.addLayout(grid)
 
         self._run = QPushButton("RUN — полисни тўлдириш")
@@ -184,6 +184,7 @@ class InsuranceView(QWidget):
 
         self.refresh()
         self._retitle_end()
+        self._coverage_changed()
 
     # ------------------------------------------------------------------
     def refresh(self) -> None:
@@ -204,9 +205,11 @@ class InsuranceView(QWidget):
         if not self._templates:
             return "Шаблон йўқ — «+ Yangi shablon» орқали Word полисни юкланг."
         if self._c.ai_available():
-            return ("СТС олд/орқа ва праваларни юкланг, сўнг RUN. "
+            return ("СТС олд/орқа юкланг — фақат шуниси бўлса полис "
+                    "«без ограничения» бўлади. Права ҳам юкласангиз (1—4 та) "
+                    "«лиц, допущенных к управлению» белгиланади. "
                     "Полис серия/номерини страховая компания беради.")
-        return "AI калити йўқ — Созламаларга Gemini калитини киритинг."
+        return "AI калити йўқ — Созламаларга AI калитини киритинг."
 
     def _selected(self):
         idx = self._template.currentIndex()
@@ -221,10 +224,20 @@ class InsuranceView(QWidget):
         end = self._c.cover_until(self._start_date())
         self._end.setText(end.strftime("%d.%m.%Y"))
 
+    def _uploaded_licences(self) -> list:
+        return [z.path for z in self._licences if z.path is not None]
+
     def _coverage_changed(self) -> None:
-        named = not self._unlimited.isChecked()
-        for zone in self._licences:
-            zone.setEnabled(named)
+        """Say which line will be ticked, and why, before RUN is pressed."""
+        count = len(self._uploaded_licences())
+        if count:
+            self._coverage.setText(
+                f"✅ лиц, допущенных к управлению транспортным средством "
+                f"— {count} та права юкланди")
+        else:
+            self._coverage.setText(
+                "✅ неограниченного количества лиц, допущенных к управлению "
+                "транспортным средством — права юкланмади")
 
     # ------------------------------------------------------------ templates
     def _add_template(self) -> None:
@@ -262,15 +275,10 @@ class InsuranceView(QWidget):
         if template is None:
             self._warn("Аввал шаблон танланг.")
             return
-        if self._sts_front.path() is None:
+        if self._sts_front.path is None:
             self._warn("СТС нинг олд томонини юкланг.")
             return
-        unlimited = self._unlimited.isChecked()
-        licences = [z.path() for z in self._licences if z.path() is not None]
-        if not unlimited and not licences:
-            self._warn("Камида битта права юкланг, ёки «неограниченного "
-                       "количества лиц» ни танланг.")
-            return
+        licences = self._uploaded_licences()
         if not self._c.ai_available():
             self._warn("AI калити йўқ — Созламаларга Gemini калитини киритинг.")
             return
@@ -279,10 +287,10 @@ class InsuranceView(QWidget):
         self._progress.start("Расмлар ўқиляпти…")
         run_async(
             self._c.generate_from_images, template,
-            self._c.read_image(self._sts_front.path()),
-            self._c.read_image(self._sts_back.path()) if self._sts_back.path() else None,
+            self._c.read_image(self._sts_front.path),
+            self._c.read_image(self._sts_back.path) if self._sts_back.path else None,
             [self._c.read_image(p) for p in licences],
-            start=self._start_date(), unlimited=unlimited,
+            start=self._start_date(),          # the upload decides the coverage
             policy_holder=self._holder.text(),
             on_success=self._done, on_error=self._failed)
 
