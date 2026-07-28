@@ -238,7 +238,12 @@ class ProcessView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()  # ready for the next worker
-        self._status.setText(f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
+        note = f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})"
+        if result.mrz_warning:
+            # the passport read but did not prove itself — say so rather than
+            # let a possibly-wrong number go out on a document
+            note += "\n⚠️ " + result.mrz_warning
+        self._status.setText(note)
         from src.ui.widgets.save_to import ask_save_dir
 
         ask_save_dir(self, [result.pdf_path])

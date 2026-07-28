@@ -15,6 +15,7 @@ from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
 from src.domain.vehicle import DriverLicence, Sts
+from src.ocr import mrz_reader
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic, translate_issuer
 
@@ -44,6 +45,24 @@ def _parse_date(value: str) -> date | None:
     return None
 
 
+def _passport_from(f: dict[str, str]) -> Passport:
+    """What the vision model said, before the MRZ gets a chance to correct it."""
+    return Passport(
+        surname=to_cyrillic(f.get("surname", "")),
+        name=to_cyrillic(f.get("name", "")),
+        patronymic=to_cyrillic(f.get("patronymic", "")) or None,
+        nationality=to_cyrillic(f.get("nationality", "")) or None,
+        gender=_parse_gender(f.get("gender", "")),
+        series=f.get("series") or None,  # series/number stay as printed
+        number=f.get("number", ""),
+        birth_date=_parse_date(f.get("birth_date", "")),
+        birth_place=to_cyrillic(f.get("birth_place", "")) or None,
+        issue_date=_parse_date(f.get("issue_date", "")),
+        expiry_date=_parse_date(f.get("expiry_date", "")),
+        issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
+    )
+
+
 class OcrService:
     def __init__(self, ai: AiManager) -> None:
         self._ai = ai
@@ -59,21 +78,42 @@ class OcrService:
 
     def read_passport(self, image: bytes) -> Passport:
         image = prepare_image(image)
-        f = self._ai.extract(image, DocType.PASSPORT, prompt_for(DocType.PASSPORT)).fields
-        return Passport(
-            surname=to_cyrillic(f.get("surname", "")),
-            name=to_cyrillic(f.get("name", "")),
-            patronymic=to_cyrillic(f.get("patronymic", "")) or None,
-            nationality=to_cyrillic(f.get("nationality", "")) or None,
-            gender=_parse_gender(f.get("gender", "")),
-            series=f.get("series") or None,  # series/number stay as printed
-            number=f.get("number", ""),
-            birth_date=_parse_date(f.get("birth_date", "")),
-            birth_place=to_cyrillic(f.get("birth_place", "")) or None,
-            issue_date=_parse_date(f.get("issue_date", "")),
-            expiry_date=_parse_date(f.get("expiry_date", "")),
-            issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
-        )
+        answer = self._ai.extract(image, DocType.PASSPORT, prompt_for(DocType.PASSPORT))
+        return self._with_mrz(_passport_from(answer.fields), answer)
+
+    @staticmethod
+    def _with_mrz(passport: Passport, answer) -> Passport:
+        """Let the machine-readable zone correct the reading, when it proves itself.
+
+        The zone's check digits are arithmetic: a misread character almost never
+        adds up. So when they do add up its values win over the model's, and
+        when they do not, nothing is changed and the passport carries a warning
+        the operator can see — a quietly wrong passport number is far worse.
+        """
+        mrz = mrz_reader.read(answer.text,
+                              line1=answer.fields.get("mrz_line1", ""),
+                              line2=answer.fields.get("mrz_line2", ""))
+        if not mrz.found:
+            return passport
+        if not mrz.valid:
+            log.info("MRZ found but unverified: %s", "; ".join(mrz.problems))
+            return passport.model_copy(update={
+                "mrz_warning": "MRZ назорат рақами мос келмади ("
+                               + ", ".join(mrz.problems) + ") — текшириб чиқинг"})
+
+        update: dict[str, object] = {"mrz_checked": True}
+        for key in ("surname", "name", "patronymic", "series", "number",
+                    "nationality"):
+            if mrz.fields.get(key):
+                update[key] = mrz.fields[key]
+        if mrz.fields.get("gender"):
+            update["gender"] = _parse_gender(mrz.fields["gender"])
+        for key in ("birth_date", "expiry_date"):
+            parsed = _parse_date(mrz.fields.get(key, ""))
+            if parsed:
+                update[key] = parsed
+        log.info("Passport verified by MRZ (%s)", mrz.fields.get("number", ""))
+        return passport.model_copy(update=update)
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
         """Read the patent. The FRONT gives серия/номер/профессия; the BACK (if

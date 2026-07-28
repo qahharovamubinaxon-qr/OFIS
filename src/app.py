@@ -9,6 +9,7 @@ isolation (ARCHITECTURE.md §9).
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from src.common.di import Container
 from src.common.errors import OfisError
@@ -39,8 +40,26 @@ from src.services.trud_service import TrudFirmService, TrudService
 log = get_logger(__name__)
 
 
+def _load_env() -> None:
+    """Read a .env beside the program, so API keys need not live in Settings.
+
+    Settings still win: each provider asks its live getter first. This is only
+    for a machine that would rather keep its keys in a file it controls.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover - optional
+        return
+    for candidate in (Path.cwd() / ".env", paths.app_root() / ".env"):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+            log.info("Loaded environment from %s", candidate)
+            return
+
+
 def build_container() -> Container:
     """Wire the object graph. Pure of Qt so it can be exercised in unit tests."""
+    _load_env()
     container = Container()
 
     db = Database(paths.database_path())
