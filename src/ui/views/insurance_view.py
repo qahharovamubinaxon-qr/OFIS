@@ -45,6 +45,22 @@ from src.ui.widgets.run_progress import RunProgress
 log = get_logger(__name__)
 
 
+def _open_folder(folder: Path) -> None:
+    """Show the operator the finished file where it actually is."""
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(folder)])  # noqa: S603,S607
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])  # noqa: S603,S607
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])  # noqa: S603,S607
+    except OSError as exc:  # noqa: BLE001 - not being able to open is not fatal
+        log.warning("Could not open %s: %s", folder, exc)
+
+
 class AddInsuranceTemplateDialog(QDialog):
     """Register another insurer's Word policy — the same way Трудовой does."""
 
@@ -297,12 +313,32 @@ class InsuranceView(QWidget):
     def _done(self, result: InsuranceResult) -> None:
         self._run.setEnabled(True)
         self._progress.finish()
-        lines = [f"✅ {result.plate or 'Полис'} тайёр — {result.drivers} та ҳайдовчи.",
-                 f"📄 {result.docx_path.name}"]
-        if result.pdf_path is not None:
-            lines.append(f"📄 {result.pdf_path.name}")
+        for zone in (self._sts_front, self._sts_back, *self._licences):
+            zone.clear()
+        self._coverage_changed()
+
+        # Ask where to put it, the way every other section does — and say
+        # where it went. A file the operator cannot find is not finished.
+        from src.ui.widgets.save_to import ask_save_dir
+
+        files = [f for f in (result.docx_path, result.pdf_path) if f]
+        saved_to = ask_save_dir(self, files)
+
+        lines = [f"✅ {result.plate or 'Полис'} тайёр — {result.drivers} та ҳайдовчи."]
+        lines += [f"📄 {f.name}" for f in files]
+        lines.append(f"📁 Сақланди: {saved_to}" if saved_to
+                     else f"📁 Программа папкасида: {result.docx_path.parent}")
         lines += [f"ℹ️ {note}" for note in result.notes]
         self._status.setText("\n".join(lines))
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Тайёр")
+        box.setText("\n".join(lines[:len(files) + 2]))
+        open_folder = box.addButton("Папкани очиш", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Ёпиш", QMessageBox.ButtonRole.AcceptRole)
+        box.exec()
+        if box.clickedButton() is open_folder:
+            _open_folder(saved_to or result.docx_path.parent)
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)

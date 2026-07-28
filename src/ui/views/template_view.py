@@ -238,9 +238,15 @@ class TemplateView(QWidget):
     def _filled(self, result) -> None:
         self._run.setEnabled(True)
         self._progress.finish()
-        lines = [f"✅ Тайёр: {result.path.name} — {len(result.written)} та қиймат."]
+        from src.ui.widgets.save_to import ask_save_dir
+
+        saved_to = ask_save_dir(self, [result.path])
+        lines = [f"✅ Тайёр: {result.path.name} — {len(result.written)} та қиймат.",
+                 f"📁 Сақланди: {saved_to}" if saved_to
+                 else f"📁 Программа папкасида: {result.path.parent}"]
         lines += [f"⚠️ {problem}" for problem in result.problems]
         self._status.setText("\n".join(lines))
+        QMessageBox.information(self, "Тайёр", "\n".join(lines[:2]))
 
     def _failed(self, error: Exception) -> None:
         self._analyse.setEnabled(True)

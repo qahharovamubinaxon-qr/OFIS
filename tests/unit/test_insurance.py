@@ -409,3 +409,63 @@ def test_the_screen_reads_the_drop_zones_the_way_they_are_declared() -> None:
     assert isinstance(DropZone.path, property)
     for module in (insurance_view, template_view):
         assert ".path()" not in inspect.getsource(module), module.__name__
+
+
+# ------------------------------------------------------- where it was saved
+
+
+def _view(tmp_path, monkeypatch, *, chosen: Path | None):
+    """The insurance screen, with the two dialogs answered for us."""
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from src.ui.views import insurance_view
+
+    QApplication.instance() or QApplication([])
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        staticmethod(lambda *a, **k: str(chosen) if chosen else ""))
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: 0)
+    controller, templates = _controller(tmp_path)
+    return insurance_view.InsuranceView(controller), controller, templates
+
+
+def test_a_finished_policy_asks_where_to_save_it(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    desktop = tmp_path / "Ish stoli"
+    desktop.mkdir()
+    view, controller, templates = _view(tmp_path, monkeypatch, chosen=desktop)
+
+    result = controller.generate_from_images(
+        templates.list()[0], b"front", b"back", [], start=date(2026, 7, 10))
+    view._done(result)
+
+    assert [p.name for p in desktop.iterdir()] == [result.docx_path.name]
+    assert str(desktop) in view._status.text()
+
+
+def test_declining_still_says_where_the_file_is(tmp_path, monkeypatch) -> None:
+    """A file the operator cannot find is not a finished job."""
+    pytest.importorskip("PySide6")
+    view, controller, templates = _view(tmp_path, monkeypatch, chosen=None)
+
+    result = controller.generate_from_images(
+        templates.list()[0], b"front", b"back", [], start=date(2026, 7, 10))
+    view._done(result)
+
+    assert str(result.docx_path.parent) in view._status.text()
+    assert result.docx_path.exists()
+
+
+def test_the_drop_zones_are_cleared_for_the_next_car(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    view, controller, templates = _view(tmp_path, monkeypatch, chosen=None)
+    view._sts_front._set_path(tmp_path / "a.jpg")
+    view._licences[0]._set_path(tmp_path / "b.jpg")
+
+    result = controller.generate_from_images(
+        templates.list()[0], b"front", b"back", [b"p"], start=date(2026, 7, 10))
+    view._done(result)
+
+    assert view._sts_front.path is None
+    assert view._uploaded_licences() == []
+    assert "неограниченного" in view._coverage.text(), \
+        "with the zones cleared the next car starts from «covers anyone»"
