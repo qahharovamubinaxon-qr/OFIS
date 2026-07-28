@@ -63,6 +63,8 @@ _NAV = [
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
     ("ҲУЖЖАТ", "nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
+    (None, "nav.template", "ЎЗ ШАБЛОНИМ",
+     "Ўз PDF/Word шаблонингизни программа ўзи тушунади", "🧩"),
     (None, "nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
     (None, "nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
     (None, "nav.summa", "СУММА-ДАТА", "Сумма ва санани пропись қилиш", "🔢"),
@@ -204,6 +206,17 @@ class MainWindow(QMainWindow):
                     self._container.resolve(InsuranceTemplateRepository)),
                 self._container.resolve(OcrService),
                 InsuranceService(self._settings),
+            ))
+        if key == "nav.template":
+            from src.controllers.template_controller import TemplateController
+            from src.database.repositories.template_profile_repo import (
+                TemplateProfileRepository,
+            )
+            from src.ui.views.template_view import TemplateView
+
+            return TemplateView(TemplateController(
+                self._container.resolve(TemplateProfileRepository),
+                self._container.resolve(OcrService),
             ))
         if key == "nav.dms":
             from src.controllers.dms_controller import DmsController

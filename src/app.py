@@ -25,6 +25,7 @@ from src.database.repositories.insurance_template_repo import (
 from src.database.repositories.profession_repo import ProfessionRepository
 from src.database.repositories.registration_address_repo import RegistrationAddressRepository
 from src.database.repositories.settings_repo import SettingsRepository
+from src.database.repositories.template_profile_repo import TemplateProfileRepository
 from src.database.repositories.trud_firm_repo import TrudFirmRepository
 from src.domain.company import Company
 from src.domain.enums import EmployerType
@@ -85,6 +86,9 @@ def build_container() -> Container:
 
     container.register_instance(InsuranceTemplateRepository,
                                InsuranceTemplateRepository(db))
+
+    container.register_instance(TemplateProfileRepository,
+                               TemplateProfileRepository(db))
 
     reg_addr_repo = RegistrationAddressRepository(db)
     container.register_instance(RegistrationAddressRepository, reg_addr_repo)
