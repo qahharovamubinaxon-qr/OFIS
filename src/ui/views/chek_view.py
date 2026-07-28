@@ -1,0 +1,246 @@
+"""ЧЕК screen — премия чеки: патент расми + число/соат + сумма → PDF.
+
+Flow: drop the patent → AI fills Фамилия/Исм/Отчество/ИНН (all four stay
+editable — the operator reviews before generating), pick date + h:m:s, type
+the amount and the card's last 4 digits, choose a template, RUN. The PDF is
+offered for saving with the Desktop as the default folder, named
+"Документ-YYYY-MM-DD-HH-MM-SS.pdf" from the ENTERED date and time.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+from PySide6.QtCore import QDate, QTime
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTimeEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.common.errors import OfisError
+from src.common.threading import run_async
+from src.controllers.chek_controller import ChekController
+from src.ui.widgets.drop_zone import DropZone
+from src.ui.widgets.run_progress import RunProgress
+
+
+def _desktop() -> Path:
+    for cand in (Path.home() / "Desktop", Path.home() / "OneDrive" / "Desktop"):
+        if cand.exists():
+            return cand
+    return Path.home()
+
+
+class ChekView(QWidget):
+    def __init__(self, controller: ChekController) -> None:
+        super().__init__()
+        self._c = controller
+        self._last_pdf: Path | None = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(28, 24, 28, 24)
+        root.setSpacing(12)
+
+        title = QLabel("ЧЕК — премия чеки")
+        title.setObjectName("viewTitle")
+        root.addWidget(title)
+
+        self._dz = DropZone("🧾", "Ишчининг ПАТЕНТИ расми")
+        self._dz.changed.connect(self._on_drop)
+        root.addWidget(self._dz, stretch=1)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        self._fam = self._line(grid, 0, 0, "Фамилия:")
+        self._ism = self._line(grid, 0, 2, "Исм:")
+        self._otch = self._line(grid, 1, 0, "Отчество:")
+        self._inn = self._line(grid, 1, 2, "ИНН (патентдан):")
+        self._inn.setMaxLength(12)
+        root.addLayout(grid)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Число:"))
+        self._date = QDateEdit()
+        self._date.setDisplayFormat("dd.MM.yyyy")
+        self._date.setDate(QDate.currentDate())
+        self._date.setCalendarPopup(True)
+        row.addWidget(self._date)
+        row.addWidget(QLabel("Соат:"))
+        self._time = QTimeEdit()
+        self._time.setDisplayFormat("HH:mm:ss")
+        self._time.setTime(QTime.currentTime())
+        row.addWidget(self._time)
+        row.addWidget(QLabel("Сумма (₽):"))
+        self._summa = QLineEdit()
+        self._summa.setPlaceholderText("15000,50")
+        self._summa.setFixedWidth(120)
+        row.addWidget(self._summa)
+        row.addWidget(QLabel("Карта охирги 4:"))
+        self._card4 = QLineEdit()
+        self._card4.setMaxLength(4)
+        self._card4.setFixedWidth(70)
+        row.addWidget(self._card4)
+        row.addStretch(1)
+        root.addLayout(row)
+
+        trow = QHBoxLayout()
+        trow.addWidget(QLabel("Шаблон:"))
+        self._tpl = QComboBox()
+        self._reload_templates()
+        trow.addWidget(self._tpl, stretch=1)
+        add_btn = QPushButton("➕ Шаблон қўшиш")
+        add_btn.clicked.connect(self._add_template)
+        trow.addWidget(add_btn)
+        trow.addStretch(1)
+        root.addLayout(trow)
+
+        actions = QHBoxLayout()
+        self._run = QPushButton("▶  RUN (ЧЕК PDF)")
+        self._run.setObjectName("runButton")
+        self._run.clicked.connect(self._generate)
+        actions.addWidget(self._run)
+        self._open = QPushButton("📂 Папкани очиш")
+        self._open.setEnabled(False)
+        self._open.clicked.connect(self._open_folder)
+        actions.addWidget(self._open)
+        actions.addStretch(1)
+        root.addLayout(actions)
+
+        self._progress = RunProgress()
+        root.addWidget(self._progress)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        root.addWidget(line)
+
+        self._status = QLabel(
+            "Патент расмини ташланг — Ф.И.О. ва ИНН ўзи ўқилади (текшириб "
+            "тўғрилаш мумкин). Число, соат, сумма ва карта рақамининг охирги "
+            "4 тасини киритиб RUN босинг — PDF Рабочий столга сақланади.")
+        self._status.setWordWrap(True)
+        self._status.setStyleSheet("color:#8a94a3;")
+        root.addWidget(self._status)
+
+    @staticmethod
+    def _line(grid: QGridLayout, r: int, c: int, label: str) -> QLineEdit:
+        grid.addWidget(QLabel(label), r, c)
+        edit = QLineEdit()
+        grid.addWidget(edit, r, c + 1)
+        return edit
+
+    # ── patent OCR ───────────────────────────────────────────────────
+    def _on_drop(self) -> None:
+        if self._dz.path is None:
+            return
+        if not self._c.ai_available():
+            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+            return
+        data = Path(self._dz.path).read_bytes()
+        self._status.setText("⏳ Патент ўқилаяпти…")
+        self._progress.start("Патентдан Ф.И.О. ва ИНН ўқилаяпти…")
+        run_async(self._c.read_patent_fields, data,
+                  on_success=self._filled, on_error=self._failed)
+
+    def _filled(self, f: dict[str, str]) -> None:
+        self._progress.finish()
+        self._fam.setText(f["fam"])
+        self._ism.setText(f["ism"])
+        self._otch.setText(f["otch"])
+        self._inn.setText(f["inn"])
+        missing = [n for n, v in (("Фамилия", f["fam"]), ("Исм", f["ism"]),
+                                  ("ИНН", f["inn"])) if not v]
+        self._status.setText(
+            "✅ Патент ўқилди — маълумотларни текшириб RUN босинг."
+            + (f"  ⚠️ Ўқилмади: {', '.join(missing)} — қўлда киритинг." if missing else ""))
+
+    # ── generate ─────────────────────────────────────────────────────
+    def _generate(self) -> None:
+        fam, ism = self._fam.text().strip(), self._ism.text().strip()
+        otch, inn = self._otch.text().strip(), self._inn.text().strip()
+        card4 = "".join(c for c in self._card4.text() if c.isdigit())
+        if not fam or not ism:
+            self._warn("Фамилия ва Исм бўш бўлмасин (патентни ўқитинг ёки қўлда ёзинг).")
+            return
+        if len("".join(c for c in inn if c.isdigit())) != 12:
+            self._warn("ИНН 12 та рақам бўлиши керак.")
+            return
+        if len(card4) != 4:
+            self._warn("Карта рақамининг охирги 4 та рақамини киритинг.")
+            return
+        try:
+            rub, kop = self._c.parse_amount(self._summa.text())
+        except ValueError:
+            self._warn("Суммани тўғри киритинг, масалан: 15000,50")
+            return
+        q, t = self._date.date(), self._time.time()
+        when = datetime(q.year(), q.month(), q.day(), t.hour(), t.minute(), t.second())
+        tpl = self._tpl.currentData()
+        try:
+            pdf, name = self._c.generate(fam=fam, ism=ism, otch=otch, inn=inn,
+                                         card4=card4, when=when, rub=rub, kop=kop,
+                                         template=Path(tpl) if tpl else None)
+        except Exception as e:  # noqa: BLE001 — show the operator, don't crash
+            self._failed(e)
+            return
+        target, _ = QFileDialog.getSaveFileName(
+            self, "Чекни сақлаш", str(_desktop() / name), "PDF (*.pdf)")
+        if not target:
+            self._status.setText("Сақлаш бекор қилинди.")
+            return
+        Path(target).write_bytes(pdf)
+        self._last_pdf = Path(target)
+        self._open.setEnabled(True)
+        self._status.setText(f"✅ Чек тайёр: {target}")
+
+    def _failed(self, error: Exception) -> None:
+        self._run.setEnabled(True)
+        self._progress.fail()
+        message = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText("❌ " + message)
+        QMessageBox.warning(self, "Xato", message)
+
+    def _open_folder(self) -> None:
+        if self._last_pdf is None:
+            return
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_pdf.parent)))
+
+    def _warn(self, message: str) -> None:
+        self._status.setText("⚠️ " + message)
+        QMessageBox.information(self, "Diqqat", message)
+
+    def _reload_templates(self) -> None:
+        self._tpl.clear()
+        for p in self._c.templates():
+            self._tpl.addItem(p.stem, str(p))
+
+    def _add_template(self) -> None:
+        src, _ = QFileDialog.getOpenFileName(
+            self, "Янги чек шаблони (бўш бланка PDF)", str(_desktop()), "PDF (*.pdf)")
+        if not src:
+            return
+        dest = self._c.add_template(Path(src))
+        self._reload_templates()
+        self._tpl.setCurrentIndex(self._tpl.findData(str(dest)))
+        self._status.setText(f"✅ Шаблон қўшилди: {dest.name}")
+
+    # -- «Обновить» support -------------------------------------------
+    def reset(self) -> None:
+        self._dz.clear()
+        for w in (self._fam, self._ism, self._otch, self._inn, self._summa, self._card4):
+            w.clear()
+        self._last_pdf = None
+        self._open.setEnabled(False)

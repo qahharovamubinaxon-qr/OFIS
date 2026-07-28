@@ -68,6 +68,7 @@ _NAV = [
     (None, "nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
     (None, "nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
     (None, "nav.summa", "СУММА-ДАТА", "Сумма ва санани пропись қилиш", "🔢"),
+    (None, "nav.chek", "ЧЕК", "Премия чеки — патент + сумма → PDF", "🧾"),
     ("БАЗА", "nav.companies", "Companies", "Templates, logos and company data", "🏢"),
     (None, "nav.archive", "Archive",
      "Every generated package, by year and company", "🗂️"),
@@ -156,6 +157,11 @@ class MainWindow(QMainWindow):
                 self._container.resolve(OcrService),
                 HostelService(),
             ))
+        if key == "nav.chek":
+            from src.controllers.chek_controller import ChekController
+            from src.ui.views.chek_view import ChekView
+
+            return ChekView(ChekController(self._container.resolve(OcrService)))
         if key == "nav.svera":
             from src.controllers.svera_controller import SveraController
 
