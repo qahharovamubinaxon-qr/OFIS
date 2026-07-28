@@ -39,11 +39,11 @@ from src.ui.i18n import Translator
 from src.ui.views.archive_view import ArchiveView
 from src.ui.views.companies_view import CompaniesView
 from src.ui.views.dashboard_view import DashboardView
+from src.ui.views.photo_view import PhotoView
 from src.ui.views.process_view import ProcessView
 from src.ui.views.registration_view import RegistrationView
 from src.ui.views.settings_view import SettingsView
 from src.ui.views.svera_view import SveraView
-from src.ui.views.photo_view import PhotoView
 from src.ui.views.trud_view import TrudView
 
 # (section header | None, key, default title, subtitle, icon)
@@ -59,6 +59,8 @@ _NAV = [
      "ОСАГО полиси — машина + ҳайдовчилар → Word/PDF", "🚗"),
     (None, "nav.inn", "ИНН", "Ишчининг ИНН рақами варағи → PDF", "🔢"),
     (None, "nav.beydjik", "БЕЙДЖИК", "Ишчининг бейджиги (77 / 50) → PDF", "🪪"),
+    (None, "nav.razreshenie", "РАЗРЕШЕНИЯ",
+     "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
@@ -195,6 +197,17 @@ class MainWindow(QMainWindow):
             return BeydjikView(BeydjikController(
                 self._container.resolve(OcrService),
                 BeydjikService(self._settings),
+            ))
+        if key == "nav.razreshenie":
+            from src.controllers.razreshenie_controller import (
+                RazreshenieController,
+            )
+            from src.services.razreshenie_service import RazreshenieService
+            from src.ui.views.razreshenie_view import RazreshenieView
+
+            return RazreshenieView(RazreshenieController(
+                self._container.resolve(OcrService),
+                RazreshenieService(self._settings),
             ))
         if key == "nav.strahovka":
             from src.controllers.insurance_controller import InsuranceController
