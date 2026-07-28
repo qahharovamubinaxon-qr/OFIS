@@ -49,14 +49,18 @@ _SLOTS: tuple[tuple[str, str, str], ...] = (
     ("patronymic", r"Отчество\s*\(\s*рус\.?\s*\)", "words"),
     ("citizenship", r"(?<![А-Яа-яЁё])Гражданство(?![А-Яа-яЁё])", "words"),
     ("gender", r"(?<![А-Яа-яЁё])Пол(?![А-Яа-яЁё])", "gender"),
+    # the tab is excluded so a blank the program built keeps its «write here»
+    # gap on the label's own line
     ("profession",
-     r"Профессия,\s*специальность,\s*должность[^:\n]*:?", "any"),
+     r"Профессия,\s*специальность,\s*должность[^:\n\t]*:?", "any"),
     ("work_address", r"Адрес\s+места\s+работы", "any"),
     ("region", r"(?<![А-Яа-яЁё])Регион(?![А-Яа-яЁё])", "words"),
     ("series", r"(?<![А-Яа-яЁё])Серия(?![А-Яа-яЁё])", "code"),
     ("number", r"(?<![А-Яа-яЁё])Номер(?![А-Яа-яЁё])", "digits"),
     # only a line that *starts* with it — «Юридический адрес: …» is the firm's
-    ("address", r"^\s*Адрес(?![А-Яа-яЁё])\s*:", "any"),
+    ("address",
+     r"^\s*Адрес(?![А-Яа-яЁё])(?:\s+(?:места\s+жительства|проживания|"
+     r"регистрации|пребывания))?\s*:", "any"),
 )
 
 _LABELS = re.compile("|".join(f"(?P<g{i}>{p})" for i, (_k, p, _s) in enumerate(_SLOTS)))
@@ -65,6 +69,12 @@ _LABELS = re.compile("|".join(f"(?P<g{i}>{p})" for i, (_k, p, _s) in enumerate(_
 _PATENT_HINT = re.compile(r"разрешени\w*\s+на\s+работу|патент", re.IGNORECASE)
 _PASSPORT_HINT = re.compile(r"удостоверяющ\w*\s+личност|паспорт", re.IGNORECASE)
 _HINT_MAX = 90          # only a heading-length line may switch the section
+
+#: A form's own words. A value never starts with one of these, so a line that
+#: does is a heading or the next field — not the value of the label above it.
+_HEADING = re.compile(
+    r"^(Сведения|Документ|Вид|Выбор|Наименование|Адрес|Профессия|Статус|"
+    r"Полное|Сокращ|Основной|Раздел|Работник|Работодатель|Исполнитель|\d+\.)\b")
 
 _MONTHS = ("январ", "феврал", "март", "апрел", "ма", "июн",
            "июл", "август", "сентябр", "октябр", "ноябр", "декабр")
@@ -130,7 +140,25 @@ def replace_span(runs: list, start: int, end: int, new: str) -> None:
     The first run the span touches takes the new text; the rest give up only
     the part that fell inside the span. Runs outside it are never rewritten, so
     labels, tabs and the firm's own words are untouched.
+
+    An empty span is an insertion — the label is there but no value yet, which
+    is how a blank the program built itself starts out. It goes into the last
+    run that reaches the spot, so a value's own (empty) run wins over the tab
+    or the label before it and the value comes out in the intended font.
     """
+    if start == end:
+        offset, target, at = 0, None, 0
+        for run in runs:
+            lo, hi = offset, offset + len(run.text)
+            offset = hi
+            if lo <= start <= hi:
+                target, at = run, start - lo
+        if target is None:
+            target, at = (runs[-1], len(runs[-1].text)) if runs else (None, 0)
+        if target is not None:
+            target.text = target.text[:at] + new + target.text[at:]
+        return
+
     written = False
     offset = 0
     for run in runs:
@@ -230,48 +258,53 @@ def swap_worker(doc, values: dict[str, str]) -> Report:
     """
     report = Report()
     section = "passport"
-    pending: tuple[str, str] | None = None
-
+    lines: list[tuple[object, list, str, list[_Hit]]] = []
     for paragraph in iter_paragraphs(doc):
         runs = runs_of(paragraph)
         text = text_of(runs)
         if not text.strip():
             continue
-        hits = _scan(text, section)
+        lines.append((paragraph, runs, text, _scan(text, section)))
+        section = _update_section(text, section)
 
-        if pending is not None and not hits:
-            key, shape = pending
-            pending = None
-            body = text.strip()
-            if key in values and _fits(shape, body):
-                start = text.index(body)
-                replace_span(runs, start, start + len(body), values[key])
-                report.filled[key] = values[key]
-                report.touched.add(id(paragraph._p))
-            elif key in values:
-                report.skipped.append(key)
-            continue
-        if hits:
-            pending = None
-
+    for i, (paragraph, runs, text, hits) in enumerate(lines):
         for hit in reversed(hits):          # right to left: offsets stay valid
             if hit.key not in values:
                 continue
             old = text[hit.value_start:hit.value_end]
-            if not old.strip():
-                # the value is on the next line — but only if nothing else on
-                # this line claims it
-                if hit is hits[-1]:
-                    pending = (hit.key, hit.shape)
+            if old.strip():
+                if not _fits(hit.shape, old):
+                    report.skipped.append(hit.key)
+                    continue
+                replace_span(runs, hit.value_start, hit.value_end, values[hit.key])
+                report.filled[hit.key] = values[hit.key]
+                report.touched.add(id(paragraph._p))
                 continue
-            if not _fits(hit.shape, old):
-                report.skipped.append(hit.key)
-                continue
-            replace_span(runs, hit.value_start, hit.value_end, values[hit.key])
-            report.filled[hit.key] = values[hit.key]
-            report.touched.add(id(paragraph._p))
 
-        section = _update_section(text, section)
+            # Nothing beside the label. Either the form prints the value on the
+            # line below — Госуслуги do, for «Гражданство», «Серия», «Кем
+            # выдан», and then the label paragraph ends at the label — or the
+            # label is followed by a gap (a tab, a space) that is asking to be
+            # written on, which is how a blank the program built itself looks.
+            below = (lines[i + 1]
+                     if hit is hits[-1] and not text[hit.label_end:]
+                     and i + 1 < len(lines) else None)
+            if (below is not None and not below[3]
+                    and not _HEADING.match(below[2].strip())
+                    and _fits(hit.shape, below[2].strip())):
+                _, next_runs, next_text, _ = below
+                body = next_text.strip()
+                start = next_text.index(body)
+                replace_span(next_runs, start, start + len(body), values[hit.key])
+                report.touched.add(id(below[0]._p))
+            else:
+                after = text[hit.value_start:hit.value_start + 1]
+                new = values[hit.key]
+                if new and after and not after.isspace():
+                    new += " "
+                replace_span(runs, hit.value_start, hit.value_start, new)
+                report.touched.add(id(paragraph._p))
+            report.filled[hit.key] = values[hit.key]
 
     return report
 

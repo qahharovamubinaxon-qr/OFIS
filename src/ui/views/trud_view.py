@@ -1,8 +1,9 @@
 """Трудовой-Уведомления screen.
 
-Pick a firm (add/delete inline — each firm uploads TWO templates: трудовой +
-уведомление), upload passport + patent (front/back), pick date + должность,
-RUN → two PDFs (договор + уведомление), saved by surname.
+Pick a firm (add/delete inline — a firm either uploads TWO templates, трудовой +
+уведомление, or is typed in by its requisites and the program writes the pair
+itself), upload passport + patent (front/back), pick date + должность,
+RUN → two documents (договор + уведомление), saved by surname.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +35,8 @@ from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.common.threading import run_async
 from src.controllers.trud_controller import TrudController
+from src.domain.enums import LegalForm
+from src.domain.firm_details import FirmDetails
 from src.services.trud_service import DEFAULT_TRUD_PROFESSION, TrudResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
@@ -39,11 +44,110 @@ from src.ui.widgets.run_progress import RunProgress
 log = get_logger(__name__)
 
 
+#: Requisites of a firm typed in by hand: attribute · label · placeholder.
+MANUAL_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("name", "To'liq nomi *", 'ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ "СФЕРА"'),
+    ("short_name", "Qisqa nomi", 'ООО "СФЕРА"'),
+    ("inn", "ИНН", "7743447264"),
+    ("kpp", "КПП (ИП da yo'q)", "774301001"),
+    ("ogrn", "ОГРН / ОГРНИП", "1247700301133"),
+    ("okved", "ОКВЭД", "42.99"),
+    ("address", "Yuridik manzil", "141008, обл. Московская, г. Мытищи, ул. Мира, д. 37"),
+    ("district", "Rayon / shahar", "г.о. Мытищи"),
+    ("mvd_office", "МВД bo'limi", "ОПВМ ОМВД РОССИИ ПО Г.О. МЫТИЩИ"),
+    ("director_position", "Direktor lavozimi", "Генеральный директор"),
+    ("director", "Direktor Ф.И.О.", "Нуар А. В."),
+    ("phone", "Telefon", "+7 (812) 740 63 70"),
+)
+
+
+def _row_widget(*widgets) -> QWidget:
+    holder = QWidget()
+    row = QHBoxLayout(holder)
+    row.setContentsMargins(0, 0, 0, 0)
+    for widget, stretch in widgets:
+        row.addWidget(widget, stretch=stretch)
+    return holder
+
+
+class ManualFirmForm(QWidget):
+    """Type a firm's requisites; the program writes both Word templates itself.
+
+    For a firm that never handed over a Word file — everything the two
+    documents need that is not the worker's own data.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.stamp: Path | None = None
+        form = QFormLayout(self)
+
+        self.legal_form = QComboBox()
+        self.legal_form.addItem("ООО / юридическое лицо", LegalForm.OOO)
+        self.legal_form.addItem("ИП / индивидуальный предприниматель", LegalForm.IP)
+        form.addRow("Turi", self.legal_form)
+
+        self.fields: dict[str, QLineEdit] = {}
+        for key, label, hint in MANUAL_FIELDS:
+            edit = QLineEdit()
+            edit.setPlaceholderText(hint)
+            if key == "director_position":
+                edit.setText("Генеральный директор")
+            self.fields[key] = edit
+            form.addRow(label, edit)
+
+        self._stamp_label = QLabel("tanlanmagan")
+        pick = QPushButton("Печать (PNG)…")
+        pick.clicked.connect(self._pick_stamp)
+        form.addRow("Печать", _row_widget((self._stamp_label, 1), (pick, 0)))
+
+        self.legal_form.currentIndexChanged.connect(self._form_changed)
+        self._form_changed()
+
+    def _form_changed(self) -> None:
+        """An ИП has no КПП — clear the box rather than reject it on save."""
+        is_ip = self.chosen_form() is LegalForm.IP
+        kpp = self.fields["kpp"]
+        if is_ip:
+            kpp.clear()
+        kpp.setEnabled(not is_ip)
+        self.fields["director_position"].setEnabled(not is_ip)
+        self.fields["ogrn"].setPlaceholderText(
+            "321774600123456" if is_ip else "1247700301133")
+
+    def _pick_stamp(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Печать (PNG)", "", "PNG (*.png)")
+        if path:
+            self.stamp = Path(path)
+            self._stamp_label.setText(f"✓ {Path(path).name}")
+
+    def chosen_form(self) -> LegalForm:
+        """Qt hands the item data back as a plain str, so re-read the member."""
+        return LegalForm(self.legal_form.currentData())
+
+    def details(self) -> FirmDetails:
+        """Raises ``ValueError`` with a readable message when a value is wrong."""
+        from pydantic import ValidationError as PydanticError
+
+        values = {key: edit.text().strip() for key, edit in self.fields.items()}
+        try:
+            return FirmDetails(legal_form=self.chosen_form(),
+                               stamp_path=self.stamp, **values)
+        except PydanticError as exc:
+            raise ValueError("\n".join(
+                e["msg"].removeprefix("Value error, ") for e in exc.errors())
+            ) from exc
+
+
 class AddTrudFirmDialog(QDialog):
+    """Two ways in: upload the firm's own Word/PDF pair, or type its requisites."""
+
+    UPLOAD, MANUAL = 0, 1
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Yangi firma / Новая фирма (Трудовой)")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         self._trud_tpl: Path | None = None
         self._uved_tpl: Path | None = None
         self._hod_tpl: Path | None = None
@@ -56,29 +160,39 @@ class AddTrudFirmDialog(QDialog):
         form.addRow("Kod (unikal)", self._code)
         outer.addLayout(form)
 
+        uploaded = QWidget()
+        upload_box = QVBoxLayout(uploaded)
+
         self._trud_label = QLabel("Трудовой шаблон tanlanmagan")
         btn1 = QPushButton("Трудовой шаблон…")
         btn1.clicked.connect(lambda: self._pick("trud"))
-        row1 = QHBoxLayout()
-        row1.addWidget(self._trud_label, stretch=1)
-        row1.addWidget(btn1)
-        outer.addLayout(row1)
+        upload_box.addWidget(_row_widget((self._trud_label, 1), (btn1, 0)))
 
         self._uved_label = QLabel("Уведомление шаблон tanlanmagan")
         btn2 = QPushButton("Уведомление шаблон…")
         btn2.clicked.connect(lambda: self._pick("uved"))
-        row2 = QHBoxLayout()
-        row2.addWidget(self._uved_label, stretch=1)
-        row2.addWidget(btn2)
-        outer.addLayout(row2)
+        upload_box.addWidget(_row_widget((self._uved_label, 1), (btn2, 0)))
 
         self._hod_label = QLabel("Ходатайство шаблон (ixtiyoriy)")
         btn3 = QPushButton("Ходатайство шаблон…")
         btn3.clicked.connect(lambda: self._pick("hod"))
-        row3 = QHBoxLayout()
-        row3.addWidget(self._hod_label, stretch=1)
-        row3.addWidget(btn3)
-        outer.addLayout(row3)
+        upload_box.addWidget(_row_widget((self._hod_label, 1), (btn3, 0)))
+        upload_box.addStretch(1)
+
+        self.manual = ManualFirmForm()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.manual)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(uploaded, "Shablon yuklash")
+        self.tabs.addTab(scroll, "Qo'lda kiritish")
+        outer.addWidget(self.tabs, stretch=1)
+
+        hint = QLabel("Qo'lda kiritilsa — уведомление va трудовой договорни "
+                      "programma o'zi yozadi, shablon kerak emas.")
+        hint.setWordWrap(True)
+        outer.addWidget(hint)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -86,6 +200,10 @@ class AddTrudFirmDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
+
+    @property
+    def mode(self) -> int:
+        return self.tabs.currentIndex()
 
     def _pick(self, kind: str) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Shablon (PDF yoki Word)", "", "PDF/Word (*.pdf *.docx)")
@@ -202,7 +320,8 @@ class TrudView(QWidget):
 
     def _hint(self) -> str:
         if not self._firms:
-            return "Avval «+ Yangi firma» orqali firma qo'shing (2 ta shablon yuklanadi)."
+            return ("Avval «+ Yangi firma» orqali firma qo'shing — shablon "
+                    "yuklang yoki rekvizitlarni qo'lda kiriting.")
         if self._c.ai_available():
             return "AI tayyor. Pasport + patent yuklab, RUN bosing — 2 ta PDF tayyorlanadi."
         return "AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting."
@@ -213,18 +332,37 @@ class TrudView(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         name, code, trud_tpl, uved_tpl, hod_tpl = dialog.values()
-        if not name or not code or trud_tpl is None or uved_tpl is None:
+        manual = dialog.mode == AddTrudFirmDialog.MANUAL
+        if not code:
+            QMessageBox.warning(self, "Diqqat", "Firma kodi kerak.")
+            return
+        if not manual and (not name or trud_tpl is None or uved_tpl is None):
             QMessageBox.warning(self, "Diqqat",
-                                "Nomi, kod va IKKALA shablon PDF ham kerak.")
+                                "Nomi, kod va IKKALA shablon ham kerak.")
             return
         try:
-            firm = self._c.add_firm(name, code, trud_tpl, uved_tpl, hod_tpl)
+            if manual:
+                details = dialog.manual.details()
+                firm = self._c.add_firm_manual(details, code)
+            else:
+                firm = self._c.add_firm(name, code, trud_tpl, uved_tpl, hod_tpl)
             self.refresh()
+        except ValueError as exc:            # a requisite typed wrong
+            QMessageBox.warning(self, "Xato", str(exc))
+            return
         except OfisError as exc:
             QMessageBox.warning(self, "Xato", exc.message)
             return
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Xato", str(exc))
+            return
+        if manual:
+            # nothing to study: the program wrote both templates itself and
+            # knows exactly where every value goes
+            note = ("✅ Firma qo'shildi. Уведомление va трудовой договор "
+                    "programma tomonidan yozildi — shablon kerak emas.")
+            self._status.setText(note)
+            QMessageBox.information(self, "Tayyor", note)
             return
         self._study_uved(firm)
 

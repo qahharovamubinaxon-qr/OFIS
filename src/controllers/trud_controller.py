@@ -8,6 +8,7 @@ from uuid import UUID
 
 from src.common.errors import ValidationError
 from src.common.logging import get_logger
+from src.domain.firm_details import FirmDetails
 from src.domain.trud_firm import TrudFirm
 from src.ocr.service import OcrService
 from src.services.trud_service import TrudFirmService, TrudResult, TrudService
@@ -27,6 +28,10 @@ class TrudController:
     def add_firm(self, name: str, code: str, trud_tpl: Path, uved_tpl: Path,
                  hod_tpl: Path | None = None) -> TrudFirm:
         return self._firms.create(name, code, trud_tpl, uved_tpl, hod_tpl)
+
+    def add_firm_manual(self, details: FirmDetails, code: str) -> TrudFirm:
+        """Register a firm from typed requisites — the program writes its pair."""
+        return self._firms.create_manual(details, code)
 
     def study_uved(self, firm: TrudFirm):
         """Read the firm's blank and learn where each worker value goes."""

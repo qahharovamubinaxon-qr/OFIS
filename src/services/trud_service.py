@@ -24,6 +24,7 @@ from src.config import paths
 from src.database.repositories.trud_firm_repo import TrudFirmRepository
 from src.domain.documents import Passport, Patent
 from src.domain.enums import Gender
+from src.domain.firm_details import FirmDetails
 from src.domain.trud_firm import TrudFirm
 from src.pdf.engine import fill
 from src.pdf.formatters import _date_dmy
@@ -110,6 +111,37 @@ class TrudFirmService:
             trud_layout.save(result, firm.trud_template_path,
                              firm.trud_template_path.parent)
         return result
+
+    def create_manual(self, details: FirmDetails, code: str, *,
+                      today: date | None = None) -> TrudFirm:
+        """Register a firm from its requisites — the program writes its templates.
+
+        For a firm that never handed over a Word file. Both documents come out
+        carrying the same Госуслуги labels an uploaded template would, so every
+        worker after this is filled by the ordinary path.
+        """
+        from src.pdf.formatters import _date_long_g
+        from src.services import firm_builder
+
+        code = code.strip().lower()
+        if not code:
+            raise ValidationError("Фирма коди керак")
+        if self._repo.by_internal_code(code):
+            raise ValidationError("Internal code already exists", context={"code": code})
+
+        dest = paths.user_templates_dir() / f"trud_{code}"
+        dest.mkdir(parents=True, exist_ok=True)
+        stamp = _copy_stamp(details.stamp_path, dest)
+        details = details.model_copy(update={"stamp_path": stamp})
+        header = _date_long_g(today or date.today()).removesuffix(" г.")
+        trud, uved = firm_builder.build(details, dest, header_date=header)
+
+        firm = TrudFirm(name=details.name, internal_code=code,
+                        trud_template_path=trud, uved_template_path=uved,
+                        details=details)
+        self._repo.upsert(firm)
+        log.info("Trud firm built from requisites: %s (%s)", details.name, code)
+        return firm
 
     def create(self, name: str, code: str, trud_source: Path, uved_source: Path,
                hod_source: Path | None = None) -> TrudFirm:
@@ -355,6 +387,22 @@ class TrudService:
                 "uved.patent.blank_number": patent.blank_number or "",
             })
         return {k: v for k, v in values.items() if v}
+
+
+def _copy_stamp(source: Path | None, dest: Path) -> Path | None:
+    """Keep the печать beside the templates it is stamped onto.
+
+    The operator picks it off their desktop; the file has to survive that
+    folder being tidied up.
+    """
+    if source is None:
+        return None
+    if not source.exists():
+        raise ValidationError("Печать файли топилмади", context={"path": str(source)})
+    kept = dest / f"stamp{source.suffix.lower()}"
+    if source.resolve() != kept.resolve():
+        shutil.copyfile(source, kept)
+    return kept
 
 
 def _safe(name: str) -> str:

@@ -38,6 +38,13 @@ class EmployerType(StrEnum):
     NOTARY = "private_notary"
 
 
+class LegalForm(StrEnum):
+    """How a Трудовой firm signs: as a company or as the предприниматель."""
+
+    OOO = "ooo"  # юридическое лицо — ОГРН, КПП, «в лице директора»
+    IP = "ip"  # индивидуальный предприниматель — ОГРНИП, без КПП
+
+
 class CompanyStatus(StrEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
