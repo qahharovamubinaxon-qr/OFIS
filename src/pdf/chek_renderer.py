@@ -14,6 +14,18 @@ from src.pdf.chek_spec import FIELDS, FONT_PATH, MONTHS_RU
 
 TEMPLATE_DEFAULT = os.path.join("templates", "chek", "premiya_blank.pdf")
 
+# «ишчини компания idcи» — the value is BAKED INTO the template image, so we
+# paint a white patch over it and write a fresh random one (12 digits + 4
+# uppercase Latin letters, e.g. 357852345266REGD) on every generated check.
+IDCI_COVER = (13.0, 960.0, 172.0, 977.0)
+IDCI_POS = (14.2, 973.0)
+IDCI_SIZE = 10
+
+def random_idci() -> str:
+    import string
+    return ("".join(random.choice("0123456789") for _ in range(12))
+            + "".join(random.choice(string.ascii_uppercase) for _ in range(4)))
+
 # ── суммани сўз билан ёзиш (рубль, аёл-жинс минг) ──────────────────────────
 _U = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"]
 _UF = ["", "одна", "две", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"]
@@ -65,6 +77,7 @@ class ChekData:
     when: datetime            # entered date + h:m:s
     rub: int; kop: int
     avtoriz: str | None = None   # 6-digit; random when None
+    idci: str | None = None      # 12 digits + 4 letters; random when None
 
 def _ensure_font(page, fontfile):
     page.insert_font(fontname="micross", fontfile=fontfile)
@@ -116,6 +129,10 @@ def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes
     _put_wrapped(page, "inn12", f"121000000000{inn}", fontfile)
     _put_wrapped(page, "sana_baza", f"1044525225009006{w:%d%m%Y}11071538", fontfile)
     _put(page, "avtoriz", avtoriz, fontfile)
+    # company idci: white-out the baked value, write a fresh random one
+    page.draw_rect(fitz.Rect(*IDCI_COVER), color=None, fill=(1, 1, 1))
+    page.insert_text(IDCI_POS, data.idci or random_idci(), fontsize=IDCI_SIZE,
+                     fontname="micross", color=(0, 0, 0))
     _put(page, "summa_1", amount, fontfile)
     _put(page, "summa_2", amount, fontfile)
     _put_wrapped(page, "propis", amount_in_words(data.rub, data.kop), fontfile)
