@@ -61,6 +61,8 @@ class TrudResult:
     uved_path: Path
     surname: str
     hod_path: Path | None = None
+    #: what the finished PDF could not be shown to contain (or still contained)
+    notes: tuple[str, ...] = ()
 
 
 class TrudFirmService:
@@ -180,6 +182,7 @@ class TrudService:
         output_dir: Path | None = None,
     ) -> TrudResult:
         prof = _sentence(profession or DEFAULT_TRUD_PROFESSION)
+        pdf_notes: list[str] = []
         folder = output_dir if output_dir is not None else (
             paths.output_dir() / "trud" / _safe(firm.name)
         )
@@ -213,12 +216,15 @@ class TrudService:
             trud_path = docx_to_pdf(docx_path) or docx_path
         else:
             trud_path = _unique(folder / f"{stem}_ТРУДОВОЙ.pdf")
-            self._editor.fill(
+            report = self._editor.fill(
                 firm.trud_template_path, trud_path,
                 date_text=_date_dmy(form_date),
                 worker_block=self._worker_block(passport),
                 profession=prof,
             )
+            # The editor reads its own output back; whatever it could not
+            # confirm is carried to the operator rather than being logged away.
+            pdf_notes = report.problems()
 
         if firm.uved_template_path.suffix.lower() == ".docx":
             from src.services.docx_editor import TrudDocxEditor, docx_to_pdf
@@ -263,7 +269,8 @@ class TrudService:
 
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
         return TrudResult(trud_path=trud_path, uved_path=uved_path,
-                          surname=passport.surname, hod_path=hod_path)
+                          surname=passport.surname, hod_path=hod_path,
+                          notes=tuple(pdf_notes))
 
     @staticmethod
     def _docx_values(passport: Passport, patent: Patent | None, *,

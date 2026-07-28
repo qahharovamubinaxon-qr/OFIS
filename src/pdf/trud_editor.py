@@ -9,7 +9,13 @@ coordinates, so any firm's template works):
 * «…в должности: X» and «…обязанности: X» — the profession after the colon.
 
 Old text is removed with redactions (really deleted, not covered), then the new
-text is typeset in the same spot at the template's own font size.
+text is typeset in the same spot at the template's own font size, shrinking only
+as far as it must to fit.
+
+Nothing is taken on trust: :func:`src.pdf.rewrite.verify` re-opens the finished
+file and reads it back, so a value that failed to land, or an old one that
+refused to go, is named to the operator instead of leaving the office on a
+document. ``fill`` returns that report.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from pathlib import Path
 import fitz
 
 from src.common.errors import TemplateMissingError
+from src.pdf import rewrite
 from src.pdf.engine import _font_file  # reuse the family resolution
 
 _DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
@@ -45,6 +52,42 @@ def _page_lines(page: fitz.Page) -> list[dict]:
     return out
 
 
+#: Anything in the old worker's block that identifies a person: a name, a
+#: passport number, a date. These are what must not survive the swap.
+_IDENTIFIER = re.compile(r"[А-ЯЁ][а-яё]{2,}|\b[A-Z]{1,2}\d{6,9}\b|\b\d{6,10}\b|"
+                         r"\b\d{2}\.\d{2}\.\d{4}\b")
+_KEEP = {"Работник", "Дата", "Гражданство", "Иностранный", "Паспорт", "Номер",
+         "Выдан", "Кем", "Рождения", "Срок", "Договора", "Должности"}
+
+
+def _previous_worker(lines: list[dict]) -> list[str]:
+    """The values the template still carries from whoever was on it before.
+
+    Only the identifying ones: the form's own words stay, so «Работник» is not
+    mistaken for a surname and reported as a leftover.
+    """
+    out: list[str] = []
+    collecting = False
+    for ln in lines:
+        text = ln["text"].strip()
+        if text.startswith("Работник:"):
+            collecting = True
+        elif collecting and (text.startswith(("1.", "ПРЕДМЕТ")) or not text):
+            collecting = False
+        if not collecting:
+            continue
+        for token in _IDENTIFIER.findall(text):
+            if token not in _KEEP and token not in out:
+                out.append(token)
+    return out
+
+
+def _first_words(text: str, count: int = 3) -> str:
+    """Enough of the new block to prove it landed, without pinning its wrapping."""
+    words = text.replace("Работник:", "").split()
+    return " ".join(words[:count])
+
+
 class TrudDocEditor:
     def __init__(self) -> None:
         self._font_path = _font_file("OfisSansRegular")
@@ -58,15 +101,18 @@ class TrudDocEditor:
         date_text: str,  # 23.07.2026
         worker_block: str,  # Работник: … Кем выдан …
         profession: str,  # Подсобный рабочий
-    ) -> Path:
+        verify: bool = True,
+    ) -> rewrite.Report:
         if not template_path.exists():
             raise TemplateMissingError(
                 "Трудовой template missing", context={"path": str(template_path)}
             )
         doc = fitz.open(str(template_path))
+        old_values: list[str] = []
         try:
             page = doc[0]
             lines = _page_lines(page)
+            old_values = _previous_worker(lines)
 
             targets: list[tuple[fitz.Rect, str, float, tuple[float, float], bool]] = []
             worker_rect: fitz.Rect | None = None
@@ -116,7 +162,18 @@ class TrudDocEditor:
             doc.save(str(output_path), garbage=4, deflate=True)
         finally:
             doc.close()
-        return output_path
+
+        if not verify:
+            return rewrite.Report()
+        # Read the finished document back. What was replaced must be there and
+        # what it replaced must be gone — both, or the operator hears about it.
+        return rewrite.verify(
+            output_path,
+            must_contain={"дата договора": date_text,
+                          "ишчи блоки": _first_words(worker_block),
+                          "должность": profession},
+            must_not_contain=[v for v in old_values if v],
+            written=f"{worker_block} {profession} {date_text}")
 
     def _write_worker_block(
         self, page: fitz.Page, rect: fitz.Rect, origin: tuple[float, float],

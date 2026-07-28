@@ -462,8 +462,12 @@ class TrudView(QWidget):
         ask_save_dir(self, [x for x in (result.trud_path, result.uved_path,
                                         result.hod_path) if x])
         extra = f" + {result.hod_path.name}" if result.hod_path else ""
-        self._status.setText(
-            f"✅ Tayyor: {result.trud_path.name} + {result.uved_path.name}{extra}")
+        note = f"✅ Tayyor: {result.trud_path.name} + {result.uved_path.name}{extra}"
+        if result.notes:
+            # the PDF was read back and something did not check out — the
+            # operator hears it now, not at the ministry counter
+            note += "\n⚠️ " + "\n⚠️ ".join(result.notes)
+        self._status.setText(note)
         box = QMessageBox(self)
         box.setWindowTitle("Tayyor")
         box.setText(f"2 ta PDF yaratildi:\n{result.trud_path.name}\n{result.uved_path.name}")
