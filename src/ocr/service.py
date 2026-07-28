@@ -14,6 +14,7 @@ from src.ai.prompts import patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
+from src.domain.vehicle import DriverLicence, Sts
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic, translate_issuer
 
@@ -103,6 +104,47 @@ class OcrService:
             holder_name=to_cyrillic(f.get("name", "")) or None,
             holder_patronymic=to_cyrillic(f.get("patronymic", "")) or None,
             holder_citizenship=to_cyrillic(f.get("citizenship", "")) or None,
+        )
+
+    def read_sts(self, front: bytes, back: bytes | None = None) -> Sts:
+        """Read the vehicle registration card.
+
+        The FRONT carries the plate, VIN, make and model; the BACK carries the
+        owner and their address, so the two are merged with the back winning
+        wherever it has something to say.
+        """
+        f = self._ai.extract(prepare_image(front), DocType.STS,
+                             prompt_for(DocType.STS)).fields
+        if back is not None:
+            b = self._ai.extract(prepare_image(back), DocType.STS,
+                                 prompt_for(DocType.STS)).fields
+            f = {**f, **{k: v for k, v in b.items() if (v or "").strip()}}
+        return Sts(
+            series=f.get("series", ""), number=f.get("number", ""),
+            # a plate is Cyrillic; a VIN and a make stay in Latin as printed
+            plate=to_cyrillic(f.get("plate", "")),
+            vin=(f.get("vin", "") or "").upper().replace(" ", ""),
+            mark=f.get("mark", ""), model=f.get("model", ""),
+            year=f.get("year", ""), category=f.get("category", ""),
+            owner_fio=to_cyrillic(f.get("owner_fio", "")),
+            owner_address=f.get("owner_address", ""),
+            issue_date=_parse_date(f.get("issue_date", "")),
+        )
+
+    def read_licence(self, image: bytes) -> DriverLicence:
+        """Read one driving licence — a person who will be allowed to drive."""
+        f = self._ai.extract(prepare_image(image), DocType.DRIVER_LICENCE,
+                             prompt_for(DocType.DRIVER_LICENCE)).fields
+        return DriverLicence(
+            surname=to_cyrillic(f.get("surname", "")),
+            name=to_cyrillic(f.get("name", "")),
+            patronymic=to_cyrillic(f.get("patronymic", "")),
+            series=(f.get("series", "") or "").upper(),
+            number=f.get("number", ""),
+            birth_date=_parse_date(f.get("birth_date", "")),
+            issue_date=_parse_date(f.get("issue_date", "")),
+            expiry_date=_parse_date(f.get("expiry_date", "")),
+            categories=(f.get("categories", "") or "").upper(),
         )
 
     def read_documents(

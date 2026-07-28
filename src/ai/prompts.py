@@ -47,9 +47,35 @@ _PATENT_BACK = _COMMON + (
     'Keys: {"issued_by","issue_date","blank_series","blank_number"}'
 )
 
+_STS = _COMMON + (
+    'This is a Russian СТС (свидетельство о регистрации транспортного '
+    'средства) — the small plastic vehicle registration card. Read the series '
+    'and number printed on it (e.g. "50 ОЕ" + "202246"), the state plate '
+    '(государственный регистрационный знак, e.g. Т566ВЕ40), the VIN '
+    '(идентификационный номер, 17 characters — keep it in LATIN exactly as '
+    'printed, do NOT transliterate it), the make and model (марка / модель — '
+    'keep the manufacturer name in LATIN as printed, e.g. Hyundai Elantra), '
+    'the year of manufacture, the category, and, if this is the back of the '
+    'card, the owner (собственник) and their address. '
+    'Keys: {"document_type":"sts","series","number","plate","vin","mark",'
+    '"model","year","category","owner_fio","owner_address","issue_date"}'
+)
+
+_DRIVER_LICENCE = _COMMON + (
+    'This is a driving licence (водительское удостоверение) — Russian or a '
+    'foreign one. Read the holder surname, name and patronymic, the licence '
+    'series and number (field 5, e.g. "AF 2970819" or "5036 634917" — keep the '
+    'digits and letters exactly as printed), the birth date (field 3), the '
+    'issue date (4a), the expiry date (4b) and the categories (field 9). '
+    'Keys: {"document_type":"driver_licence","surname","name","patronymic",'
+    '"series","number","birth_date","issue_date","expiry_date","categories"}'
+)
+
 _PROMPTS: dict[DocType, str] = {
     DocType.PASSPORT: _PASSPORT,
     DocType.PATENT: _PATENT,
+    DocType.STS: _STS,
+    DocType.DRIVER_LICENCE: _DRIVER_LICENCE,
 }
 
 

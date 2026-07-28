@@ -18,6 +18,9 @@ from src.config.settings_service import SettingsService
 from src.database.connection import Database
 from src.database.repositories.company_repo import CompanyRepository
 from src.database.repositories.generated_repo import GeneratedRepository
+from src.database.repositories.insurance_template_repo import (
+    InsuranceTemplateRepository,
+)
 from src.database.repositories.profession_repo import ProfessionRepository
 from src.database.repositories.registration_address_repo import RegistrationAddressRepository
 from src.database.repositories.settings_repo import SettingsRepository
@@ -60,6 +63,9 @@ def build_container() -> Container:
     container.register_instance(GeneratedRepository, generated_repo)
 
     container.register_instance(GenerationService, GenerationService(settings, generated_repo))
+
+    container.register_instance(InsuranceTemplateRepository,
+                               InsuranceTemplateRepository(db))
 
     reg_addr_repo = RegistrationAddressRepository(db)
     container.register_instance(RegistrationAddressRepository, reg_addr_repo)

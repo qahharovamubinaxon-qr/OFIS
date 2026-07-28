@@ -10,6 +10,8 @@ class DocType(StrEnum):
     PATENT = "patent"
     REGISTRATION = "registration"
     MIGRATION_CARD = "migration_card"
+    STS = "sts"  # свидетельство о регистрации ТС
+    DRIVER_LICENCE = "driver_licence"  # водительское удостоверение
     UNKNOWN = "unknown"
 
 

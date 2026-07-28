@@ -55,6 +55,8 @@ _NAV = [
     (None, "nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
+    (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
+     "ОСАГО полиси — машина + ҳайдовчилар → Word/PDF", "🚗"),
     (None, "nav.inn", "ИНН", "Ишчининг ИНН рақами варағи → PDF", "🔢"),
     (None, "nav.beydjik", "БЕЙДЖИК", "Ишчининг бейджиги (77 / 50) → PDF", "🪪"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
@@ -185,6 +187,23 @@ class MainWindow(QMainWindow):
             return BeydjikView(BeydjikController(
                 self._container.resolve(OcrService),
                 BeydjikService(self._settings),
+            ))
+        if key == "nav.strahovka":
+            from src.controllers.insurance_controller import InsuranceController
+            from src.database.repositories.insurance_template_repo import (
+                InsuranceTemplateRepository,
+            )
+            from src.services.insurance_service import (
+                InsuranceService,
+                InsuranceTemplateService,
+            )
+            from src.ui.views.insurance_view import InsuranceView
+
+            return InsuranceView(InsuranceController(
+                InsuranceTemplateService(
+                    self._container.resolve(InsuranceTemplateRepository)),
+                self._container.resolve(OcrService),
+                InsuranceService(self._settings),
             ))
         if key == "nav.dms":
             from src.controllers.dms_controller import DmsController
