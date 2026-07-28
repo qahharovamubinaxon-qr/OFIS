@@ -50,7 +50,12 @@ DRIVERS = [
 PREVIOUS = ("KMHDN41BP3U633162", "KNEDE22126611237", "XWB4A1CD9A21203",
             "Т566ВЕ40", "X526AY550", "ЧУНАЕВ", "КАРАЕВ", "Пайзуллаев",
             "Туйчиев", "Кудратов", "МАХМАДОВ", "МАХМАДЗОДА", "AF2970819",
-            "AF5137466", "AF2703984", "AA0622980", "5036 634917")
+            "AF5137466", "AF2703984", "AA0622980", "5036 634917",
+            # the страхователь and собственник each template was sold to —
+            # two of them sit in text boxes, where nothing used to look
+            "ДЕНИСОВА", "Авдодина", "АБДУЛКАПАРОВ",
+            # a VIN printed one character per box
+            "XTA21150033523017", "XWB4A11CD9A212003")
 
 
 @pytest.fixture(autouse=True)
@@ -67,9 +72,18 @@ def _template(code: str) -> InsuranceTemplate:
 
 
 def _read(path: Path) -> str:
+    """Everything the policy says — text boxes and nested tables included.
+
+    Reading only ``doc.paragraphs`` and ``doc.tables`` is what let the
+    собственник go on being wrong: one insurer keeps «1. Страхователь»,
+    «Собственник транспортного средства» and the seventeen boxes of the VIN
+    inside text boxes, and a test that cannot see them passes on a policy that
+    still carries the previous customer's name.
+    """
     doc = docx.Document(str(path))
-    parts = [" ".join(p.text.split()) for p in doc.paragraphs]
-    for table in doc.tables:
+    parts = [" ".join(p.text.split())
+             for p in insurance_docx._all_paragraphs(doc)]
+    for table in insurance_docx._all_tables(doc):
         for row in table.rows:
             parts.append(" | ".join(" ".join(c.text.split()) for c in row.cells))
     return "\n".join(p for p in parts if p.strip())
@@ -116,8 +130,11 @@ def test_both_dates_are_written_where_the_form_prints_them(code, tmp_path):
 
 @pytest.mark.parametrize("code", CODES)
 def test_the_previous_customer_is_gone(code, tmp_path) -> None:
-    body = _read(_run(code, tmp_path).docx_path)
-    left = [old for old in PREVIOUS if old in body]
+    result = _run(code, tmp_path)
+    # both forms: a VIN spread over its boxes only reads back squashed
+    body = _read(result.docx_path) + "\n" + _squashed(result.docx_path)
+    left = [old for old in PREVIOUS if old in body or
+            old.replace(" ", "") in body]
     assert not left, (code, left)
 
 
@@ -439,7 +456,11 @@ def test_a_finished_policy_asks_where_to_save_it(tmp_path, monkeypatch) -> None:
         templates.list()[0], b"front", b"back", [], start=date(2026, 7, 10))
     view._done(result)
 
-    assert [p.name for p in desktop.iterdir()] == [result.docx_path.name]
+    # the PDF goes with it wherever Word is installed to make one
+    saved = sorted(p.name for p in desktop.iterdir())
+    assert result.docx_path.name in saved
+    assert saved == sorted(f.name for f in
+                           (result.docx_path, result.pdf_path) if f)
     assert str(desktop) in view._status.text()
 
 
@@ -477,8 +498,9 @@ def test_the_drop_zones_are_cleared_for_the_next_car(tmp_path, monkeypatch) -> N
 
 def _all_lines(path: Path) -> list[str]:
     document = docx.Document(str(path))
-    out = [" ".join(p.text.split()) for p in document.paragraphs]
-    for table in document.tables:
+    out = [" ".join(p.text.split())
+           for p in insurance_docx._all_paragraphs(document)]
+    for table in insurance_docx._all_tables(document):
         for row in table.rows:
             out.append(" | ".join(" ".join(c.text.split()) for c in row.cells))
     return out
@@ -515,7 +537,9 @@ def test_the_insurers_own_wording_is_never_rewritten(code, tmp_path) -> None:
 
     before = _all_lines(_template(code).template_path)
     after = _all_lines(_run(code, tmp_path).docx_path)
-    a_field = re.compile(r"\d{2}\.\d{2}\.\d{4}|допущенн|"
+    # «Вид документа … серия … номер …» is a field too, however much of the
+    # form's own wording shares the line with it
+    a_field = re.compile(r"\d{2}\.\d{2}\.\d{4}|допущенн|Вид\s+документа|"
                          + insurance_docx._LABELS.pattern)
 
     for old, new in zip(before, after):
@@ -540,7 +564,7 @@ def test_the_insurers_signature_is_left_where_it_is(code, tmp_path) -> None:
 def test_a_vin_grid_is_written_one_character_per_box(tmp_path) -> None:
     result = _run("soglasie", tmp_path)
     document = docx.Document(str(result.docx_path))
-    for table in document.tables:
+    for table in insurance_docx._all_tables(document):
         for row in table.rows:
             seen: list[str] = []
             for cell in row.cells:
@@ -552,6 +576,63 @@ def test_a_vin_grid_is_written_one_character_per_box(tmp_path) -> None:
                 assert "".join(boxes) == STS.vin
                 return
     pytest.fail("the VIN grid was not found")
+
+
+# ------------------- the four the office reported off its own policies
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_owner_of_the_car_is_written(code, tmp_path) -> None:
+    """«Собственник транспортного средства» was coming out blank.
+
+    Every one of these forms prints the label with its own explanation of what
+    to write — «(полное наименование юридического лица или фамилия, имя,
+    отчество физического лица)» — and the name on the line under it. Read as
+    "the label has no value beside it, so there is no such field", the
+    собственник kept the previous customer's name or none at all.
+    """
+    body = _read(_run(code, tmp_path).docx_path)
+    if "Собственник транспортного средства" not in body:
+        pytest.skip(f"{code} does not print a собственник")
+    assert STS.owner_fio in body, code
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_a_value_is_never_appended_to_its_own_label(code, tmp_path) -> None:
+    """The value goes on its own line, not onto the end of the heading.
+
+    Writing «Марка, модель транспортного средства HYUNDAI SOLARIS» into one
+    paragraph put the car inside the insurer's heading — and in the heading's
+    colour, which is why the office saw the make come out blue.
+    """
+    document = docx.Document(str(_run(code, tmp_path).docx_path))
+    for paragraph in insurance_docx._all_paragraphs(document):
+        text = " ".join((paragraph.text or "").split())
+        head = insurance_docx._LABELS.match(text)
+        if head is None:
+            continue
+        for value in (STS.vehicle.upper(), STS.vin, STS.plate):
+            assert value not in text[head.end():], (code, text[:90])
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_registration_document_is_written(code, tmp_path) -> None:
+    """«Вид документа … серия … номер …» — the СТС was not written at all.
+
+    Most of these forms head the row with the whole of the Bank of Russia's
+    wording, «Паспорт транспортного средства, свидетельство о регистрации
+    транспортного средства, паспорт(свидетельство) на шасси…», so looking for
+    «Свидетельство о регистрации» as a label of its own found nothing.
+    """
+    body = _read(_run(code, tmp_path).docx_path)
+    assert STS.series in body and STS.number in body, code
+    # «Вид документа Серия Номер» with no digits on it is the column heading,
+    # which one insurer prints above the document rather than beside it
+    filled = [ln for ln in body.split("\n")
+              if "Вид документа" in ln and any(c.isdigit() for c in ln)]
+    for line in filled:
+        assert STS.number in line, (code, line[:90])
+        assert "аспорт ТС" not in line, (code, line[:90])   # it is a СТС now
 
 
 def test_a_footnote_row_under_the_driver_table_is_not_dashed(tmp_path) -> None:

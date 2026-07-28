@@ -39,13 +39,64 @@ from pathlib import Path
 
 from src.common.logging import get_logger
 from src.services.docx_worker import (
-    iter_paragraphs,
     replace_span,
     runs_of,
     text_of,
 )
 
 log = get_logger(__name__)
+
+
+# --------------------------------------------------------------- the walk
+
+
+def _all_paragraphs(doc):
+    """Every paragraph of the policy, wherever Word put it.
+
+    ``doc.paragraphs`` plus ``doc.tables`` — what the worker documents are read
+    with — misses two things these policies are full of. A table nested inside
+    another table's cell is one. A **text box** is the other, and one insurer
+    keeps «1. Страхователь», «Собственник транспортного средства» and the
+    seventeen boxes of the VIN in text boxes: read without them the собственник
+    looked like a field the form did not have, and the VIN was written on a
+    line of its own above boxes that still held the previous car's.
+
+    Word stores a text box twice — once as DrawingML and once as a picture for
+    older readers — and both copies are walked. They show the same thing, so
+    filling only one would leave the policy saying two different things
+    depending on what opened it.
+    """
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+
+    for element in doc.element.body.iter(qn("w:p")):
+        yield Paragraph(element, doc)
+
+
+def _all_tables(doc):
+    """Every table, including the nested and the boxed ones."""
+    from docx.oxml.ns import qn
+    from docx.table import Table
+
+    for element in doc.element.body.iter(qn("w:tbl")):
+        yield Table(element, doc)
+
+
+def _owner_of(element):
+    """The cell or text box a paragraph belongs to — ``None`` for the body.
+
+    A label may only take its value from a line in the same one of these.
+    """
+    from docx.oxml.ns import qn
+
+    boundary = (qn("w:tc"), qn("w:txbxContent"))
+    node = element.getparent()
+    while node is not None:
+        if node.tag in boundary:
+            return node
+        node = node.getparent()
+    return None
+
 
 # --------------------------------------------------------------- the labels
 
@@ -56,11 +107,23 @@ log = get_logger(__name__)
 #: the form's own wording with a company name.
 _SLOTS: tuple[tuple[str, str, bool], ...] = (
     ("vehicle", r"Марка,?\s*модель\s+транспортного\s+средства", False),
+    # «Транспортное средство:» over a column of its own — the colon is what
+    # tells it apart from «2. Транспортное средство используется с прицепом»
+    # and from «Паспорт транспортного средства», which are not this field.
+    ("vehicle", r"Транспортное\s+средство\s*:", False),
     ("vin", r"Идентификационный\s+номер\s+транспортного\s+средства|"
             r"Идентификационный\s+номер\s*\(VIN\)|Идентификационный\s+номер", False),
     ("plate", r"Государственный\s+регистрационный\s+(?:знак|номер)"
               r"(?:\s+транспортного\s+средства)?", False),
-    ("sts", r"Свидетельство\s+о\s+регистрации(?:\s+ТС)?", False),
+    # Only where the form names the document itself — «Свидетельство о
+    # регистрации ТС 50ое 202246». Most insurers instead head the row
+    # «Паспорт транспортного средства, свидетельство о регистрации
+    # транспортного средства, паспорт(свидетельство) на шасси…»: that is the
+    # form's own wording for a whole block, and writing a серия over it ate
+    # the sentence. Those carry «Вид документа … серия … номер …» underneath,
+    # which :func:`_document_line` fills instead.
+    ("sts", r"Свидетельство\s+о\s+регистрации(?:\s+ТС)?"
+            r"(?!\s*(?:транспортн|ТС\b|\(|шасси))", False),
     ("policy_holder", r"(?:\d\.\s*)?Страхователь(?!\w)", True),
     # «Страхователем <ФИО> при получении настоящего страхового полиса…» on the
     # back of the policy — a sentence, so the name is always right after it
@@ -68,7 +131,17 @@ _SLOTS: tuple[tuple[str, str, bool], ...] = (
     ("owner", r"Собственник\s+транспортного\s+средства", True),
 )
 _LABELS = re.compile("|".join(f"(?P<g{i}>{p})" for i, (_k, p, _c) in enumerate(_SLOTS)))
-_SEPARATOR = " "
+
+#: Labels whose value the form prints on the line under the label rather than
+#: beside it. A VIN is not among them: it has a shape of its own and belongs
+#: either to its grid of boxes or to :func:`_by_pattern`.
+_BELOW_KEYS = frozenset({"policy_holder", "owner", "vehicle", "plate"})
+_NAME_KEYS = frozenset({"policy_holder", "owner"})
+
+#: What the СТС is called on the «Вид документа» line once the program has
+#: written one there — the previous entry is often a ПТС, and leaving that word
+#: over a свидетельство's серия and номер names the wrong document.
+_STS_KIND = "Свидетельство о регистрации ТС"
 
 #: Everything after a label that is the form's own small print, not a value.
 _NOTE = re.compile(r"^\s*\(?\s*(?:полное наименование|фамилия|серия|номер|"
@@ -121,17 +194,27 @@ def _hits(text: str, values: dict[str, str]) -> list[tuple[str, int, int]]:
     return out
 
 
+#: A label whose value is not on this line at all — the form printed its own
+#: explanation of what to write instead, and the value goes underneath.
+_ELSEWHERE = (-1, -1)
+
+
 def _value_span(text: str, start: int, end: int, *,
                 needs_colon: bool) -> tuple[int, int] | None:
     """Where the value beside a label at [start, end) sits on the same line.
 
-    ``None`` when what follows is the form's own bracketed explanation rather
-    than a value — «Страхователь (полное наименование юридического лица…)» —
-    or when a label that demands a colon does not have one.
+    :data:`_ELSEWHERE` when what follows is the form's own bracketed
+    explanation — «1. Страхователь (полное наименование юридического лица или
+    фамилия, имя, отчество физического лица)». That note is not a value; it is
+    the form telling the operator to write the name on the line below, which is
+    exactly where every insurer in the office's folder prints it. Reading it as
+    "no such field here" is why the собственник was coming out blank.
+
+    ``None`` when a label that demands a colon does not have one.
     """
     rest = text[end:]
     if _NOTE.match(rest):
-        return None
+        return _ELSEWHERE
     if needs_colon and not re.match(r"\s*:", rest):
         return None
     lead = re.match(r"[\s:№]*", rest)
@@ -148,8 +231,18 @@ def _value_span(text: str, start: int, end: int, *,
 
 def _cells(row) -> list:
     """A table row's cells, with merged repeats collapsed."""
+    return _uniq(row.cells)
+
+
+def _uniq(cells) -> list:
+    """The distinct cells of a list — a merged one repeats in every column.
+
+    The cells themselves are kept, not their ids: a dropped cell's element can
+    be collected and its id handed straight back out to the next one, which
+    made two different columns look like the same merged cell.
+    """
     out, seen = [], set()
-    for cell in row.cells:
+    for cell in cells:
         key = id(cell._tc)
         if key in seen:
             continue
@@ -189,38 +282,59 @@ def _spread(cells: list, value: str) -> bool:
 # ------------------------------------------------------------------- values
 
 
-def _paragraph_values(doc, values: dict[str, str], report: Report) -> None:
-    """Replace a value that sits beside its label on the same line.
+def _flow_lines(doc) -> list[tuple]:
+    """Every line with text, as ``(owner, runs, text)``.
 
-    A label with nothing after it is a column *heading* — every insurer has
-    those, and the value belongs to some cell or line further on that only the
-    layout knows about. Those are left to :func:`_by_pattern`, which finds the
-    previous customer's data by its shape instead of by its label.
+    ``owner`` is the cell or text box the line sits in — ``None`` for the body.
+    A label may only take its value from a line with the same owner:
+    «Государственный регистрационный знак транспортного средства» is the last
+    line of one cell in several of these templates and the make of the car is
+    the first line of the next one, so read as one flow the plate was written
+    over the make.
     """
-    lines = [(p, r, text_of(r)) for p in iter_paragraphs(doc)
-             if (r := runs_of(p)) and text_of(r).strip()]
+    out: list[tuple] = []
+    for paragraph in _all_paragraphs(doc):
+        runs = runs_of(paragraph)
+        if (text := text_of(runs)).strip():
+            out.append((_owner_of(paragraph._p), runs, text))
+    return out
+
+
+def _paragraph_values(doc, values: dict[str, str], report: Report) -> None:
+    """Replace a value that sits beside its label, or on the line under it.
+
+    Under it is the common case: the form prints «1. Страхователь (полное
+    наименование юридического лица или фамилия, имя, отчество физического
+    лица)» and the name goes on the next line, in its own font. Writing it
+    beside the label instead put the name inside the insurer's own sentence and
+    in the insurer's own colour — the blue «Марка, модель транспортного
+    средства HYUNDAI SOLARIS» the operator was getting.
+
+    A label with nothing under it either is a column *heading*; the value then
+    belongs to a cell further down that only the layout knows about, and that
+    is left to :func:`_by_pattern` and :func:`_column_values`.
+    """
+    lines = _flow_lines(doc)
     replaced: list[tuple[str, str]] = []
-    for i, (_p, runs, text) in enumerate(lines):
+    for i, (cell, runs, text) in enumerate(lines):
         for key, lo, hi in reversed(_hits(text, values)):     # right to left
-            old = text[lo:hi]
+            old = text[lo:hi] if lo >= 0 else ""
             if old.strip():
                 replace_span(runs, lo, hi, values[key])
                 report.filled[key] = values[key]
-                if key in ("policy_holder", "owner"):
+                if key in _NAME_KEYS:
                     replaced.append((old.strip(), values[key]))
                 continue
-            if key not in ("policy_holder", "owner"):
+            if key not in _BELOW_KEYS:
                 continue
-            # «Собственник транспортного средства:» with the name a line or two
-            # below, the notes about what to write in between
-            below = _below(lines, i)
+            below = _below(lines, i, cell, key)
             if below is None:
-                report.skipped.append(key)
                 continue
-            _bp, brun, btext = below
+            brun, btext = below
             replace_span(brun, 0, len(btext), values[key])
             report.filled[key] = values[key]
-            replaced.append((btext.strip(), values[key]))
+            if key in _NAME_KEYS:
+                replaced.append((btext.strip(), values[key]))
 
     # The same name is often printed twice — once for the страхователь and once
     # for the собственник. Whatever was replaced by label is replaced elsewhere.
@@ -247,49 +361,236 @@ def _looks_like_a_name(text: str) -> bool:
         len(words) <= _NAME_MAX_WORDS
 
 
-def _below(lines: list, i: int):
+def _fits(key: str, line: str) -> bool:
+    """Whether a line under a label is that label's value and nobody else's.
+
+    «Hyundai Elantra KMHDN41BP3U633162 Т566ВЕ40» sits under the plate's heading
+    in one insurer's form, but it is the whole vehicle block — writing the
+    plate over it loses the make and the VIN. A line that carries somebody
+    else's shape is left to :func:`_by_pattern`, which knows how to put each
+    part of it back where it belongs.
+    """
+    return not any(other != key and shape.search(line)
+                   for other, shape in _SHAPES)
+
+
+def _below(lines: list, i: int, cell, key: str):
     """The line a label's value sits on, past the form's own small print.
 
-    Only a short, name-shaped line qualifies: a long sentence below a label is
-    the form's own text, and writing a company name over it wrecks the policy.
+    Only a short line inside the label's own cell qualifies, and only one that
+    is not already somebody else's value: a long sentence below a label is the
+    form's own text, and writing a company name over it wrecks the policy.
     """
-    for _p, runs, text in lines[i + 1:i + 4]:
+    for entry_cell, runs, text in lines[i + 1:i + 4]:
+        if entry_cell is not cell:
+            return None                # the next cell, not this label's value
         if _NOTE.match(text.strip()) or not text.strip():
             continue
         if _LABELS.search(text):
             return None                # the next field, not this one's value
-        if not _looks_like_a_name(text.strip()):
+        stripped = text.strip()
+        if not _looks_like_a_name(stripped) or not _fits(key, stripped):
             return None
-        return _p, runs, text
+        return runs, text
     return None
 
 
-def _table_values(doc, values: dict[str, str], report: Report, *,
-                  skip: frozenset[str] = frozenset()) -> None:
-    """Insurers print the vehicle block inside a table as often as not.
+def _heading(cell, values: dict[str, str], skip: frozenset[str]) -> str | None:
+    """The field a cell is the *heading* of — a label and nothing else.
 
-    ``skip`` names values already written somewhere better — a VIN that
-    went into its own grid of boxes must not be printed twice.
+    ``None`` when the cell already carries its value, when the label is only
+    part of a longer sentence of the insurer's, or when the value has already
+    been written somewhere better.
     """
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in _cells(row):
-                text = " ".join(cell.text.split())
-                found = _hits(text, values)
-                if not found:
+    text = " ".join(cell.text.split())
+    if not text:
+        return None
+    found = _hits(text, values)
+    if len(found) != 1:
+        return None
+    key, lo, hi = found[0]
+    if lo < 0 or text[lo:hi].strip() or hi < len(text.rstrip()):
+        return None
+    return None if key in skip else key
+
+
+def _column_values(doc, values: dict[str, str], report: Report, *,
+                   skip: frozenset[str]) -> None:
+    """A heading over a column, with the value in the row underneath.
+
+    «Транспортное средство: | Идентификационный номер | Государственный
+    регистрационный знак» across one row and «KIA | KNEDE22126611237 |
+    X526AY550» spread over the next two is how one of the office's insurers
+    lays the car out, and the make and model get a row each. Merged cells make
+    the columns of two rows line up by grid position rather than by count, so
+    that is what is followed.
+    """
+    # what is already placed is decided once: Word keeps two copies of every
+    # text box and both have to end up saying the same thing
+    done = skip | frozenset(report.filled)
+    for table in _all_tables(doc):
+        grid = [list(row.cells) for row in table.rows]
+        for ri, row_cells in enumerate(grid):
+            for cell in _uniq(row_cells):
+                key = _heading(cell, values, done)
+                if key is None:
                     continue
-                key, lo, hi = found[0]
-                if text[lo:hi].strip():
-                    _set_cell(cell, text[:lo] + values[key])
-                elif len(found) == 1 and hi >= len(text.rstrip()):
-                    # the cell holds the label and nothing else — several
-                    # insurers leave the value's own cell like that
-                    if key in skip:
-                        continue
-                    _set_cell(cell, text.rstrip() + _SEPARATOR + values[key])
-                else:
+                columns = [i for i, c in enumerate(row_cells)
+                           if c._tc is cell._tc]
+                targets = _value_cells(grid, ri, columns, cell, key)
+                if not targets:
                     continue
+                _stack(targets, values[key])
                 report.filled[key] = values[key]
+
+
+def _value_cells(grid: list, ri: int, columns: list[int], heading,
+                 key: str) -> list:
+    """The cells under a heading that hold the previous car's value.
+
+    Only a short, value-shaped cell qualifies. The row under a heading is as
+    often the insurer's own paragraph spanning the whole table — «Паспорт
+    транспортного средства, свидетельство о регистрации транспортного
+    средства…» — and writing a VIN over that deletes the form.
+    """
+    written: list = []
+    empty: list = []
+    for row_cells in grid[ri + 1:ri + 3]:
+        picked = _uniq([row_cells[i] for i in columns if i < len(row_cells)])
+        for cell in picked:
+            if cell._tc is heading._tc:
+                continue                      # the heading, merged downwards
+            text = " ".join(cell.text.split())
+            if not text:
+                empty.append(cell)
+                continue
+            if _LABELS.search(text) or not _looks_like_a_name(text) \
+                    or not _fits(key, text):
+                continue
+            written.append(cell)
+    return written or empty[:1]
+
+
+def _stack(cells: list, value: str) -> None:
+    """Write a value over the cells that held the previous one.
+
+    Two cells for «KIA» and «RIO» take a word each, so the new car keeps the
+    make-over-model shape the template was built with; anything left over goes
+    into the last of them, and a spare cell is cleared rather than left showing
+    half of the last customer's car.
+    """
+    if len(cells) == 1:
+        _set_cell(cells[0], value)
+        return
+    words = value.split()
+    if len(words) >= len(cells):
+        parts = words[:len(cells) - 1] + [" ".join(words[len(cells) - 1:])]
+    else:
+        parts = words + [""] * (len(cells) - len(words))
+    for cell, part in zip(cells, parts, strict=True):
+        _set_cell(cell, part)
+
+
+def _cell_gaps(doc, values: dict[str, str], report: Report, *,
+               skip: frozenset[str]) -> None:
+    """A labelled cell the template left blank — give the value its own line.
+
+    One insurer prints «Идентификационный номер транспортного средства» and
+    nothing under it while the cells either side of it carry «Марка, модель…»
+    over the make and «Государственный регистрационный знак…» over the plate.
+    The value goes on a line of its own copied from one of those neighbours, so
+    it comes out in the black the template writes values in — appending it to
+    the label put the VIN inside the insurer's blue heading.
+    """
+    done = skip | frozenset(report.filled)
+    for table in _all_tables(doc):
+        for row in table.rows:
+            cells = _cells(row)
+            donor = next((p for c in cells for p in _value_lines(c)), None)
+            if donor is None:
+                continue
+            for cell in cells:
+                key = _heading(cell, values, done)
+                if key is None:
+                    continue
+                _add_line(cell, donor, values[key])
+                report.filled[key] = values[key]
+
+
+def _value_lines(cell) -> list:
+    """The paragraphs of a cell that hold a value rather than a label."""
+    out = []
+    for paragraph in cell.paragraphs[1:]:
+        runs = runs_of(paragraph)
+        text = text_of(runs)
+        if text.strip() and not _LABELS.search(text) and not _NOTE.match(text.strip()):
+            out.append(paragraph)
+    return out
+
+
+def _add_line(cell, donor, value: str) -> None:
+    """Put ``value`` on a new line of ``cell``, in ``donor``'s formatting."""
+    import copy
+
+    from docx.text.paragraph import Paragraph
+
+    element = copy.deepcopy(donor._p)
+    cell._tc.append(element)
+    runs = runs_of(Paragraph(element, cell))
+    if runs:
+        replace_span(runs, 0, len(text_of(runs)), value)
+
+
+# ------------------------------------------------- «Вид документа … серия …»
+
+_DOC_KIND = re.compile(r"Вид\s+документа", re.IGNORECASE)
+_DOC_SERIES = re.compile(r"сери[яи]\s*[:№]?\s*(\S+)", re.IGNORECASE)
+_DOC_NUMBER = re.compile(r"номер\s*[:№]?\s*(\S+)", re.IGNORECASE)
+
+
+def _document_line(doc, sts: str, report: Report) -> None:
+    """Fill «Вид документа … серия … номер …» with the car's СТС.
+
+    Most of the office's insurers head the row with the whole of the form's own
+    wording — «Паспорт транспортного средства, свидетельство о регистрации
+    транспортного средства, паспорт(свидетельство) на шасси…» — and print the
+    document itself on the line under it. The kind is rewritten too: the line
+    is as likely to say «Паспорт ТС» from the previous car, and a свидетельство
+    filed under a паспорт's name is the wrong document.
+
+    A line with no digits in it is the form's own «Вид документа Серия Номер»
+    column heading, and is left alone.
+    """
+    if not sts:
+        return
+    words = sts.split()
+    series = " ".join(words[:-1]) if len(words) > 1 else ""
+    number = words[-1] if words else ""
+    for paragraph in _all_paragraphs(doc):
+        runs = runs_of(paragraph)
+        text = text_of(runs)
+        head = _DOC_KIND.search(text)
+        if head is None or not any(c.isdigit() for c in text):
+            continue
+        found_series = _DOC_SERIES.search(text, head.end())
+        found_number = _DOC_NUMBER.search(text, head.end())
+        edits: list[tuple[int, int, str]] = []
+        if found_series is not None and series:
+            edits.append((*found_series.span(1), series))
+        if found_number is not None and number:
+            edits.append((*found_number.span(1), number))
+        stop = min([m.start() for m in (found_series, found_number)
+                    if m is not None] or [len(text)])
+        kind = text[head.end():stop]
+        named = kind.strip(" \t:№.,")
+        if named:
+            at = head.end() + kind.index(named)
+            edits.append((at, at + len(named),
+                          _STS_KIND.upper() if named.isupper() else _STS_KIND))
+        for lo, hi, value in sorted(edits, reverse=True):     # right to left
+            replace_span(runs, lo, hi, value)
+        if edits:
+            report.filled["sts"] = sts
 
 
 # --------------------------------------------------- by shape, not by label
@@ -317,13 +618,8 @@ def _by_pattern(doc, values: dict[str, str], report: Report) -> None:
     Make and model have no shape of their own, so they are taken to be whatever
     stands in front of the VIN on the same line.
     """
-    for paragraph in iter_paragraphs(doc):
+    for paragraph in _all_paragraphs(doc):
         _swap_shapes(runs_of(paragraph), values, report)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in _cells(row):
-                for paragraph in cell.paragraphs:
-                    _swap_shapes(runs_of(paragraph), values, report)
 
 
 _VEHICLE_HEAD = re.compile(r"^\s*([A-Za-zА-Яа-я][\w\-. ]{2,40}?)\s+$")
@@ -354,25 +650,57 @@ def _swap_shapes(runs: list, values: dict[str, str], report: Report) -> None:
 
 
 _VIN = re.compile(r"^[A-HJ-NPR-Z0-9]{15,17}$")
+_VIN_CHARS = re.compile(r"^[A-HJ-NPR-Z0-9]*$")
+_VIN_LABEL = re.compile(r"Идентификационный\s+номер")
+
+
+def _boxes(cells: list) -> list:
+    """The longest unbroken run of cells holding at most one character each."""
+    best: list = []
+    run: list = []
+    for cell in cells:
+        if len(cell.text.strip()) <= 1:
+            run.append(cell)
+            best = run if len(run) > len(best) else best
+        else:
+            run = []
+    return best
 
 
 def _vin_grids(doc, vin: str, report: Report) -> None:
     """Some insurers print the VIN one character per box — rewrite those too.
 
-    Only a run of single-character cells that already spells out a VIN is
-    touched, so no other grid on the page can be mistaken for it.
+    A row of fifteen boxes or more is the VIN's: a date takes eight and no
+    other field on the form is that long. The boxes are taken as they come,
+    whether the previous car's VIN is still standing in them, only part of it
+    is, or the template ships them empty — requiring them to spell out a whole
+    valid VIN left half-filled grids untouched and the VIN printed above them
+    instead of inside them.
     """
     if not vin:
         return
-    for table in doc.tables:
-        for row in table.rows:
-            grid = [c for c in _cells(row) if len(c.text.strip()) <= 1]
-            joined = "".join(c.text.strip() for c in grid).upper()
-            if len(grid) < 15 or not _VIN.fullmatch(joined):
+    for table in _all_tables(doc):
+        rows = list(table.rows)
+        for ri, row in enumerate(rows):
+            cells = _cells(row)
+            boxes = _boxes(cells)
+            if len(boxes) < 15:
                 continue
-            for cell, char in zip(grid, vin.ljust(len(grid))):
+            joined = "".join(c.text.strip() for c in boxes).upper()
+            if not _VIN.fullmatch(joined) and not (
+                    _VIN_CHARS.fullmatch(joined) and _labelled_vin(rows, ri, cells)):
+                continue
+            for cell, char in zip(boxes, vin.ljust(len(boxes))):
                 _set_cell(cell, char.strip())
             report.filled["vin_grid"] = vin
+
+
+def _labelled_vin(rows: list, ri: int, cells: list) -> bool:
+    """Whether «Идентификационный номер» heads this row of boxes."""
+    near = [c.text for c in cells]
+    for row in rows[max(0, ri - 2):ri]:
+        near += [c.text for c in _cells(row)]
+    return any(_VIN_LABEL.search(text) for text in near)
 
 
 # ------------------------------------------------------------------ drivers
@@ -385,7 +713,7 @@ _LICENCE_HEADER = re.compile(r"Водительское\s+удостоверен
 
 def _driver_table(doc):
     """The table whose header row names the drivers and their licences."""
-    for table in doc.tables:
+    for table in _all_tables(doc):
         for ri, row in enumerate(table.rows):
             joined = " ".join(c.text for c in _cells(row))
             if _DRIVER_HEADER.search(joined) and _LICENCE_HEADER.search(joined):
@@ -462,7 +790,7 @@ def _fill_driver_lines(doc, drivers: list[tuple[str, str]],
     so it is dropped rather than handed to somebody else — it comes from the
     РСА database, and this program has no way to look it up.
     """
-    lines = [(p, r, text_of(r)) for p in iter_paragraphs(doc)
+    lines = [(p, r, text_of(r)) for p in _all_paragraphs(doc)
              if (r := runs_of(p)) and text_of(r).strip()]
     start = next((i for i, (_p, _r, t) in enumerate(lines)
                   if _DRIVER_HEADER.search(t)), None)
@@ -525,7 +853,7 @@ def _choose(doc, unlimited: bool, report: Report) -> None:
     """
     wanted = _UNLIMITED if unlimited else _LIMITED
     offered = False
-    for paragraph in iter_paragraphs(doc):
+    for paragraph in _all_paragraphs(doc):
         runs = runs_of(paragraph)
         text = text_of(runs)
         if not (_UNLIMITED.search(text) or _LIMITED.search(text)):
@@ -560,7 +888,7 @@ def _note_signature(doc, report: Report) -> None:
     The template is left exactly as it was given, and the operator is told what
     still has to come from the insurer.
     """
-    for paragraph in iter_paragraphs(doc):
+    for paragraph in _all_paragraphs(doc):
         text = text_of(runs_of(paragraph))
         if text.strip() and _SIGNATURE.search(text):
             report.cleared.append(" ".join(text.split())[:60])
@@ -589,7 +917,7 @@ def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
     boxes are reported rather than half-filled — a date with three of its eight
     digits changed is worse than one the operator finishes by hand.
     """
-    lines = [(r, t) for p in iter_paragraphs(doc)
+    lines = [(r, t) for p in _all_paragraphs(doc)
              if (r := runs_of(p)) and (t := text_of(r)).strip()]
 
     # «Срок страхования с … 15.07.2026 г.» and «по … 14.07.2027 г.» are one
@@ -613,7 +941,7 @@ def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
             del wanted[:len(found)]
         break
 
-    for paragraph in iter_paragraphs(doc):
+    for paragraph in _all_paragraphs(doc):
         runs = runs_of(paragraph)
         text = text_of(runs)
         if not text.strip():
@@ -636,14 +964,14 @@ def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
     if "term" in report.filled:
         return
     # No line carried the dates as text: this insurer prints them one digit per
-    # box. Say so rather than change three of the eight digits.
-    for table in doc.tables:
-        for row in table.rows:
-            if _TERM.search(" ".join(c.text for c in _cells(row))):
-                report.skipped.append(
-                    "Срок страхования — бланкада катак-катак ёзилган, "
-                    "қўлда тўлдиринг")
-                return
+    # box. Say so rather than change three of the eight digits. Wherever the
+    # form asks for the срок — a row of boxes, a text box, anywhere — the
+    # operator has to be told; one insurer's boxes are in neither a table nor
+    # the body, and the policy came back with the previous cover's dates on it
+    # and nothing said about them.
+    if any(_TERM.search(text_of(runs_of(p))) for p in _all_paragraphs(doc)):
+        report.skipped.append(
+            "Срок страхования — бланкада катак-катак ёзилган, қўлда тўлдиринг")
 
 
 _MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня",
@@ -674,13 +1002,23 @@ def fill(template: Path, out: Path, *, values: dict[str, str],
     placed = {key for key in ("vin", "plate", "sts") if key in report.filled}
     if "vin_grid" in report.filled:
         placed.add("vin")
-    _table_values(doc, values, report, skip=frozenset(placed))
+    # A heading with the value in the row under it first, then a labelled cell
+    # the template left blank — in that order, so a form that has both does not
+    # end up with the value written twice.
+    _column_values(doc, values, report, skip=frozenset(placed))
+    _cell_gaps(doc, values, report, skip=frozenset(placed))
+    if "sts" not in report.filled:
+        _document_line(doc, values.get("sts", ""), report)
     _fill_drivers(doc, [] if unlimited else drivers, report)
     _choose(doc, unlimited, report)
     if start and end:
         _dates(doc, start=start, end=end, signed=signed or start, report=report)
+    written = set(report.filled)
+    if "vin_grid" in written:
+        written.add("vin")     # it went into the boxes; telling the operator to
+                               # write it by hand would have them write it twice
     for key in values:
-        if key not in report.filled and values[key]:
+        if key not in written and values[key]:
             report.skipped.append(f"{key} — бланкада бу жой топилмади, қўлда ёзинг")
     seen: list[str] = []
     for note in report.skipped:
