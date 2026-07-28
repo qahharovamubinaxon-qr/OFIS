@@ -56,6 +56,12 @@ class Slot(NamedTuple):
 #: printed on the blank is — so a portrait fitted to 3:4 lands without a gap.
 PHOTO_BOX = (461.5, 510.6, 728.2, 866.4)
 
+#: The photograph is laid on at nine parts in ten, not flat: the office wants
+#: the card's own green to come through it a little, the way the printed cards
+#: look. Full strength made the picture sit on top of the card rather than in
+#: it.
+PHOTO_OPACITY = 0.90
+
 #: Sizes below were set by drawing the office's own card back onto its blank
 #: and shrinking each value until its ink was as wide as the ink on the card,
 #: to a tenth of a point.

@@ -38,6 +38,7 @@ from src.pdf.razreshenie_spec import (
     NUMBER_SIZE,
     NUMBER_X,
     PHOTO_BOX,
+    PHOTO_OPACITY,
     SANS,
     SANS_BOLD,
     SERIF_BOLD,
@@ -142,12 +143,31 @@ def _cover_crop(photo: bytes, aspect: float) -> bytes:
     return out.getvalue()
 
 
+def _soften(photo: bytes, opacity: float) -> bytes:
+    """Lay the photograph on at ``opacity``, letting the card show through.
+
+    Done by giving the picture an alpha channel rather than by mixing it with a
+    colour: what shows through is then whatever the blank actually has under
+    the window, so this keeps working if the office changes the card's green.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    image = Image.open(BytesIO(photo)).convert("RGBA")
+    image.putalpha(int(round(max(0.0, min(1.0, opacity)) * 255)))
+    out = BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
 def _place_photo(page, photo: bytes | None) -> None:
-    """Fill the card's photo window edge to edge.
+    """Fill the card's photo window edge to edge, at nine parts in ten.
 
     The window is 3 : 4 and the portrait is fitted to 3 : 4 first, so nothing is
     stretched; ``keep_proportion=False`` then guarantees no green shows through
-    at the edges, which is what the office asked for.
+    at the *edges*. Through the picture itself a tenth of the card does show —
+    :data:`PHOTO_OPACITY` — which is how the office's own cards look.
     """
     if not photo:
         return
@@ -168,6 +188,11 @@ def _place_photo(page, photo: bytes | None) -> None:
         except Exception as exc:                  # noqa: BLE001
             log.warning("Разрешение: расм қирқилмади (%s) — ўз ҳолича", exc)
             stream = photo
+    if PHOTO_OPACITY < 1.0:
+        try:
+            stream = _soften(stream, PHOTO_OPACITY)
+        except Exception as exc:                  # noqa: BLE001
+            log.warning("Разрешение: расм хиралаштирилмади (%s)", exc)
     try:
         page.insert_image(fitz.Rect(*PHOTO_BOX), stream=stream,
                           keep_proportion=False, overlay=True)

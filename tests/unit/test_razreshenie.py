@@ -286,3 +286,46 @@ def test_a_template_needs_both_of_its_sides(tmp_path) -> None:
 
 def test_the_bundled_blank_is_offered() -> None:
     assert any(p.name == "standart" for p in _service().templates())
+
+
+# --------------------------------------------------- where the card goes
+
+
+def test_the_card_is_filed_under_the_worker_surname() -> None:
+    result = _service().generate(
+        surname="Сейтимов", name="Гулхумар", activity="Разнорабочий",
+        valid_from=date(2026, 7, 17), firm_name='ООО "ТРИУМФ"')
+    assert result.filename == "Сейтимов.pdf"
+
+
+def test_a_card_already_on_the_desktop_is_never_overwritten(monkeypatch,
+                                                            tmp_path) -> None:
+    """Two workers can share a surname; the first card is not the program's
+    to throw away."""
+    from src.config import paths
+    from src.services import razreshenie_service as service
+
+    monkeypatch.setattr(paths, "desktop_dir", lambda: tmp_path)
+    monkeypatch.setattr(service.paths, "desktop_dir", lambda: tmp_path)
+
+    first = service.desktop_target("Сейтимов.pdf")
+    first.write_bytes(b"%PDF-1.4\n")
+    second = service.desktop_target("Сейтимов.pdf")
+    assert second.name == "Сейтимов (2).pdf"
+    second.write_bytes(b"%PDF-1.4\n")
+    assert service.desktop_target("Сейтимов.pdf").name == "Сейтимов (3).pdf"
+
+
+def test_the_photograph_is_laid_on_at_nine_parts_in_ten() -> None:
+    """«100 эмас 90 қилиб» — the card shows through the picture a little."""
+    image = pytest.importorskip("PIL.Image")
+    from io import BytesIO
+
+    from src.pdf.razreshenie_renderer import _soften
+
+    assert pytest.approx(0.90) == spec.PHOTO_OPACITY
+    buf = BytesIO()
+    image.new("RGB", (60, 80), (200, 30, 30)).save(buf, format="PNG")
+    out = image.open(BytesIO(_soften(buf.getvalue(), spec.PHOTO_OPACITY)))
+    assert out.mode == "RGBA"
+    assert out.getchannel("A").getextrema() == (230, 230)

@@ -70,6 +70,30 @@ def _folder() -> Path:
     return paths.user_templates_dir() / "razreshenie"
 
 
+def _file_stem(surname: str) -> str:
+    """The card is filed under the worker's surname, and nothing else."""
+    stem = "".join(c for c in surname.strip()
+                   if c.isalnum() or c in " _-").strip()
+    return stem or "Разрешение"
+
+
+def desktop_target(filename: str) -> Path:
+    """Where on the desktop this card goes, without treading on another.
+
+    Two workers can share a surname, and a card already printed is not the
+    program's to overwrite — the second one becomes «Саидов (2).pdf».
+    """
+    folder = paths.desktop_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / filename
+    stem, suffix = target.stem, target.suffix
+    counter = 2
+    while target.exists():
+        target = folder / f"{stem} ({counter}){suffix}"
+        counter += 1
+    return target
+
+
 class RazreshenieService:
     def __init__(self, settings=None) -> None:
         self._settings = settings
@@ -208,11 +232,9 @@ class RazreshenieService:
         self.remember_numbers(seria, number, back_number)
         self.remember_firm(firm_name, firm_inn)
 
-        stem = "".join(c for c in f"{surname} {name}".strip()
-                       if c.isalnum() or c in " _-").strip() or "Разрешение"
         log.info("Разрешение: %s %s — %s №%s / ВВ %s",
                  surname, name, seria, number, back_number)
         return RazreshenieResult(
-            pdf=pdf, filename=f"Разрешение-{stem}-{number}.pdf",
+            pdf=pdf, filename=f"{_file_stem(surname)}.pdf",
             seria=seria, number=number, back_number=back_number,
             valid_from=valid_from, valid_to=cover_until(valid_from))

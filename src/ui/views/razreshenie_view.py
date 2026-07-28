@@ -32,6 +32,7 @@ from src.common.errors import OfisError
 from src.common.threading import run_async
 from src.controllers.razreshenie_controller import RazreshenieController
 from src.pdf.razreshenie_renderer import cover_until
+from src.services.razreshenie_service import desktop_target
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
@@ -153,7 +154,9 @@ class RazreshenieView(QWidget):
         self._status = QLabel(
             "Паспортни ташланг — Ф.И.О., туғилган сана, фуқаролик ва паспорт "
             "рақами ўзи ўқилади. Расм рамкага тўлиқ жойлашади. Тугаш санаси, "
-            "карта рақамлари ва фирма ўзи тўлади — текшириб RUN босинг.")
+            "карта рақамлари ва фирма ўзи тўлади — текшириб RUN босинг. "
+            "PDF (олд + орқа) Рабочий столга ишчининг фамилияси билан "
+            "сақланади.")
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
@@ -276,25 +279,21 @@ class RazreshenieView(QWidget):
             self._failed(error)
             return
 
-        target, _ = QFileDialog.getSaveFileName(
-            self, "Разрешениени сақлаш",
-            str(_desktop() / result.filename), "PDF (*.pdf)")
-        if not target:
-            self._status.setText("Сақлаш бекор қилинди.")
-            return
-        Path(target).write_bytes(result.pdf)
-        self._last_pdf = Path(target)
+        # straight to the desktop under the worker's surname — no dialog, the
+        # operator prints these one after another and should not be stopped
+        target = desktop_target(result.filename)
+        target.write_bytes(result.pdf)
+        self._last_pdf = target
         self._open.setEnabled(True)
         self._reload_numbers()
         self._reload_firms()
-        if self._photo.path is None:
-            self._status.setText(
-                f"✅ Тайёр: {target}\n⚠️ Расм юкланмади — карта расмсиз чиқди.")
-            return
+        warning = ("\n⚠️ Расм юкланмади — карта расмсиз чиқди."
+                   if self._photo.path is None else "")
         self._status.setText(
-            f"✅ Тайёр: {target}\n"
+            f"✅ Рабочий столга сақланди: {target.name}\n"
             f"{result.seria} № {result.number} · ВВ {result.back_number} · "
-            f"{result.valid_from:%d.%m.%Y} — {result.valid_to:%d.%m.%Y}")
+            f"{result.valid_from:%d.%m.%Y} — {result.valid_to:%d.%m.%Y}"
+            + warning)
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)
