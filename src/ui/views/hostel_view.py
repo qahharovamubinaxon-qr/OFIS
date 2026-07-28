@@ -39,6 +39,7 @@ from src.domain.registration_address import RegistrationAddress
 from src.services.hostel_service import HostelResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.spot_picker import SpotPickerDialog
 
 log = get_logger(__name__)
 
@@ -59,12 +60,39 @@ _FIELDS = [
 ]
 
 
+def _spot_text(spot: tuple[float, float] | None) -> str:
+    if spot is None:
+        return "Boshlanish sanasi: blankaning standart joyida"
+    return f"Boshlanish sanasi: belgilangan (x={spot[0]:.0f}, y={spot[1]:.0f})"
+
+
+def choose_stay_spot(controller: HostelController, parent, *, address=None,
+                     template: Path | None = None,
+                     current: tuple[float, float] | None = None):
+    """Show the page and let the operator mark where the start date goes.
+
+    Returns the new spot, ``None`` for the form's own place, or ``current``
+    unchanged when the operator backs out.
+    """
+    try:
+        spot = controller.stay_from_spot(address, template=template, current=current)
+    except OfisError as exc:
+        QMessageBox.warning(parent, "Xato", exc.message)
+        return current
+    dialog = SpotPickerDialog(spot, title="Boshlanish sanasi joyi", parent=parent)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return current
+    return dialog.point()
+
+
 class AddHostelDialog(QDialog):
-    def __init__(self, parent=None) -> None:
+    def __init__(self, controller: HostelController, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Yangi xostel / Новый хостел")
         self.setMinimumWidth(580)
+        self._c = controller
         self._template: Path | None = None
+        self.spot: tuple[float, float] | None = None
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
@@ -90,6 +118,14 @@ class AddHostelDialog(QDialog):
         pick.addWidget(btn)
         outer.addLayout(pick)
 
+        spot_row = QHBoxLayout()
+        self._spot_label = QLabel("Boshlanish sanasi: blankaning standart joyida")
+        spot_btn = QPushButton("Boshlanish sanasi joyi…")
+        spot_btn.clicked.connect(self._pick_spot)
+        spot_row.addWidget(self._spot_label, stretch=1)
+        spot_row.addWidget(spot_btn)
+        outer.addLayout(spot_row)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -102,6 +138,16 @@ class AddHostelDialog(QDialog):
         if path:
             self._template = Path(path)
             self._tpl_label.setText(f"✓ {Path(path).name}")
+
+    def _pick_spot(self) -> None:
+        """Mark where this hostel wants the stay-start date, before it exists.
+
+        Against the uploaded template when there is one, otherwise against the
+        bundled blank — the box is in the same place on both.
+        """
+        self.spot = choose_stay_spot(
+            self._c, self, template=self._template, current=self.spot)
+        self._spot_label.setText(_spot_text(self.spot))
 
     def build(self) -> tuple[RegistrationAddress, Path | None]:
         v = {k: e.text().strip() for k, e in self._edits.items()}
@@ -125,6 +171,8 @@ class AddHostelDialog(QDialog):
             dom=v["dom"] or None, korpus=v["korpus"] or None,
             stroenie=v["stroenie"] or None, komnata=v["komnata"] or None,
             organization_name=v["organization_name"] or None, inn=v["inn"] or None,
+            stay_from_x=self.spot[0] if self.spot else None,
+            stay_from_y=self.spot[1] if self.spot else None,
             template_path=self._template or Path("missing.pdf"),
         )
         return address, self._template
@@ -162,6 +210,11 @@ class HostelView(QWidget):
         restore.setFixedWidth(40)
         restore.clicked.connect(self._restore)
         row.addWidget(restore)
+        spot = QPushButton("🎯")
+        spot.setToolTip("Boshlanish sanasi shu xostelda qayerga chiqsin")
+        spot.setFixedWidth(40)
+        spot.clicked.connect(self._pick_spot)
+        row.addWidget(spot)
         root.addLayout(row)
 
         dates = QHBoxLayout()
@@ -245,8 +298,28 @@ class HostelView(QWidget):
         return "AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting."
 
     # ------------------------------------------------------------------
+    def _pick_spot(self) -> None:
+        """Move the stay-start date for the hostel already in the picker."""
+        address = self._selected()
+        if address is None:
+            self._warn("Avval xostel tanlang.")
+            return
+        current = (None if address.stay_from_x is None or address.stay_from_y is None
+                   else (address.stay_from_x, address.stay_from_y))
+        spot = choose_stay_spot(self._c, self, address=address, current=current)
+        if spot == current:
+            return
+        try:
+            self._c.set_stay_from(address.id, spot)
+        except OfisError as exc:
+            QMessageBox.warning(self, "Xato", exc.message)
+            return
+        self.refresh()
+        QMessageBox.information(self, "Saqlandi", _spot_text(spot)
+                                + f"\n«{address.label}» uchun eslab qolindi.")
+
     def _add(self) -> None:
-        dialog = AddHostelDialog(self)
+        dialog = AddHostelDialog(self._c, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         address, template = dialog.build()

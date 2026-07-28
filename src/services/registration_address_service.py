@@ -59,6 +59,21 @@ class RegistrationAddressService:
         log.info("Hostel address created: %s (%s)", address.label, address.internal_code)
         return address
 
+    def set_stay_from(self, address_id: UUID,
+                      spot: tuple[float, float] | None) -> RegistrationAddress:
+        """Remember where this hostel wants the stay-start date printed.
+
+        ``None`` puts it back where the form itself puts it.
+        """
+        address = self._repo.get(address_id)
+        if address is None:
+            raise ValidationError("Хостел топилмади", context={"id": str(address_id)})
+        x, y = spot if spot is not None else (None, None)
+        address = address.model_copy(update={"stay_from_x": x, "stay_from_y": y})
+        self._repo.upsert(address)
+        log.info("Stay-from spot for %s: %s", address.label, spot or "default")
+        return address
+
     @staticmethod
     def _hostel_dest(address: RegistrationAddress) -> Path:
         return (paths.user_templates_dir()

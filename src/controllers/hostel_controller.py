@@ -13,7 +13,7 @@ from uuid import UUID
 from src.common.logging import get_logger
 from src.domain.registration_address import RegistrationAddress
 from src.ocr.service import OcrService
-from src.services.hostel_service import HostelResult, HostelService
+from src.services.hostel_service import HostelResult, HostelService, StaySpot
 from src.services.registration_address_service import RegistrationAddressService
 
 log = get_logger(__name__)
@@ -47,6 +47,18 @@ class HostelController:
 
     def restore_address(self, address_id: UUID) -> RegistrationAddress:
         return self._addresses.restore(address_id)
+
+    def stay_from_spot(self, address: RegistrationAddress | None = None, *,
+                       template: Path | None = None,
+                       current: tuple[float, float] | None = None) -> StaySpot:
+        """The page picture and the current spot of the stay-start date."""
+        return self._hostel.stay_from_spot(address, template=template,
+                                           current=current)
+
+    def set_stay_from(self, address_id: UUID,
+                      spot: tuple[float, float] | None) -> RegistrationAddress:
+        """Save where this hostel wants it; ``None`` restores the form's own spot."""
+        return self._addresses.set_stay_from(address_id, spot)
 
     def ai_available(self) -> bool:
         return self._ocr.available()

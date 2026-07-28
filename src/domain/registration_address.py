@@ -45,6 +45,13 @@ class RegistrationAddress(BaseModel):
     kvartira: str | None = None
     regional_number: str | None = None  # «Уведомления зарегистрированго №…»
 
+    # Where this hostel wants the stay-start date inside the «Отметка о
+    # подтверждении» box — the centre of the printed date, in points on the
+    # form's second page. Every hostel's box is stamped a little differently,
+    # so the operator marks the spot once and it is used from then on.
+    stay_from_x: float | None = None
+    stay_from_y: float | None = None
+
     template_path: Path
     template_version: str = "1"
 

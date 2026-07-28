@@ -13,7 +13,8 @@ from src.domain.registration_address import RegistrationAddress
 
 _ADDR_COLS = ("oblast", "raion", "gorod", "ulitsa", "dom", "korpus",
               "stroenie", "kvartira", "regional_number",
-              "kind", "organization_name", "inn", "komnata")
+              "kind", "organization_name", "inn", "komnata",
+              "stay_from_x", "stay_from_y")
 
 
 def _row_to_address(row: sqlite3.Row) -> RegistrationAddress:
@@ -45,9 +46,10 @@ class RegistrationAddressRepository:
                 INSERT INTO registration_addresses (id, label, internal_code, address_text,
                     host_fio, oblast, raion, gorod, ulitsa, dom, korpus, stroenie, kvartira,
                     regional_number, kind, organization_name, inn, komnata,
+                    stay_from_x, stay_from_y,
                     template_path, template_version, status, notes,
                     created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     label=excluded.label, internal_code=excluded.internal_code,
                     address_text=excluded.address_text, host_fio=excluded.host_fio,
@@ -57,6 +59,7 @@ class RegistrationAddressRepository:
                     regional_number=excluded.regional_number,
                     kind=excluded.kind, organization_name=excluded.organization_name,
                     inn=excluded.inn, komnata=excluded.komnata,
+                    stay_from_x=excluded.stay_from_x, stay_from_y=excluded.stay_from_y,
                     template_path=excluded.template_path, template_version=excluded.template_version,
                     status=excluded.status, notes=excluded.notes, updated_at=excluded.updated_at
                 """,
@@ -65,6 +68,7 @@ class RegistrationAddressRepository:
                     a.oblast, a.raion, a.gorod, a.ulitsa, a.dom, a.korpus, a.stroenie,
                     a.kvartira, a.regional_number,
                     a.kind, a.organization_name, a.inn, a.komnata,
+                    a.stay_from_x, a.stay_from_y,
                     str(a.template_path), a.template_version, a.status.value, a.notes, now, now,
                 ),
             )
