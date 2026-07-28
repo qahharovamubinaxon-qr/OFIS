@@ -9,7 +9,7 @@ is returned unchanged.
 
 from __future__ import annotations
 
-import re
+from src.domain.passport_rules import issuer_in_russian
 
 # Longest sequences first so digraphs win over single letters.
 _DIGRAPHS: tuple[tuple[str, str], ...] = (
@@ -54,17 +54,12 @@ def to_cyrillic(text: str) -> str:
     return "".join(out)
 
 
-_ISSUER_MAP = [
-    ("MINISTRY OF INTERNAL AFFAIRS", "МВД"), ("MIA", "МВД"), ("IIV", "МВД"),
-    ("MVD", "МВД"), ("PSC", "ЦГУ"), ("DAVLAT XIZMATLARI MARKAZI", "ЦГУ"),
-    ("MFA", "МИД"), ("SSD", "ГСД"),
-]
-
-
 def translate_issuer(value: str) -> str:
-    """«Кем выдан» abbreviations → their Russian equivalents (MIA 4102 → МВД
-    4102, PSC → ЦГУ). Applied before transliteration so codes are not mangled."""
-    out = value or ""
-    for latin, ru in _ISSUER_MAP:
-        out = re.sub(rf"\b{latin}\b", ru, out, flags=re.IGNORECASE)
-    return out
+    """«Кем выдан» → its Russian equivalent (MIA 4102 → МВД 4102, ХШБ ВКД ҶТ →
+    МВД РТ). Applied before transliteration so codes are not mangled.
+
+    The dictionary itself lives in :mod:`src.domain.passport_rules`: which
+    office a passport names is the form's business, not the reader's, and the
+    same translation has to happen for a passport typed in by hand.
+    """
+    return issuer_in_russian(value)

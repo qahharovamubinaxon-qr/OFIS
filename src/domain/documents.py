@@ -11,9 +11,10 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from src.domain.enums import Gender
+from src.domain.passport_rules import issuer_in_russian, normalise_document
 
 _MODEL = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -54,6 +55,20 @@ class Passport(BaseModel):
     @classmethod
     def _clean_number(cls, v: str | None) -> str | None:
         return re.sub(r"\s+", "", v) if v else v
+
+    @model_validator(mode="after")
+    def _as_a_russian_form_needs_it(self) -> Passport:
+        """The office's two rules, applied wherever a passport comes from.
+
+        Here rather than in the OCR service because the passport reaches the
+        forms three ways — read from an image, typed by hand, or carried in
+        from свера — and the rules are not about reading. See
+        :mod:`src.domain.passport_rules`.
+        """
+        self.series, self.number = normalise_document(
+            self.series, self.number, self.nationality)
+        self.issued_by = issuer_in_russian(self.issued_by) or None
+        return self
 
 
 class Patent(BaseModel):

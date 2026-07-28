@@ -113,7 +113,9 @@ class OcrService:
             if parsed:
                 update[key] = parsed
         log.info("Passport verified by MRZ (%s)", mrz.fields.get("number", ""))
-        return passport.model_copy(update=update)
+        # revalidated, not copied: model_copy skips the validators, and the
+        # zone is exactly where a country code can come back as a серия
+        return Passport.model_validate({**passport.model_dump(), **update})
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
         """Read the patent. The FRONT gives серия/номер/профессия; the BACK (if
