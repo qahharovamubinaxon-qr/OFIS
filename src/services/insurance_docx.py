@@ -17,10 +17,16 @@ What this module will never do
   insurer; the operator records the block they were given and the program hands
   them out in order (same rule as ДМС). A made-up number is a policy that covers
   nobody.
-* **write or carry over an electronic signature.** The certificate, the МЧД and
-  the доверенность number belong to the insurer's signing system. The previous
-  policy's are *erased* — leaving them would make an unsigned document look
-  signed, which is exactly what the templates themselves warn about.
+* **touch anything that is not the car, the drivers or the dates.** The
+  operator's own template is not the program's to edit. Only a span that was
+  identified as the previous customer's value is replaced, in place, keeping
+  its font; no line is rewritten and no line is deleted. An earlier version
+  deleted the insurer's electronic-signature lines and mangled the option
+  sentences — that was the program overreaching.
+* **write an electronic signature.** The certificate, the МЧД and the
+  доверенность belong to the insurer's signing system. They are left exactly as
+  the template has them, and the operator is told they still have to come from
+  the insurer.
 * **invent КБМ or the premium.** Those come from the РСА database and the
   insurer's calculation; whatever the operator did not supply is left blank.
 """
@@ -228,13 +234,32 @@ def _paragraph_values(doc, values: dict[str, str], report: Report) -> None:
                 replace_span(runs, at, at + len(old), new)
 
 
+#: A name or a company, not a sentence. «Оборотная сторона страхового полиса
+#: обязательного страхования гражданской ответственности» was being taken for a
+#: policyholder and overwritten — a heading of the insurer's own.
+_NAME_MAX_CHARS = 60
+_NAME_MAX_WORDS = 7
+
+
+def _looks_like_a_name(text: str) -> bool:
+    words = text.split()
+    return bool(words) and len(text) <= _NAME_MAX_CHARS and \
+        len(words) <= _NAME_MAX_WORDS
+
+
 def _below(lines: list, i: int):
-    """The line a label's value sits on, past the form's own small print."""
+    """The line a label's value sits on, past the form's own small print.
+
+    Only a short, name-shaped line qualifies: a long sentence below a label is
+    the form's own text, and writing a company name over it wrecks the policy.
+    """
     for _p, runs, text in lines[i + 1:i + 4]:
         if _NOTE.match(text.strip()) or not text.strip():
             continue
         if _LABELS.search(text):
             return None                # the next field, not this one's value
+        if not _looks_like_a_name(text.strip()):
+            return None
         return _p, runs, text
     return None
 
@@ -368,6 +393,16 @@ def _driver_table(doc):
     return None, 0
 
 
+def _is_driver_row(cells: list) -> bool:
+    """A row that holds a driver — not a footnote or a spacer under the table."""
+    if len(cells) < 3:
+        return False
+    texts = [c.text.strip() for c in cells]
+    if texts[0].isdigit():
+        return True
+    return sum(1 for t in texts[1:] if t) >= 2
+
+
 def _column_numbers(cells: list) -> bool:
     """«1 | 2 | 3 | 4» — the form numbering its columns, not a driver row.
 
@@ -394,6 +429,7 @@ def _fill_drivers(doc, drivers: list[tuple[str, str]], report: Report) -> None:
     body = [row for row in table.rows[header + 1:] if _cells(row)]
     while body and _column_numbers(_cells(body[0])):
         body = body[1:]
+    body = [row for row in body if _is_driver_row(_cells(row))]
     for i, row in enumerate(body):
         cells = _cells(row)
         if len(cells) < 3:
@@ -458,27 +494,34 @@ def _fill_driver_lines(doc, drivers: list[tuple[str, str]],
 # -------------------------------------------------------------- the choice
 
 
-def _tick(text: str, m: re.Match, on: bool) -> str:
-    """Put or remove the mark that follows one of the two options."""
-    tail = text[m.end():]
-    marked = re.match(r"\s*(\[[^\]]{0,3}\]|[XХxхV✔✓])", tail)
+_MARK = re.compile(r"\s*(\[[^\]]{0,3}\]|[XХxхV✔✓])")
+
+
+def _tick(text: str, m: re.Match, on: bool) -> tuple[int, int, str] | None:
+    """The span of the mark beside one option, and what it should become.
+
+    Only the mark itself — never the sentence around it. Rewriting the whole
+    line was what mangled the operator's own template.
+    """
+    marked = _MARK.match(text, m.end())
     if on:
-        if marked and marked.group(1).strip("[]").strip():
-            return text
+        if marked and marked.group(1).strip("[] ").strip():
+            return None                       # already ticked
         if marked:
-            return text[:m.end()] + tail.replace(marked.group(1), "[X]", 1)
-        return text[:m.end()] + " [X]" + tail
-    if not marked:
-        return text
-    replacement = "[ ]" if marked.group(1).startswith("[") else ""
-    return text[:m.end()] + tail.replace(marked.group(1), replacement, 1)
+            return marked.start(1), marked.end(1), "[X]"
+        return m.end(), m.end(), " [X]"
+    if not marked or not marked.group(1).strip("[] ").strip():
+        return None                           # nothing to clear
+    empty = "[ ]" if marked.group(1).startswith("[") else ""
+    return marked.start(1), marked.end(1), empty
 
 
 def _choose(doc, unlimited: bool, report: Report) -> None:
     """Mark «неограниченного количества лиц» or «лиц, допущенных к управлению».
 
-    Which one is ticked decides who the policy actually covers, so it is never
-    guessed — the operator picks it on the screen.
+    Which line is ticked decides who the policy covers, and it follows from the
+    photographs the operator uploaded. Only the mark is written — everything
+    the insurer printed stays exactly as it is.
     """
     wanted = _UNLIMITED if unlimited else _LIMITED
     offered = False
@@ -488,13 +531,15 @@ def _choose(doc, unlimited: bool, report: Report) -> None:
         if not (_UNLIMITED.search(text) or _LIMITED.search(text)):
             continue
         offered = offered or bool(wanted.search(text))
-        new = text
+        edits = []
         for pattern, on in ((_UNLIMITED, unlimited), (_LIMITED, not unlimited)):
-            m = pattern.search(new)
+            m = pattern.search(text)
             if m:
-                new = _tick(new, m, on)
-        if new != text:
-            replace_span(runs, 0, len(text), new)
+                edit = _tick(text, m, on)
+                if edit:
+                    edits.append(edit)
+        for lo, hi, mark in sorted(edits, reverse=True):   # right to left
+            replace_span(runs, lo, hi, mark)
     report.filled["coverage"] = ("неограниченное количество лиц" if unlimited
                                  else "лица, допущенные к управлению")
     if not offered:
@@ -506,14 +551,20 @@ def _choose(doc, unlimited: bool, report: Report) -> None:
 # ----------------------------------------------------------- the signature
 
 
-def _clear_signature(doc, report: Report) -> None:
-    """Erase the previous policy's electronic signature. Never re-create one."""
+def _note_signature(doc, report: Report) -> None:
+    """Notice the insurer's electronic signature — and leave it alone.
+
+    An earlier version deleted these lines, reasoning that a certificate from
+    the previous policy should not travel onto a new one. That was the program
+    destroying the operator's own template, which is not its call to make.
+    The template is left exactly as it was given, and the operator is told what
+    still has to come from the insurer.
+    """
     for paragraph in iter_paragraphs(doc):
-        runs = runs_of(paragraph)
-        text = text_of(runs)
+        text = text_of(runs_of(paragraph))
         if text.strip() and _SIGNATURE.search(text):
-            replace_span(runs, 0, len(text), "")
             report.cleared.append(" ".join(text.split())[:60])
+            return
 
 
 # ------------------------------------------------------------------ public
@@ -553,10 +604,13 @@ def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
                 break
             if line is not text and (_TERM.search(line) or not _DMY.search(line)):
                 break
-            new = _DMY.sub(lambda m: wanted.pop(0) if wanted else m.group(0), line)
-            if new != line:
-                replace_span(runs, 0, len(line), new)
+            # right to left, and only the date itself — the words around it are
+            # the insurer's and are never rewritten
+            found = list(_DMY.finditer(line))[:len(wanted)]
+            for m, value in reversed(list(zip(found, wanted))):
+                replace_span(runs, m.start(), m.end(), value)
                 report.filled["term"] = f"{start} — {end}"
+            del wanted[:len(found)]
         break
 
     for paragraph in iter_paragraphs(doc):
@@ -565,11 +619,19 @@ def _dates(doc, *, start: str, end: str, signed: str, report: Report) -> None:
         if not text.strip():
             continue
         if _SIGNED_ON.search(text):
-            new = _LONG_DATE.sub(_long(signed), text, count=1)
-            new = _DMY.sub(signed, new, count=1)
-            if new != text:
-                replace_span(runs, 0, len(text), new)
+            # only the date; «Дата заключения договора» and everything else on
+            # the line belongs to the insurer's own wording
+            edits = []
+            m = _LONG_DATE.search(text)
+            if m:
+                edits.append((m.start(), m.end(), _long(signed)))
+            m = _DMY.search(text)
+            if m:
+                edits.append((m.start(), m.end(), signed))
+            for lo, hi, value in sorted(edits, reverse=True):
+                replace_span(runs, lo, hi, value)
                 report.filled["signed_on"] = signed
+            continue
 
     if "term" in report.filled:
         return
@@ -602,13 +664,17 @@ def fill(template: Path, out: Path, *, values: dict[str, str],
 
     doc = docx.Document(str(template))
     report = Report()
-    _clear_signature(doc, report)
+    _note_signature(doc, report)
     _paragraph_values(doc, values, report)
     _vin_grids(doc, values.get("vin", ""), report)
-    _table_values(doc, values, report,
-                  skip=frozenset({"vin"} if "vin_grid" in report.filled
-                                 else ()))
+    # The previous car's own numbers are swapped first: wherever the VIN or the
+    # plate already stands, that is where this one goes. Only if it is nowhere
+    # does an empty labelled cell get it — otherwise it lands twice.
     _by_pattern(doc, values, report)
+    placed = {key for key in ("vin", "plate", "sts") if key in report.filled}
+    if "vin_grid" in report.filled:
+        placed.add("vin")
+    _table_values(doc, values, report, skip=frozenset(placed))
     _fill_drivers(doc, [] if unlimited else drivers, report)
     _choose(doc, unlimited, report)
     if start and end:

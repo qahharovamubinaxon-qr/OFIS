@@ -185,12 +185,13 @@ def test_a_named_policy_needs_at_least_one_licence(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("code", CODES)
-def test_the_previous_electronic_signature_is_erased(code, tmp_path) -> None:
-    """A stale certificate would make an unsigned policy look signed."""
-    body = _read(_run(code, tmp_path).docx_path).lower()
-    for trace in ("подписано электронной подписью", "удостоверяющий центр",
-                  "усиленной квалифицированной электронно"):
-        assert trace not in body, (code, trace)
+def test_the_operator_is_reminded_about_the_signature(code, tmp_path) -> None:
+    """It is left in place — deleting the operator's template was overreach —
+    and the reminder that it has to come from the insurer is carried up."""
+    result = _run(code, tmp_path)
+    if any("подписан" in line.lower()
+           for line in _all_lines(_template(code).template_path)):
+        assert any("имзо" in note for note in result.notes), code
 
 
 @pytest.mark.parametrize("code", CODES)
@@ -469,3 +470,94 @@ def test_the_drop_zones_are_cleared_for_the_next_car(tmp_path, monkeypatch) -> N
     assert view._uploaded_licences() == []
     assert "неограниченного" in view._coverage.text(), \
         "with the zones cleared the next car starts from «covers anyone»"
+
+
+# --------------------------------------- the operator's template is not ours
+
+
+def _all_lines(path: Path) -> list[str]:
+    document = docx.Document(str(path))
+    out = [" ".join(p.text.split()) for p in document.paragraphs]
+    for table in document.tables:
+        for row in table.rows:
+            out.append(" | ".join(" ".join(c.text.split()) for c in row.cells))
+    return out
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_not_one_line_of_the_template_is_deleted(code, tmp_path) -> None:
+    """An earlier version erased the insurer's signature lines outright."""
+    template = _template(code)
+    before = _all_lines(template.template_path)
+    after = _all_lines(_run(code, tmp_path).docx_path)
+
+    assert len(before) == len(after), code
+    assert sum(1 for line in after if line.strip()) == \
+        sum(1 for line in before if line.strip()), "a line was emptied"
+
+
+#: A line of the insurer's own prose: long, and mostly words rather than data.
+def _is_prose(line: str) -> bool:
+    import re
+
+    words = re.findall(r"[А-Яа-яЁё]{4,}", line)
+    return len(line) >= 70 and len(words) >= 8
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_insurers_own_wording_is_never_rewritten(code, tmp_path) -> None:
+    """The legal text, the headings and the notes are the operator's file.
+
+    This is the failure that made the module unusable: “Оборотная сторона
+    страхового полиса…” — a heading — was overwritten with a company name.
+    """
+    import re
+
+    before = _all_lines(_template(code).template_path)
+    after = _all_lines(_run(code, tmp_path).docx_path)
+    a_field = re.compile(r"\d{2}\.\d{2}\.\d{4}|допущенн|"
+                         + insurance_docx._LABELS.pattern)
+
+    for old, new in zip(before, after):
+        # a line that carries one of the form's own field labels is a field —
+        # everything else is the insurer's prose and must come out untouched
+        if not _is_prose(old) or a_field.search(old):
+            continue
+        assert old == new, (code, old[:90], new[:90])
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_insurers_signature_is_left_where_it_is(code, tmp_path) -> None:
+    """Not the program's to delete — the operator is told about it instead."""
+    result = _run(code, tmp_path)
+    before, after = (_all_lines(_template(code).template_path),
+                     _all_lines(result.docx_path))
+    for line in before:
+        if "подписан" in line.lower() or "сертификат" in line.lower():
+            assert line in after, (code, line[:60])
+
+
+def test_a_vin_grid_is_written_one_character_per_box(tmp_path) -> None:
+    result = _run("soglasie", tmp_path)
+    document = docx.Document(str(result.docx_path))
+    for table in document.tables:
+        for row in table.rows:
+            seen: list[str] = []
+            for cell in row.cells:
+                value = " ".join(cell.text.split())
+                if not seen or value != seen[-1]:
+                    seen.append(value)
+            boxes = [v for v in seen if len(v) <= 1]
+            if len(boxes) >= 10:
+                assert "".join(boxes) == STS.vin
+                return
+    pytest.fail("the VIN grid was not found")
+
+
+def test_a_footnote_row_under_the_driver_table_is_not_dashed(tmp_path) -> None:
+    """«-» under the table is the form's own note, not an empty driver slot."""
+    before = _all_lines(_template("ingosstrah").template_path)
+    after = _all_lines(_run("ingosstrah", tmp_path).docx_path)
+    for old, new in zip(before, after):
+        if old.startswith("- |") and "*" not in old:
+            assert old == new, (old, new)
