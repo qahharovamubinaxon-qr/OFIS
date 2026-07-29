@@ -116,13 +116,156 @@ def test_cover_runs_a_year_to_the_day_before(start, end) -> None:
 
 
 @pytest.mark.parametrize("code", CODES)
-def test_both_dates_are_written_where_the_form_prints_them(code, tmp_path):
-    result = _run(code, tmp_path)
-    body = _read(result.docx_path)
+def test_the_day_the_policy_was_written_is_on_it(code, tmp_path) -> None:
+    """«Дата заключения договора» / «Дата выдачи полиса» — one insurer spells
+    the month out, so both shapes count. The срок itself is two other rows,
+    and how those are written is :func:`test_the_cover_is_written_wherever_the_
+    form_prints_it`'s to say — an insurer that prints them one digit per box
+    never has them contiguous in the text at all."""
+    body = _read(_run(code, tmp_path).docx_path)
     assert "10.07.2026" in body or "«10» июля 2026" in body, code
-    if "term" in body or "Срок страхования" in body:
-        assert "09.07.2027" in body or any(
-            "катак-катак" in n for n in result.notes), code
+
+
+# ------------------------------------ the cover the blank was sold with
+
+#: What each bundled template's own cover ran, as that insurer prints it. Two
+#: of these forms print the pair one digit per box — «с | 2 | 8 | . | 0 | 6 |
+#: .20 | 2 | 4 | г.» — and the office was getting policies back that still
+#: showed it.
+PREVIOUS_COVER = {
+    "osago_a": ("28.06.2024", "27.06.2025"),
+    "soglasie": ("28.03.2026", "27.03.2027"),
+    "ingosstrah": ("15.07.2026", "14.07.2027"),
+    "reso": ("06.06.2026", "05.06.2027"),
+}
+
+#: The year of cover :func:`_run` asks for.
+NEW_START, NEW_END = "10.07.2026", "09.07.2027"
+
+
+def _cover_rows(path: Path) -> list[tuple[str, list[str]]]:
+    """Every line of the policy as (its wording, the cover dates on it).
+
+    Read the way the form draws it. A date an insurer prints one digit per box
+    is spread over table cells interleaved with the form's own «.» and «.20»,
+    or over a row of separate little text boxes, or over runs a tab apart —
+    read in that order it still spells «28.06.2024», and reading it any other
+    way is how a policy went out with the previous cover's dates on it.
+    """
+    document = docx.Document(str(path))
+    return [(insurance_docx._strip_raw(pieces),
+             [value for _lo, _hi, value in insurance_docx._cover_dates(pieces)])
+            for pieces in insurance_docx._strips(document)]
+
+
+def _cover_dates(path: Path) -> list[str]:
+    return [value for _wording, values in _cover_rows(path) for value in values]
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_not_one_digit_of_the_previous_cover_is_left(code, tmp_path) -> None:
+    dates = _cover_dates(_run(code, tmp_path).docx_path)
+    assert not set(dates) & set(PREVIOUS_COVER[code]), (code, dates)
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_cover_is_written_wherever_the_form_prints_it(code, tmp_path) -> None:
+    """Every place the blank printed a cover date prints this policy's instead.
+
+    Counting them is what catches the half-done job: one insurer prints the
+    срок twice over — once for the reader Word draws and once for the copy it
+    keeps for older readers — and filling only the first leaves the policy
+    saying two different things depending on what opens it.
+    """
+    before = _cover_dates(_template(code).template_path)
+    after = _cover_dates(_run(code, tmp_path).docx_path)
+    for was, now in zip(PREVIOUS_COVER[code], (NEW_START, NEW_END), strict=True):
+        assert before.count(was) > 0, (code, was, "not in the blank")
+        assert after.count(now) == before.count(was), (code, was, now)
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_a_cover_date_is_never_left_half_rewritten(code, tmp_path) -> None:
+    """All eight digits or none — three of eight changed is worse than none."""
+    dates = set(_cover_dates(_run(code, tmp_path).docx_path))
+    assert {NEW_START, NEW_END} <= dates, (code, sorted(dates))
+
+
+@pytest.mark.parametrize("code", CODES)
+def test_the_operator_is_no_longer_sent_to_fill_the_boxes_by_hand(code, tmp_path):
+    """The note was the honest answer while the boxes could not be written.
+
+    Now that they are, keeping it would send the operator off to correct a row
+    that is already right — and the ones who trusted it stopped reading the
+    notes at all.
+    """
+    notes = _run(code, tmp_path).notes
+    assert not [n for n in notes if "катак-катак" in n], (code, notes)
+
+
+def _fill_only_dates(blank: Path, tmp_path: Path):
+    return insurance_docx.fill(
+        blank, tmp_path / "out.docx", values={}, drivers=[], unlimited=True,
+        start="10.07.2026", end="09.07.2027", signed="10.07.2026")
+
+
+def test_a_form_whose_boxes_were_never_filled_in_is_left_to_the_operator(tmp_path):
+    """A blank with nothing in its срок has nothing to write over.
+
+    The dates are put where the previous cover's were, so an insurer's own
+    empty template gives the program no hold on the row at all. Guessing which
+    of those boxes is the day is how a policy ends up covering the wrong year,
+    so the operator is told instead — which is what the note has always been
+    for.
+    """
+    document = docx.Document()
+    document.add_paragraph("Срок страхования с    ч.    мин.    .    .20    г.")
+    blank = tmp_path / "blank.docx"
+    document.save(str(blank))
+
+    assert any("катак-катак" in note
+               for note in _fill_only_dates(blank, tmp_path).skipped)
+
+
+@pytest.mark.skipif("osago_a" not in CODES, reason="СТРАХОВКА МАШИНА not bundled")
+def test_boxes_that_do_not_spell_the_old_date_are_left_to_the_operator(tmp_path):
+    """All eight digits or none — and the operator hears about the none.
+
+    The day and month of this insurer's «Страхование распространяется … по …»
+    float over the line in four boxes of their own; the line itself reads «по .
+    .20 2 5». Emptied, they no longer say what the line says they say, so the
+    date cannot be read whole — and half a date is worse than the one the
+    operator finishes by hand.
+    """
+    blank = tmp_path / "polis.docx"
+    blank.write_bytes((BLANKS / "osago_a" / "polis.docx").read_bytes())
+    document = docx.Document(str(blank))
+    for table in insurance_docx._all_tables(document):
+        for row in table.rows:
+            boxes = insurance_docx._boxes(insurance_docx._cells(row))
+            if len(boxes) == 4 and "".join(c.text.strip() for c in boxes).isdigit():
+                for cell in boxes:
+                    insurance_docx._set_cell(cell, "")
+    document.save(str(blank))
+
+    assert any("катак-катак" in note
+               for note in _fill_only_dates(blank, tmp_path).skipped)
+
+
+@pytest.mark.parametrize("code", ["osago_a", "soglasie"])
+def test_the_period_row_the_office_reported_carries_the_new_cover(code, tmp_path):
+    """«Страхование распространяется … с … по …» is a second row of dates.
+
+    СТРАХОВКА МАШИНА and СТРАХОВКА ЧОТКИЙ were coming back with the срок row
+    right and this one still running to the previous customer's last day.
+    """
+    if code not in CODES:
+        pytest.skip(f"{code} is not bundled")
+    rows = [values for wording, values in _cover_rows(_run(code, tmp_path).docx_path)
+            if "Страхование распространяется" in wording]
+    assert rows, code
+    assert any(NEW_START in values and NEW_END in values for values in rows), \
+        (code, rows)
 
 
 # -------------------------------------------------------------- the filling
@@ -538,8 +681,12 @@ def test_the_insurers_own_wording_is_never_rewritten(code, tmp_path) -> None:
     before = _all_lines(_template(code).template_path)
     after = _all_lines(_run(code, tmp_path).docx_path)
     # «Вид документа … серия … номер …» is a field too, however much of the
-    # form's own wording shares the line with it
+    # form's own wording shares the line with it — and so is «Страхование
+    # распространяется … с … по …», whose eight digits an insurer may print a
+    # box apart, so that «с 2 8 . 0 6 . 20 2 4 г.» carries no date a pattern
+    # would recognise on the line.
     a_field = re.compile(r"\d{2}\.\d{2}\.\d{4}|допущенн|Вид\s+документа|"
+                         + insurance_docx._SPREAD.pattern + "|"
                          + insurance_docx._LABELS.pattern)
 
     for old, new in zip(before, after):
