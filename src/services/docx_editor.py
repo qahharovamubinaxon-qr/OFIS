@@ -16,9 +16,12 @@ import re
 from datetime import date
 from pathlib import Path
 
+from src.common.logging import get_logger
 from src.pdf.formatters import _date_dmy, _date_long_g
 from src.services.docx_worker import (
     iter_paragraphs as _iter_paragraphs,
+)
+from src.services.docx_worker import (
     swap_header_date,
     swap_worker,
 )
@@ -30,6 +33,8 @@ _DMY = re.compile(r"\d{2}\.\d{2}\.\d{4}")
 _LONG_DATE = re.compile(r"^\d{1,2}\s+[а-яё]+(\s+\d{4}\s*г?\.?)?$", re.IGNORECASE)
 _YEAR_ONLY = re.compile(r"^\d{4}\s*г\.?$")
 _SIGN_ABBR = re.compile(r"^[А-ЯЁ]{2,}\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.$")
+
+log = get_logger(__name__)
 
 
 def _set_text(paragraph, text: str) -> None:
@@ -201,8 +206,20 @@ class HodDocxEditor:
 
 
 def docx_to_pdf(docx_path: Path) -> Path | None:
-    """Convert via MS Word when available (Windows); else return None and the
-    .docx itself is the deliverable."""
+    """A .docx as a PDF, by whichever of three routes this machine can take.
+
+    Word first, because it lays the page out exactly as the office sees it on
+    screen; LibreOffice next, which is close; and MuPDF last, which ships with
+    the program and is therefore always there.
+
+    That last one is why this is worth having. The office reported getting only
+    the Word file: ``docx2pdf`` is installed on their machine but Word is not
+    answering it, and ``soffice`` is not on the PATH — so both of the old routes
+    failed silently and the operator was left converting by hand. MuPDF's own
+    office handler renders the file with neither program installed. Its layout
+    is a near miss rather than an exact match, so it stays last; but a
+    near-miss PDF beats no PDF at the counter.
+    """
     pdf = docx_path.with_suffix(".pdf")
     try:
         from docx2pdf import convert  # type: ignore
@@ -225,4 +242,16 @@ def docx_to_pdf(docx_path: Path) -> Path | None:
             return pdf
     except Exception:  # noqa: BLE001
         pass
+    # MuPDF — bundled with the program, so this one cannot be missing
+    try:
+        import fitz
+
+        with fitz.open(str(docx_path)) as doc:
+            data = doc.convert_to_pdf()
+        pdf.write_bytes(data)
+        if pdf.exists() and pdf.stat().st_size > 800:
+            log.info("PDF MuPDF билан яратилди: %s", pdf.name)
+            return pdf
+    except Exception as exc:  # noqa: BLE001
+        log.info("MuPDF ҳам .docx ни PDF қилмади: %s", exc)
     return None

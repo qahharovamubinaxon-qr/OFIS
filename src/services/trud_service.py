@@ -63,6 +63,13 @@ class TrudResult:
     hod_path: Path | None = None
     #: what the finished PDF could not be shown to contain (or still contained)
     notes: tuple[str, ...] = ()
+    #: The Word originals, when the templates were .docx. The office wants BOTH
+    #: — the PDF to print and hand over, the .docx to correct a name by hand
+    #: without re-running anything. They live beside the PDFs; these are the
+    #: paths so the screen can offer them instead of leaving them to be found.
+    trud_docx: Path | None = None
+    uved_docx: Path | None = None
+    hod_docx: Path | None = None
 
 
 class TrudFirmService:
@@ -188,6 +195,7 @@ class TrudService:
         )
         folder.mkdir(parents=True, exist_ok=True)
         stem = _safe(f"{passport.surname}_{passport.name}".upper()) or "WORKER"
+        trud_docx = uved_docx = hod_word = None
 
         if firm.trud_template_path.suffix.lower() == ".docx":
             from src.services.docx_editor import TrudDocxEditor, docx_to_pdf
@@ -213,6 +221,7 @@ class TrudService:
                 passport_number=f"{passport.series or ''}{passport.number}".strip(),
                 passport_issue=passport.issue_date,
             )
+            trud_docx = docx_path
             trud_path = docx_to_pdf(docx_path) or docx_path
         else:
             trud_path = _unique(folder / f"{stem}_ТРУДОВОЙ.pdf")
@@ -234,6 +243,7 @@ class TrudService:
                 firm.uved_template_path, docx_uv,
                 self._docx_values(passport, patent, form_date=form_date,
                                   profession=prof, contract=False))
+            uved_docx = docx_uv
             uved_path = docx_to_pdf(docx_uv) or docx_uv
         else:
             uved_path = _unique(folder / f"{stem}_УВЕДОМЛЕНИЕ.pdf")
@@ -265,12 +275,15 @@ class TrudService:
                 pat_number=(patent.number if patent else "") or "",
                 passport_line=passport_line, form_date=form_date,
             )
+            hod_word = hod_docx
             hod_path = docx_to_pdf(hod_docx) or hod_docx
 
         log.info("Generated трудовой+уведомление for %s (%s)", passport.surname, firm.name)
         return TrudResult(trud_path=trud_path, uved_path=uved_path,
                           surname=passport.surname, hod_path=hod_path,
-                          notes=tuple(pdf_notes))
+                          notes=tuple(pdf_notes),
+                          trud_docx=trud_docx, uved_docx=uved_docx,
+                          hod_docx=hod_word)
 
     @staticmethod
     def _docx_values(passport: Passport, patent: Patent | None, *,
