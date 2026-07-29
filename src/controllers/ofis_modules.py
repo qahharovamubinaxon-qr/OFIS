@@ -234,6 +234,31 @@ def _run_razreshenie(ctx: RunContext, state: dict) -> list[Path]:
     return [out]
 
 
+def _run_sertifikat(ctx: RunContext, state: dict) -> list[Path]:
+    """СЕРТИФИКАТ — the passport, the city, the day it was issued.
+
+    Only the name comes off the passport, so one photograph is enough. Both
+    numbers re-roll their tails inside the service, exactly as on the desktop.
+    """
+    from src.config import paths
+
+    answers = state["answers"]
+    ctl = ctx.ctl["sertifikat"]
+    fields = ctl.read_passport(state["photos"][0])
+
+    result = ctl.generate(
+        **fields,
+        city=str(answers.get("city") or "").strip(),
+        issued_on=answers.get("issued_on") or date.today())
+
+    out = _free_path(paths.output_dir() / "sertifikat", result.filename)
+    out.write_bytes(result.pdf)
+    ctx.note(f"Регистрационный № {result.reg_number} · штрих "
+             f"{result.barcode_number}\n"
+             f"{result.issued_on:%d.%m.%Y} — {result.valid_until:%d.%m.%Y}")
+    return [out]
+
+
 def _free_path(folder: Path, filename: str) -> Path:
     """``Сейтимов.pdf`` → ``Сейтимов (2).pdf`` — an earlier card is never lost."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -480,6 +505,11 @@ MODULES: tuple[Module, ...] = (
                      kind="text"),
                  Ask("firm_name", "Фирма номи (бўш — охиргиси):", kind="text"),
                  Ask("firm_inn", "Фирма ИННси (бўш — охиргиси):", kind="text"))),
+    Module("sertifikat", "📜 СЕРТИФИКАТ", _run_sertifikat,
+           photo_prompt="Ўқувчининг ПАСПОРТИ расмини юборинг.",
+           photo_labels=("Паспорт",),
+           asks=(Ask("city", "Город (Москва / Московская область):", kind="text"),
+                 Ask("issued_on", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -551,6 +581,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.process_controller import ProcessController
     from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
+    from src.controllers.sertifikat_controller import SertifikatController
     from src.controllers.svera_controller import SveraController
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
@@ -580,6 +611,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.razreshenie_service import RazreshenieService
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
+    from src.services.sertifikat_service import SertifikatService
     from src.services.svera_service import SveraService
     from src.services.trud_service import TrudFirmService, TrudService
     from src.services.umumiy_service import UmumiyService
@@ -613,6 +645,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             ocr, PatentService(container.resolve(SettingsService))),
         "razreshenie": RazreshenieController(
             ocr, RazreshenieService(container.resolve(SettingsService))),
+        "sertifikat": SertifikatController(
+            ocr, SertifikatService(container.resolve(SettingsService))),
         # СТРАХОВКА and ЎЗ ШАБЛОНИМ own their services the same way the desktop
         # views do; only the repositories come from the container.
         "insurance": InsuranceController(

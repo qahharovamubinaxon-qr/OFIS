@@ -124,6 +124,7 @@ _DESKTOP_TO_MODULE = {
     "nav.patent": "patent_card",
     "nav.razreshenie": "razreshenie",
     "nav.svera": "svera",
+    "nav.sertifikat": "sertifikat",
     "nav.dover": "dover",
     "nav.perevod": "perevod",
     "nav.umumiy": "umumiy",
