@@ -38,8 +38,14 @@ from src.controllers.ofis_modules import (
     Module,
     RunContext,
     build_controllers,
+)
+from src.controllers.ofis_modules import (
     label_of as _label,
+)
+from src.controllers.ofis_modules import (
     new_state as _fresh,
+)
+from src.controllers.ofis_modules import (
     parse_date as _parse_date,
 )
 
@@ -55,11 +61,21 @@ _BTN_CANCEL = "❌ Бекор"
 _BTN_MENU = "☰ Бўлимлар"
 
 
+#: Three to a row, not two.
+#:
+#: Telegram gives a reply keyboard only a slice of the screen and scrolls the
+#: rest out of sight. At two a row the office's nineteen sections needed eleven
+#: rows and the ones at the bottom — СФЕРА, ПЕРЕВОД, УМУМИЙ, СУММА-ДАТА — were
+#: below the fold, which reads on the phone as «they are not there». Three a
+#: row brings it to seven, and the labels are short enough to stay readable.
+_PER_ROW = 3
+
+
 def _main_keyboard() -> dict:
     rows, row = [], []
     for m in _MODULES:
         row.append(m.button)
-        if len(row) == 2:
+        if len(row) == _PER_ROW:
             rows.append(row)
             row = []
     if row:
@@ -68,7 +84,53 @@ def _main_keyboard() -> dict:
     return {"keyboard": rows, "resize_keyboard": True}
 
 
+def _plain(text: str) -> str:
+    """A button's name with the decoration off — «🩷 ПАТЕНТ» → «патент»."""
+    kept = [c for c in (text or "").lower() if c.isalnum() or c.isspace()]
+    return " ".join("".join(kept).split())
+
+
+#: Every section by its bare name, so the operator can simply TYPE it.
+#:
+#: The keyboard can be collapsed, scrolled or hidden behind the phone's own
+#: keyboard, and then there is no way in at all. Typing «сертификат» — or its
+#: number from the list the menu prints — always works.
+_BY_NAME: dict[str, Module] = {_plain(m.button): m for m in _MODULES}
+
+
+def _module_for(text: str) -> Module | None:
+    """The section the operator meant: a button, a typed name, or its number."""
+    text = (text or "").strip()
+    if text in _BY_BUTTON:
+        return _BY_BUTTON[text]
+    if text.isdigit():
+        index = int(text) - 1
+        if 0 <= index < len(_MODULES):
+            return _MODULES[index]
+        return None
+    name = _plain(text)
+    if not name:
+        return None
+    if name in _BY_NAME:
+        return _BY_NAME[name]
+    starts = [m for key, m in _BY_NAME.items() if key.startswith(name)]
+    return starts[0] if len(starts) == 1 else None
+
+
+def _menu_text() -> str:
+    """The sections written out, numbered.
+
+    The keyboard can be scrolled or collapsed; a message cannot. So the menu
+    also SAYS what there is, and any of it can be reached by replying with the
+    number or the name — nothing depends on a button being on screen.
+    """
+    lines = [f"{i}. {m.button}" for i, m in enumerate(_MODULES, 1)]
+    return ("Бўлимни танланг — тугмани босинг, ёки рақамини/номини ёзинг:\n\n"
+            + "\n".join(lines))
+
+
 _MAIN_KB = _main_keyboard()
+_MENU_TEXT = _menu_text()
 _RUN_KB = {"keyboard": [[_BTN_RUN], [_BTN_MENU, _BTN_CANCEL]], "resize_keyboard": True}
 
 
@@ -252,8 +314,14 @@ class TelegramBot:
             return
 
         # -- module selection -----------------------------------------
-        if text in _BY_BUTTON:
-            self._enter(chat_id, _BY_BUTTON[text])
+        # A section BUTTON always switches, wherever the operator is — that is
+        # how it has always worked. A typed name or a number only counts at the
+        # menu: mid-flow they belong to the question being answered, and «3»
+        # must not throw away three photographs already uploaded.
+        busy = bool(state.get("step"))
+        chosen = _BY_BUTTON.get(text) if busy else _module_for(text)
+        if chosen is not None:
+            self._enter(chat_id, chosen)
             return
 
         # -- an answer to a pending question --------------------------
@@ -290,12 +358,16 @@ class TelegramBot:
         kb = dict(_MAIN_KB)
         url = self._webapp_url()
         if url:
-            self._send(chat_id, head + "Бўлимни танланг:", kb)
-            self._send(chat_id, "Ёки тўлиқ ойнада очинг:", {
+            # the Mini App offer goes FIRST and the sections last, so the list
+            # is what the operator is left looking at. The other way round the
+            # sections scroll up out of the way behind the offer, which reads
+            # as «the sections are gone».
+            self._send(chat_id, (head + "Тўлиқ ойнада очиш:").strip(), {
                 "inline_keyboard": [[{"text": "🌐 OFIS Mini App",
                                       "web_app": {"url": url}}]]})
+            self._send(chat_id, _MENU_TEXT, kb)
             return
-        self._send(chat_id, head + "Бўлимни танланг:", kb)
+        self._send(chat_id, head + _MENU_TEXT, kb)
 
     def _enter(self, chat_id: int, module: Module) -> None:
         self._state[chat_id] = _fresh()
