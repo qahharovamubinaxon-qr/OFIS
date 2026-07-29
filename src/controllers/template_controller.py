@@ -8,6 +8,7 @@ worker's documents fills it.
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +20,19 @@ from src.services import template_fill, template_study
 from src.services.template_study import Study
 
 log = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class SavedTemplate:
+    """A template the operator already studied and confirmed on the computer.
+
+    The remote front ends can only pick from these — studying a new form needs
+    the confirmation table, which is a desktop job.
+    """
+
+    name: str
+    kind: str
+    path: Path
 
 
 class TemplateController:
@@ -49,6 +63,12 @@ class TemplateController:
 
     def saved(self) -> list[tuple[str, str, Path]]:
         return self._profiles.list()
+
+    def saved_templates(self) -> list[SavedTemplate]:
+        """The same list, named — for the bot and the Mini App pickers."""
+        return [SavedTemplate(name, kind, path)
+                for name, kind, path in self._profiles.list()
+                if path.exists()]
 
     # -------------------------------------------------------------- filling
     def ai_available(self) -> bool:

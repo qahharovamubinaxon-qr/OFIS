@@ -159,13 +159,18 @@ def _run_inn(ctx: RunContext, state: dict) -> list[Path]:
     return [r.pdf_path]
 
 
-def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
+def _run_badge(ctx: RunContext, state: dict, which: str) -> list[Path]:
+    """БЕЙДЖИК and ПАТЕНТ — the same card, printed on a different blank.
+
+    The desktop keeps them one-to-one by inheritance; the remote front ends
+    keep them one-to-one by sharing this runner.
+    """
     from src.config import paths
 
     answers = state["answers"]
     photo = None
     if len(state["photos"]) > 1:
-        photo = paths.output_dir() / "beydjik" / f"remote_{uuid.uuid4().hex[:8]}.jpg"
+        photo = paths.output_dir() / which / f"remote_{uuid.uuid4().hex[:8]}.jpg"
         photo.parent.mkdir(parents=True, exist_ok=True)
         photo.write_bytes(state["photos"][1])
     region = str(answers.get("region") or "77").strip() or "77"
@@ -174,7 +179,7 @@ def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
     dolzhnost = str(answers.get("dolzhnost") or "").strip()
     if dolzhnost in {"-", "—", "–"}:
         dolzhnost = ""
-    r = ctx.ctl["beydjik"].generate_from_image(
+    r = ctx.ctl[which].generate_from_image(
         state["photos"][0],
         region=region,
         personal_number=str(answers.get("personal_number") or ""),
@@ -186,6 +191,58 @@ def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
         photo_path=photo)
     ctx.note(f"{r.surname} — ПР {r.pr_number} ({r.region})")
     return [r.pdf_path]
+
+
+def _run_beydjik(ctx: RunContext, state: dict) -> list[Path]:
+    return _run_badge(ctx, state, "beydjik")
+
+
+def _run_patent_card(ctx: RunContext, state: dict) -> list[Path]:
+    return _run_badge(ctx, state, "patent")
+
+
+def _run_razreshenie(ctx: RunContext, state: dict) -> list[Path]:
+    """РАЗРЕШЕНИЯ — passport + portrait, the numbers allocated in order."""
+    from src.config import paths
+
+    answers = state["answers"]
+    ctl = ctx.ctl["razreshenie"]
+    fields = ctl.read_passport(state["photos"][0])
+    birth = parse_date(fields.pop("birth_date", ""))
+
+    firm_name = str(answers.get("firm_name") or "").strip()
+    firm_inn = str(answers.get("firm_inn") or "").strip()
+    if not firm_name:
+        # the section keeps the last firm in the field until a new one is
+        # typed; leaving it blank on the phone means "the same firm again"
+        remembered = ctl.firm()
+        firm_name = remembered.name
+        firm_inn = firm_inn or remembered.inn
+
+    result = ctl.generate(
+        **fields, birth_date=birth,
+        inn=str(answers.get("inn") or "").strip(),
+        activity=str(answers.get("activity") or "").strip(),
+        valid_from=answers.get("valid_from") or date.today(),
+        firm_name=firm_name, firm_inn=firm_inn,
+        photo=state["photos"][1])
+
+    out = _free_path(paths.output_dir() / "razreshenie", result.filename)
+    out.write_bytes(result.pdf)
+    ctx.note(f"{result.seria} {result.number} · ВВ {result.back_number}\n"
+             f"{result.valid_from:%d.%m.%Y} — {result.valid_to:%d.%m.%Y}")
+    return [out]
+
+
+def _free_path(folder: Path, filename: str) -> Path:
+    """``Сейтимов.pdf`` → ``Сейтимов (2).pdf`` — an earlier card is never lost."""
+    folder.mkdir(parents=True, exist_ok=True)
+    candidate = folder / filename
+    stem, suffix, index = candidate.stem, candidate.suffix, 2
+    while candidate.exists():
+        candidate = folder / f"{stem} ({index}){suffix}"
+        index += 1
+    return candidate
 
 
 def _run_svera(ctx: RunContext, state: dict) -> list[Path]:
@@ -269,6 +326,44 @@ def _run_dover(ctx: RunContext, state: dict) -> list[Path]:
     return [p for p in (r.pdf_path, r.docx_path) if p]
 
 
+def _run_insurance(ctx: RunContext, state: dict) -> list[Path]:
+    """ОСАГО — the СТС decides the car, the licences decide who is covered."""
+    photos, answers = state["photos"], state["answers"]
+    result = ctx.ctl["insurance"].generate_from_images(
+        state["target"], photos[0],
+        photos[1] if len(photos) > 1 else None,
+        photos[2:6],
+        start=answers.get("start") or date.today(),
+        policy_holder=str(answers.get("policy_holder") or ""))
+    cover = (f"{result.drivers} та ҳайдовчи (лица, допущенные)"
+             if result.drivers else "без ограничения")
+    ctx.note(f"{result.plate} · {cover}")
+    if result.notes:
+        ctx.note("\n".join(f"• {note}" for note in result.notes))
+    return [p for p in (result.pdf_path, result.docx_path) if p]
+
+
+def _run_shablon(ctx: RunContext, state: dict) -> list[Path]:
+    """Fill one of the forms the operator already studied on the computer."""
+    from src.config import paths
+
+    target = state["target"]
+    study, _known = ctx.ctl["template"].study(target.path)
+    out = paths.output_dir() / "shablon" / (
+        f"{target.path.stem}_{uuid.uuid4().hex[:8]}{target.path.suffix}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    photos = state["photos"]
+    result = ctx.ctl["template"].fill_from_images(
+        study, target.path, out, photos[0],
+        photos[1] if len(photos) > 1 else None,
+        form_date=state["answers"].get("form_date") or date.today(),
+        profession=str(state["answers"].get("profession") or ""))
+    ctx.note(f"{len(result.written)} та қиймат ёзилди")
+    if result.problems:
+        ctx.note("\n".join(f"⚠️ {problem}" for problem in result.problems))
+    return [result.path]
+
+
 def _run_summa(ctx: RunContext, state: dict) -> list[Path]:
     from src.utils.rus_words import (
         amount_to_words, date_to_words, format_amount, parse_amount,
@@ -293,6 +388,22 @@ def _run_summa(ctx: RunContext, state: dict) -> list[Path]:
 _TRIO_LABELS = ("Паспорт", "Патент (олд)", "Патент (орқа)")
 _TRIO_PROMPT = ("Расмларни ТАРТИБ билан юборинг:\n"
                 "1️⃣ Паспорт\n2️⃣ Патент (олд)\n3️⃣ Патент (орқа)")
+
+#: The cards that carry the worker's own photograph.
+_PORTRAIT_LABELS = ("Паспорт", "Ишчи расми")
+_PORTRAIT_PROMPT = "Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми"
+
+#: БЕЙДЖИК and ПАТЕНТ are one and the same card, so they ask the same things.
+_BADGE_ASKS: tuple[Ask, ...] = (
+    Ask("region", "Шаблон/регион (77 — Москва, 50 — область):", kind="text"),
+    Ask("personal_number", "Шахсий номер:", kind="text"),
+    Ask("inn", "ИНН рақами:", kind="text"),
+    Ask("firm", "Фирма (кем выдано):", kind="text"),
+    Ask("dolzhnost", "Должность (фақат 50 учун, керак бўлмаса «-»):", kind="text"),
+    Ask("territory", "Территория действия патента (бўш — регионники):",
+        kind="text"),
+    Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+)
 
 MODULES: tuple[Module, ...] = (
     Module("patent", "🛂 Патент PDF", _run_patent,
@@ -325,24 +436,50 @@ MODULES: tuple[Module, ...] = (
                  Ask("phone", "Телефон рақами:", kind="text"),
                  Ask("address", "Рўйхатдан ўтиш манзили:", kind="text"),
                  Ask("region", "Патент ҳудуди (бўш — Москва):", kind="text"))),
+    Module("insurance", "🚗 СТРАХОВКА", _run_insurance,
+           targets=lambda c: c["insurance"].templates(),
+           target_prompt="Страховая компания шаблонини танланг:",
+           photo_prompt=("Расмларни ТАРТИБ билан юборинг:\n"
+                         "1️⃣ СТС (олд)\n2️⃣ СТС (орқа)\n"
+                         "3️⃣…6️⃣ Права — 4 тагача (ихтиёрий)\n\n"
+                         "Права юборилмаса «без ограничения», юборилса "
+                         "«лица, допущенные к управлению» белгиланади."),
+           photo_labels=("СТС (олд)", "СТС (орқа)", "Права 1", "Права 2",
+                         "Права 3", "Права 4"),
+           asks=(Ask("start", "Страховка БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("policy_holder", "Страхователь (бўш — СТС эгаси):",
+                     kind="text"))),
+    Module("shablon", "📐 ЎЗ ШАБЛОНИМ", _run_shablon,
+           targets=lambda c: c["template"].saved_templates(),
+           target_prompt="Шаблонни танланг:",
+           photo_prompt=("Расмларни ТАРТИБ билан юборинг:\n"
+                         "1️⃣ Паспорт\n2️⃣ Патент (ихтиёрий)"),
+           photo_labels=("Паспорт", "Патент"),
+           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("profession", "Профессия (ихтиёрий):", kind="text"))),
     Module("inn", "🔢 ИНН", _run_inn,
            photo_prompt="Ишчининг паспорти ёки патенти расмини юборинг.",
            photo_labels=("Паспорт/патент",),
            asks=(Ask("inn", "ИНН рақами (12 та рақам):", kind="text"),
                  Ask("form_date", "Кун (КК.ОО.ЙЙЙЙ):", default_days=0))),
     Module("beydjik", "🪪 БЕЙДЖИК", _run_beydjik,
-           photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
-           photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
-           asks=(Ask("region", "Шаблон/регион (77 — Москва, 50 — область):",
+           photo_prompt=_PORTRAIT_PROMPT, photo_labels=_PORTRAIT_LABELS,
+           min_photos=2, asks=_BADGE_ASKS),
+    # NB: the key «patent» already belongs to «🛂 Патент PDF» (Process Employee)
+    Module("patent_card", "🩷 ПАТЕНТ", _run_patent_card,
+           photo_prompt=_PORTRAIT_PROMPT, photo_labels=_PORTRAIT_LABELS,
+           min_photos=2, asks=_BADGE_ASKS),
+    Module("razreshenie", "🟩 РАЗРЕШЕНИЯ", _run_razreshenie,
+           photo_prompt=_PORTRAIT_PROMPT, photo_labels=_PORTRAIT_LABELS,
+           min_photos=2,
+           asks=(Ask("activity", "Должность (вид деятельности):", kind="text"),
+                 Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("inn", "Ишчининг ИННси (бўш — фақат паспорт рақами):",
                      kind="text"),
-                 Ask("personal_number", "Шахсий номер:", kind="text"),
-                 Ask("inn", "ИНН рақами:", kind="text"),
-                 Ask("firm", "Фирма (кем выдано):", kind="text"),
-                 Ask("dolzhnost", "Должность (фақат 50 учун, керак бўлмаса «-»):",
-                     kind="text"),
-                 Ask("territory", "Территория действия патента "
-                     "(бўш — регионники):", kind="text"),
-                 Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0))),
+                 Ask("firm_name", "Фирма номи (бўш — охиргиси):", kind="text"),
+                 Ask("firm_inn", "Фирма ИННси (бўш — охиргиси):", kind="text"))),
     Module("svera", "🎓 СФЕРА", _run_svera,
            targets=lambda c: c["svera"].professions(),
            target_prompt="Касбни танланг:",
@@ -409,11 +546,21 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
     from src.controllers.inn_controller import InnController
+    from src.controllers.insurance_controller import InsuranceController
+    from src.controllers.patent_controller import PatentController
     from src.controllers.process_controller import ProcessController
+    from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
     from src.controllers.svera_controller import SveraController
+    from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
     from src.config.settings_service import SettingsService
+    from src.database.repositories.insurance_template_repo import (
+        InsuranceTemplateRepository,
+    )
+    from src.database.repositories.template_profile_repo import (
+        TemplateProfileRepository,
+    )
     from src.ocr.service import OcrService
     from src.services.company_service import CompanyService
     from src.services.beydjik_service import BeydjikService
@@ -422,9 +569,15 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
     from src.services.inn_service import InnService
+    from src.services.insurance_service import (
+        InsuranceService,
+        InsuranceTemplateService,
+    )
+    from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
     from src.services.profession_service import ProfessionService
+    from src.services.razreshenie_service import RazreshenieService
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
     from src.services.svera_service import SveraService
@@ -455,6 +608,19 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "inn": InnController(ocr, InnService()),
         "beydjik": BeydjikController(
             ocr, BeydjikService(container.resolve(SettingsService))),
+        # ПАТЕНТ is the badge on a different blank — same controller family.
+        "patent": PatentController(
+            ocr, PatentService(container.resolve(SettingsService))),
+        "razreshenie": RazreshenieController(
+            ocr, RazreshenieService(container.resolve(SettingsService))),
+        # СТРАХОВКА and ЎЗ ШАБЛОНИМ own their services the same way the desktop
+        # views do; only the repositories come from the container.
+        "insurance": InsuranceController(
+            InsuranceTemplateService(
+                container.resolve(InsuranceTemplateRepository)),
+            ocr, InsuranceService(container.resolve(SettingsService))),
+        "template": TemplateController(
+            container.resolve(TemplateProfileRepository), ocr),
         "umumiy": UmumiyService(key_getter=key_getter),
         "dover": DoverService(key_getter=key_getter,
                               settings=container.resolve(SettingsService)),

@@ -109,6 +109,54 @@ def test_menu_lists_every_module(ready) -> None:
     assert len(_MODULES) >= 9, "the bot must cover the whole program"
 
 
+#: Every desktop side-bar entry that does work, and the module that mirrors it
+#: on the phone. A new section on the computer that never reaches the bot is
+#: exactly the bug this table exists to catch.
+_DESKTOP_TO_MODULE = {
+    "nav.process": "patent",
+    "nav.registration": "reg",
+    "nav.hostel": "hostel",
+    "nav.trud": "trud",
+    "nav.dms": "dms",
+    "nav.strahovka": "insurance",
+    "nav.inn": "inn",
+    "nav.beydjik": "beydjik",
+    "nav.patent": "patent_card",
+    "nav.razreshenie": "razreshenie",
+    "nav.svera": "svera",
+    "nav.dover": "dover",
+    "nav.perevod": "perevod",
+    "nav.umumiy": "umumiy",
+    "nav.template": "shablon",
+    "nav.photo": "photo",
+    "nav.jpg2pdf": "jpg2pdf",
+    "nav.summa": "summa",
+}
+
+#: Sections that hold data or settings rather than doing work.
+_HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
+                 "nav.settings"}
+
+#: ЧЕК stays on the computer. Its renderer makes up the payment's own proof —
+#: a random 6-digit код авторизации and a random company id on a bank-receipt
+#: background — and I will not build the machinery that mails those out.
+_NOT_ON_THE_PHONE = {"nav.chek"}
+
+
+def test_every_desktop_section_is_also_on_the_phone() -> None:
+    from src.controllers.ofis_modules import BY_KEY
+    from src.ui.main_window import _NAV
+
+    for _group, key, title, *_rest in _NAV:
+        if key in _HOUSEKEEPING or key in _NOT_ON_THE_PHONE:
+            continue
+        assert key in _DESKTOP_TO_MODULE, (
+            f"«{title}» ({key}) компютерда бор, телефонда йўқ — "
+            "ofis_modules.MODULES га қўшинг")
+        assert _DESKTOP_TO_MODULE[key] in BY_KEY, (
+            f"{_DESKTOP_TO_MODULE[key]} модули йўқолиб қолди")
+
+
 # ------------------------------------------------------- registration flow
 
 
@@ -462,3 +510,243 @@ def test_inn_flow_asks_the_number_and_date(ready, monkeypatch) -> None:
     assert seen == {"inn": "770912345678", "form_date": date(2026, 7, 27)}
     assert "770912345678" in _all(ready)
     assert ready.files
+
+
+# --------------------------------------------------------- СТРАХОВКА flow
+
+
+class _FakeTemplate:
+    name = "РЕСО-Гарантия"
+
+
+def _fake_policy(seen):
+    def generate(template, sts_front, sts_back, licences, *, start,
+                 unlimited=None, policy_holder=""):
+        seen.update(template=template, front=sts_front, back=sts_back,
+                    licences=list(licences), start=start,
+                    policy_holder=policy_holder)
+        out = paths.output_dir() / "osago.docx"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"PK\x03\x04")
+
+        class R:
+            docx_path = out
+            pdf_path = None
+            plate = "Х420КС797"
+            drivers = len(seen["licences"])
+            notes = ["Полис серия/номерини страховая компания беради"]
+
+        return R()
+
+    return generate
+
+
+def test_insurance_flow_splits_the_photos_and_asks_the_dates(ready, monkeypatch) -> None:
+    seen = {}
+    ctl = ready.ctl()["insurance"]
+    monkeypatch.setattr(ctl, "templates", lambda: [_FakeTemplate()])
+    monkeypatch.setattr(ctl, "generate_from_images", _fake_policy(seen))
+
+    _text(ready, "🚗 СТРАХОВКА")
+    _pick(ready, 0)
+    for _ in range(4):          # СТС олд · СТС орқа · 2 та права
+        _photo(ready)
+    assert "Права 2" in _last(ready), "the photos are not labelled in order"
+
+    _text(ready, "✅ Тайёрла")
+    assert "БОШЛАНИШ" in _last(ready)
+    _text(ready, "10.07.2026")
+    assert "Страхователь" in _last(ready)
+    _text(ready, "✅ Тайёрла")   # left blank — the СТС owner is used
+
+    assert seen["start"] == date(2026, 7, 10)
+    assert seen["back"] is not None
+    assert len(seen["licences"]) == 2
+    assert seen["policy_holder"] == ""
+    assert "Х420КС797" in _all(ready)
+    assert "лица, допущенные" in _all(ready)
+    assert ready.files, "the policy was never sent back"
+
+
+def test_insurance_without_licences_is_unlimited_cover(ready, monkeypatch) -> None:
+    seen = {}
+    ctl = ready.ctl()["insurance"]
+    monkeypatch.setattr(ctl, "templates", lambda: [_FakeTemplate()])
+    monkeypatch.setattr(ctl, "generate_from_images", _fake_policy(seen))
+
+    _text(ready, "🚗 СТРАХОВКА")
+    _pick(ready, 0)
+    _photo(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "10.07.2026")
+    _text(ready, "✅ Тайёрла")
+
+    assert seen["licences"] == []
+    assert "без ограничения" in _all(ready)
+
+
+# ------------------------------------------------------ ЎЗ ШАБЛОНИМ flow
+
+
+def test_shablon_flow_fills_a_template_saved_on_the_computer(
+        ready, monkeypatch, tmp_path) -> None:
+    from src.controllers.template_controller import SavedTemplate
+
+    saved = tmp_path / "anketa.pdf"
+    saved.write_bytes(b"%PDF-1.4\n")
+    seen = {}
+
+    def fake_fill(study, template, out, passport, patent=None, *,
+                  form_date, profession):
+        seen.update(template=template, patent=patent, form_date=form_date,
+                    profession=profession)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.4\n")
+
+        class R:
+            path = out
+            written = {"surname": "ИСАКОВ"}
+            problems = []
+
+        return R()
+
+    ctl = ready.ctl()["template"]
+    monkeypatch.setattr(ctl, "saved_templates",
+                        lambda: [SavedTemplate("Анкета", "pdf", saved)])
+    monkeypatch.setattr(ctl, "study", lambda source: (object(), True))
+    monkeypatch.setattr(ctl, "fill_from_images", fake_fill)
+
+    _text(ready, "📐 ЎЗ ШАБЛОНИМ")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "санаси" in _last(ready).lower()
+    _text(ready, "27.07.2026")
+    _text(ready, "Штукатур")
+
+    assert seen["template"] == saved
+    assert seen["patent"] is None
+    assert seen["form_date"] == date(2026, 7, 27)
+    assert seen["profession"] == "Штукатур"
+    assert ready.files, "the filled form was never sent back"
+
+
+def test_shablon_with_nothing_saved_says_so(ready, monkeypatch) -> None:
+    monkeypatch.setattr(ready.ctl()["template"], "saved_templates", list)
+    _text(ready, "📐 ЎЗ ШАБЛОНИМ")
+    assert "бўш" in _last(ready)
+
+
+# ---------------------------------------------------- ПАТЕНТ · РАЗРЕШЕНИЯ
+
+
+def test_patent_card_is_the_badge_on_the_other_blank(ready, monkeypatch) -> None:
+    """The desktop keeps ПАТЕНТ one-to-one with БЕЙДЖИК by inheritance; the bot
+    must ask the same questions and reach the patent controller, not the badge."""
+    from src.controllers.ofis_modules import BY_KEY
+
+    assert BY_KEY["patent_card"].asks == BY_KEY["beydjik"].asks
+    seen = {}
+
+    def fake_generate(image, **kwargs):
+        seen.update(kwargs)
+        out = paths.output_dir() / "patent_card.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.4\n")
+
+        class R:
+            pdf_path = out
+            pr_number = "0001234"
+            surname = "ТОШПУЛАТОВ"
+            region = "77"
+
+        return R()
+
+    monkeypatch.setattr(ready.ctl()["patent"], "generate_from_image", fake_generate)
+    monkeypatch.setattr(ready.ctl()["beydjik"], "generate_from_image",
+                        lambda *a, **k: pytest.fail("the badge ran instead"))
+
+    _text(ready, "🩷 ПАТЕНТ")
+    _photo(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    for answer in ("77", "770912345678", "770912345678", "ООО СФЕРА", "-", ""):
+        _text(ready, answer if answer else "✅ Тайёрла")
+    _text(ready, "27.07.2026")
+
+    assert seen["region"] == "77"
+    assert seen["issue_date"] == date(2026, 7, 27)
+    assert seen["photo_path"] is not None, "the worker's photograph was dropped"
+    assert "ТОШПУЛАТОВ" in _all(ready)
+    assert ready.files
+
+
+def test_razreshenie_flow_reuses_the_remembered_firm(ready, monkeypatch) -> None:
+    from src.services.razreshenie_service import Firm
+
+    seen = {}
+
+    def fake_generate(**kwargs):
+        seen.update(kwargs)
+
+        class R:
+            pdf = b"%PDF-1.4\n"
+            filename = "Сейтимов.pdf"
+            seria = "77"
+            number = "1354594"
+            back_number = "0035454"
+            valid_from = date(2026, 7, 10)
+            valid_to = date(2027, 7, 9)
+
+        return R()
+
+    ctl = ready.ctl()["razreshenie"]
+    monkeypatch.setattr(ctl, "read_passport", lambda image: {
+        "surname": "СЕЙТИМОВ", "name": "АЗИЗ", "patronymic": "",
+        "birth_date": "01.02.1990", "citizenship": "Узбекистан",
+        "document": "A2311191"})
+    monkeypatch.setattr(ctl, "firm", lambda: Firm("ООО СФЕРА", "7723652154"))
+    monkeypatch.setattr(ctl, "generate", fake_generate)
+
+    _text(ready, "🟩 РАЗРЕШЕНИЯ")
+    _photo(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "должность" in _last(ready).lower()
+    _text(ready, "Штукатур")
+    _text(ready, "10.07.2026")
+    _text(ready, "772365215425")
+    _text(ready, "✅ Тайёрла")      # фирма номи — бўш
+    _text(ready, "✅ Тайёрла")      # фирма ИННси — бўш
+
+    assert seen["activity"] == "Штукатур"
+    assert seen["valid_from"] == date(2026, 7, 10)
+    assert seen["inn"] == "772365215425"
+    assert seen["birth_date"] == date(1990, 2, 1), "the date arrived as text"
+    assert seen["firm_name"] == "ООО СФЕРА", "the remembered firm was not used"
+    assert seen["firm_inn"] == "7723652154"
+    assert seen["photo"], "the worker's photograph was dropped"
+    assert "1354594" in _all(ready) and "0035454" in _all(ready)
+    assert ready.files and ready.files[-1].name == "Сейтимов.pdf"
+
+
+def test_razreshenie_keeps_an_earlier_card_of_the_same_surname(
+        ready, monkeypatch) -> None:
+    from src.controllers.ofis_modules import _free_path
+
+    folder = paths.output_dir() / "razreshenie"
+    first = _free_path(folder, "Сейтимов.pdf")
+    first.write_bytes(b"%PDF-1.4\n")
+    second = _free_path(folder, "Сейтимов.pdf")
+
+    assert second.name == "Сейтимов (2).pdf"
+    assert first.exists(), "the first card was overwritten"
+
+
+def test_the_receipt_section_is_deliberately_not_on_the_phone() -> None:
+    """ЧЕК makes up the payment's own proof — a random код авторизации on a
+    bank-receipt background. It stays where it is; the bot does not mail it."""
+    from src.controllers.ofis_modules import BY_KEY
+
+    assert "chek" not in BY_KEY
