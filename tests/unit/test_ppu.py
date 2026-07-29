@@ -11,10 +11,21 @@ from src.pdf.ppu_renderer import (
     address_lines,
     full_name,
     passport_line,
+    tidy_address,
     title_case,
     to_latin,
 )
-from src.pdf.ppu_spec import ADDRESS_LINES, BACK, FRONT, PHOTO_BOX, PHOTO_OPACITY
+from src.pdf.ppu_spec import (
+    ADDRESS_LINES,
+    ADDRESS_MAX_WORDS,
+    ADDRESS_MIN_WORDS,
+    ADDRESS_SHIFT,
+    BACK,
+    FRONT,
+    PHOTO_BOX,
+    PHOTO_OPACITY,
+    TEXT_OPACITY,
+)
 from src.services.ppu_service import PpuService
 
 
@@ -116,10 +127,44 @@ def test_the_whole_address_is_kept_never_just_the_house():
     assert "д. 33" in prompt, "it must be shown what a useless answer looks like"
 
 
-def test_an_address_goes_three_words_to_a_line():
-    """The office writes them that way: three, three, and the rest."""
-    lines = address_lines("г. Москва, 15-я Парковая, д. 33, ком. 2")
-    assert lines == ["г. Москва, 15-я", "Парковая, д. 33,", "ком. 2"]
+def test_a_line_takes_four_long_words_or_five_short_ones():
+    """Filled by WIDTH, not by count — that is what the office asked for."""
+    short = address_lines("г. Москва, ул. Мира, д. 5, кв. 1")
+    assert ADDRESS_MIN_WORDS <= len(short[0].split()) <= ADDRESS_MAX_WORDS
+    long = address_lines("Московская обл., Балашихинский р-н, г. Балашиха, "
+                         "ул. Ленина, д. 33")
+    assert len(long[0].split()) == ADDRESS_MIN_WORDS, "long words crowd the line"
+
+
+def test_a_line_never_ends_on_a_bare_abbreviation():
+    """«…, д.» with «46» on the next line reads as two different things."""
+    for text in ("г. Москва, ул. Домодедовская, д. 46, кв. 6",
+                 "г. Москва, ул. Тульская, д. 2, кв. 15"):
+        for line in address_lines(text):
+            assert not line.rstrip(",").endswith(("д.", "кв.", "ул.", "корп.")), line
+
+
+def test_a_street_run_into_its_abbreviation_is_put_right():
+    """«улДомодедовская» names a street nobody can find."""
+    assert tidy_address("г. Москва, улДомодедовская, д.46, кв.6") ==         "г. Москва, ул. Домодедовская, д. 46, кв. 6"
+    assert tidy_address("ул.Домодедовская") == "ул. Домодедовская"
+
+
+def test_an_ordinary_word_is_not_split_by_the_tidier():
+    """«Тульская» begins with «ул» and must survive untouched."""
+    assert tidy_address("ул. Тульская, д. 2") == "ул. Тульская, д. 2"
+    assert tidy_address("г. Москва, ул. 8 Марта") == "г. Москва, ул. 8 Марта"
+
+
+def test_the_type_is_laid_on_at_nine_parts_in_ten():
+    assert pytest.approx(0.90) == TEXT_OPACITY
+
+
+def test_the_address_block_sits_on_the_dates_line_a_centimetre_over():
+    """Centred on «с … по …», and moved right by a centimetre."""
+    assert BACK["address"].baseline == BACK["date_from"].baseline
+    assert BACK["address"].x > BACK["date_to"].x
+    assert pytest.approx(28.35 / 595.28) == ADDRESS_SHIFT
 
 
 def test_a_long_address_keeps_its_tail_on_the_last_line():

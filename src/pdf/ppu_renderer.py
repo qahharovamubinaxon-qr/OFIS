@@ -22,15 +22,18 @@ import fitz
 from src.common.logging import get_logger
 from src.pdf.engine import _font_file
 from src.pdf.ppu_spec import (
+    ADDRESS_CHARS,
     ADDRESS_LEADING,
     ADDRESS_LINES,
-    ADDRESS_WORDS,
+    ADDRESS_MAX_WORDS,
+    ADDRESS_MIN_WORDS,
     BACK,
     FRONT,
     PHOTO_BOX,
     PHOTO_OPACITY,
     SANS,
     SANS_BOLD,
+    TEXT_OPACITY,
     Slot,
 )
 
@@ -113,27 +116,79 @@ def full_name(surname: str, name: str, patronymic: str = "") -> str:
     return " ".join(parts)
 
 
-def address_lines(address: str, per_line: int = ADDRESS_WORDS,
-                  max_lines: int = ADDRESS_LINES) -> list[str]:
-    """A whole address broken the way the office writes it: three words a line.
+def tidy_address(address: str) -> str:
+    """«улДомодедовская» → «ул. Домодедовская».
 
-    A registered address is «Московская обл., г. Балашиха, ул. Ленина, д. 33,
-    корп. 2, кв. 15» — region, district, town, street, house, block, building,
-    flat. On one line of this sheet that is either unreadably small or off the
-    edge, so it goes over up to three lines, three words each.
+    The readers run a Russian address abbreviation into the word after it —
+    «ул.Домодедовская», or worse «улДомодедовская» with the stop lost as
+    well — and the sheet then names a street nobody can find.
 
-    Whatever will not fit in those lines is kept on the last one rather than
-    dropped: an address missing its flat number is not the address.
+    Only a run-together abbreviation is separated, and only where a CAPITAL or
+    a digit follows it: that is what makes «улДомодедовская» a join and
+    «Тульская» an ordinary word. The match is case-sensitive on purpose —
+    folding case would let «кв» split «квартира», and «к» split «кв».
     """
-    words = (address or "").split()
+    import re
+
+    short = ("обл", "край", "респ", "р-н", "пгт", "гор", "пос", "мкр",
+             "пр-кт", "просп", "б-р", "наб", "пер", "влд", "корп", "стр",
+             "ком", "оф", "кв", "ул", "пр", "ш", "д", "г", "с", "к")
+    text = " ".join((address or "").split())
+    if not text:
+        return ""
+    for form in short:
+        for spelling in (form, form.capitalize()):
+            text = re.sub(
+                rf"(?<![А-Яа-яЁёA-Za-z]){re.escape(spelling)}"
+                rf"\.?(?=[А-ЯЁA-Z0-9])",
+                f"{spelling}. ", text)
+    return " ".join(text.split())
+
+
+#: The short forms an address uses. A line may not END on one of these.
+_ABBREV = frozenset((
+    "обл", "край", "респ", "р-н", "пгт", "гор", "пос", "мкр", "пр-кт",
+    "просп", "б-р", "наб", "пер", "влд", "корп", "стр", "ком", "оф",
+    "кв", "ул", "пр", "ш", "д", "г", "с", "к",
+))
+
+
+def _is_abbrev(word: str) -> bool:
+    return word.rstrip(".").lower() in _ABBREV and word.endswith(".")
+
+
+def address_lines(address: str, budget: int = ADDRESS_CHARS,
+                  max_lines: int = ADDRESS_LINES) -> list[str]:
+    """A whole address broken the way the office writes it.
+
+    How many words go on a line is decided by their LENGTH, not their number:
+    «Московская обл., Балашихинский р-н,» is four words and already a full
+    line, while «г. Москва, ул. Мира, д. 5,» is six and still short. So each
+    line is filled to a width and then bounded — never fewer than
+    :data:`ADDRESS_MIN_WORDS`, never more than :data:`ADDRESS_MAX_WORDS`.
+
+    Whatever will not fit in the last line is kept on it rather than dropped:
+    an address missing its flat number is not the address.
+    """
+    words = tidy_address(address).split()
     if not words:
         return []
-    lines = []
-    for start in range(0, len(words), per_line):
+    lines: list[str] = []
+    at = 0
+    while at < len(words):
         if len(lines) == max_lines - 1:
-            lines.append(" ".join(words[start:]))   # the rest, all of it
+            lines.append(" ".join(words[at:]))          # the rest, all of it
             break
-        lines.append(" ".join(words[start:start + per_line]))
+        take = min(ADDRESS_MIN_WORDS, len(words) - at)
+        while (take < ADDRESS_MAX_WORDS and at + take < len(words)
+               and len(" ".join(words[at:at + take + 1])) <= budget):
+            take += 1
+        # never end a line on a bare «д.» or «кв.» — the number it introduces
+        # is on the next line and the two read as different things
+        while take > 1 and _is_abbrev(words[at + take - 1]):
+            take -= 1
+        lines.append(" ".join(words[at:at + take]))
+        at += take
     return lines
 
 
@@ -158,7 +213,8 @@ def _write(page, slot: Slot, text: str, fonts: dict[str, str]) -> None:
     while size > 4.0 and font.text_length(text, fontsize=size) > limit:
         size -= 0.4
     page.insert_text((slot.x * rect.width, slot.baseline * rect.height), text,
-                     fontname=fonts[slot.font], fontsize=size, color=slot.colour)
+                     fontname=fonts[slot.font], fontsize=size,
+                     color=slot.colour, fill_opacity=TEXT_OPACITY)
 
 
 def _place_photo(page, photo: bytes | None) -> None:
@@ -235,14 +291,16 @@ def _fill_back(page, data: PpuData) -> None:
         _write(page, BACK[key], passport, fonts)
     _write(page, BACK["date_from"], _dmy(data.valid_from), fonts)
     _write(page, BACK["date_to"], _dmy(data.valid_to), fonts)
-    # the address goes over as many lines as it needs, three words each, and
-    # the block is drawn UPWARDS from its baseline so the last line stays on
-    # the printed rule whatever the address turned out to be
+    # The address takes as many lines as it needs, and the BLOCK is centred on
+    # the dates' own line rather than hung above or below it — a two-line
+    # address and a three-line one then both read as level with «с … по …»,
+    # which is how the office lines them up by hand.
     lines = address_lines(data.address or "")
     slot = BACK["address"]
+    middle = (len(lines) - 1) / 2.0
     for index, line in enumerate(lines):
-        lift = (len(lines) - 1 - index) * ADDRESS_LEADING
-        _write(page, slot._replace(baseline=slot.baseline - lift), line, fonts)
+        offset = (index - middle) * ADDRESS_LEADING
+        _write(page, slot._replace(baseline=slot.baseline + offset), line, fonts)
 
 
 def pages_as_png(pdf: bytes, zoom: float = 3.0) -> list[bytes]:
