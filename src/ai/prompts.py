@@ -11,10 +11,15 @@ _COMMON = (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
     "Use empty string for anything you cannot read. Dates as YYYY-MM-DD. "
-    "IMPORTANT: output all names and words in RUSSIAN CYRILLIC, uppercased. If the "
-    "document is printed in Latin (e.g. KHUDAYBERDIEV JASUR), TRANSLITERATE to "
-    "Cyrillic (ХУДАЙБЕРДИЕВ ЖАСУР; UZBEKISTAN→УЗБЕКИСТАН, KH→Х, ZH/J→Ж, SH→Ш, "
-    "CH→Ч, YU→Ю, YA→Я). Never output Latin letters in name/place fields.\n"
+    "IMPORTANT: output every NAME, PLACE and AUTHORITY in RUSSIAN CYRILLIC, "
+    "uppercased. If the document is printed in Latin (e.g. KHUDAYBERDIEV JASUR), "
+    "TRANSLITERATE to Cyrillic (ХУДАЙБЕРДИЕВ ЖАСУР; UZBEKISTAN→УЗБЕКИСТАН, KH→Х, "
+    "ZH/J→Ж, SH→Ш, CH→Ч, YU→Ю, YA→Я). Never output Latin letters in a name, a "
+    "place or an authority field.\n"
+    "IMPORTANT — this NEVER applies to identifiers. A document series, a "
+    "number, a VIN, a plate code, an ИНН: COPY THEM CHARACTER FOR CHARACTER AS "
+    "PRINTED and never transliterate them. A passport series printed in Latin "
+    "stays Latin — FA is FA, never ФА; FB is FB; C is C.\n"
 )
 
 _PASSPORT = _COMMON + (
@@ -23,7 +28,10 @@ _PASSPORT = _COMMON + (
     'is in, never a city/region (ФЕРГАНСКАЯ ОБЛАСТЬ→УЗБЕКИСТАН, ДУШАНБЕ→'
     'ТАДЖИКИСТАН, ОШ→КИРГИЗИЯ). '
     'IMPORTANT — "series" is ONLY a letter series actually printed as the '
-    'passport series (e.g. Uzbek "AA" in "AA 1234567"). The country code '
+    'passport series (e.g. Uzbek "AA" in "AA 1234567", "FA" in "FA 1234567"). '
+    'It is printed in LATIN and must be copied in LATIN, exactly as printed — '
+    'FA stays FA and must NEVER come back as ФА, FB as ФВ, or C as С. Do not '
+    'transliterate the series under any circumstance. The country code '
     '(TJK, UZB, KGZ...) is NOT a series: never put it in "series" and never '
     'glue it to "number". A TAJIKISTAN passport has NO series at all — leave '
     '"series" EMPTY and put only its nine digits beginning with 4 in "number" '

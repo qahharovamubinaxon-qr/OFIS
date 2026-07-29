@@ -39,6 +39,44 @@ _TAJIK_NUMBER = re.compile(r"4\d{8}")
 #: «TJK406576690» — the code run into the number by whoever read it.
 _CODE_THEN_NUMBER = re.compile(r"^([A-ZА-Я]{2,3})[\s-]*(\d{6,})$")
 
+#: Back out of Cyrillic, for the серия only.
+#:
+#: A passport серия is **never** translated — «FA», «FB», «C» are printed in
+#: Latin and go onto the Russian form in Latin, exactly as printed. But the
+#: reader is told to write everything else in Russian, and on a careless day it
+#: carries the серия across too, which turns «FA» into «ФА» — a серия that
+#: belongs to no passport in the world.
+#:
+#: The look-alikes come first, because a reader that converts a серия nearly
+#: always converts what it *sees*: Cyrillic С is Latin C, Н is H, Р is P, У is
+#: Y, Х is X. The rest of the alphabet has no twin to be confused with, so
+#: those fall back to the sound — Ф is F, Г is G, Ж is J.
+_SERIES_BACK = {
+    # the twelve that look the same in both alphabets
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H",
+    "О": "O", "Р": "P", "С": "C", "Т": "T", "У": "Y", "Х": "X",
+    # and the rest, by sound
+    "Б": "B", "Г": "G", "Д": "D", "Ж": "J", "З": "Z", "И": "I", "Й": "I",
+    "Л": "L", "П": "P", "Ф": "F", "Ц": "C", "Ч": "C", "Ш": "S", "Щ": "S",
+    "Ы": "Y", "Э": "E", "Ю": "U", "Я": "A", "Ь": "", "Ъ": "",
+    # foreign twins, so a Tajik or Ukrainian reading lands somewhere sane
+    "Ҳ": "X", "Қ": "K", "Ғ": "G", "Ӣ": "I", "Ӯ": "Y", "Ө": "O", "Ү": "Y",
+    "Ң": "H", "І": "I", "Ї": "I", "Є": "E", "Ґ": "G", "Ҷ": "J",
+}
+
+
+def series_in_latin(series: str | None) -> str:
+    """The серия as the passport prints it: Latin, never translated.
+
+    Digits pass through untouched — a Russian internal passport's «4512» is a
+    серия too. Anything already in Latin is returned as it stands, so this can
+    be run over every passport without asking where it came from.
+    """
+    value = re.sub(r"[\s-]+", "", (series or "")).upper()
+    if not value:
+        return ""
+    return "".join(_SERIES_BACK.get(ch, ch) for ch in value)
+
 
 def is_tajik(nationality: str | None) -> bool:
     value = (nationality or "").strip().upper().replace("Ё", "Е")
@@ -72,6 +110,13 @@ def normalise_document(series: str | None, number: str | None,
         number = found.group(0) if found else digits
         series = ""
 
+    # last, so the country-code and Tajik rules have already had their say:
+    # whatever серия survives is written the way the passport prints it. The
+    # номер gets the same treatment, because a серия the reader glued onto the
+    # front of it would otherwise carry the Cyrillic in by the back door.
+    series = series_in_latin(series)
+    if any(ch.isalpha() for ch in number):
+        number = series_in_latin(number)
     return (series or None), number
 
 

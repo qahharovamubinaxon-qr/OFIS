@@ -233,3 +233,50 @@ def test_the_mvd_form_gets_a_blank_series_and_a_bare_number() -> None:
     assert values["employee.passport.number"] == "406576690"
     assert values["employee.passport.issued_by"] == "ПРС МВД РТ"
     assert "TJK" not in " ".join(values.values())
+
+
+# ------------------------------------------------- серия is never translated
+def test_a_latin_series_that_was_carried_into_cyrillic_comes_back():
+    """«FA» must never reach a form as «ФА» — the office's own report."""
+    from src.domain.passport_rules import series_in_latin
+
+    assert series_in_latin("ФА") == "FA"
+    assert series_in_latin("ФВ") == "FB"
+    assert series_in_latin("ФБ") == "FB"
+    assert series_in_latin("С") == "C"
+    assert series_in_latin("АС") == "AC"
+
+
+def test_a_series_already_in_latin_is_left_alone():
+    from src.domain.passport_rules import series_in_latin
+
+    for value in ("FA", "FB", "C", "AA", "KG", "MP"):
+        assert series_in_latin(value) == value
+
+
+def test_a_russian_digit_series_is_not_touched():
+    from src.domain.passport_rules import series_in_latin
+
+    assert series_in_latin("4512") == "4512"
+
+
+def test_the_form_gets_the_series_in_latin():
+    assert normalise_document("ФА", "1234567", "УЗБЕКИСТАН") == ("FA", "1234567")
+
+
+def test_a_cyrillic_series_glued_to_the_number_comes_back_too():
+    assert normalise_document(None, "ФА1234567", "УЗБЕКИСТАН")[1] == "FA1234567"
+
+
+def test_the_tajik_rule_still_wins_over_the_latin_one():
+    """No серия at all, whatever letters the reader put in the box."""
+    assert normalise_document("ФА", "406576690", "ТАДЖИКИСТАН") == \
+        (None, "406576690")
+
+
+def test_a_passport_built_by_hand_obeys_it():
+    from src.domain.documents import Passport
+
+    passport = Passport(surname="ИВАНОВ", name="ИВАН", series="ФА",
+                        number="1234567", nationality="УЗБЕКИСТАН")
+    assert passport.series == "FA"
