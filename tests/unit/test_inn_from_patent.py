@@ -126,3 +126,59 @@ def test_nothing_found_says_so_and_leaves_the_box_alone(screen):
     view._inn_read("")
     assert view._inn.text() == ""
     assert "ўзингиз" in view._status.text()
+
+
+# ------------------------------------- the line the патент actually prints
+def test_the_inn_is_taken_out_of_the_passport_slash_inn_line():
+    """«Документ удост. личность/ИНН» holds two numbers. Only one is the ИНН.
+
+    The office's own card reads «FB0717527 / 072501692992», and the reader
+    hands that line back whole. Joining its digits would give a 19-digit number
+    belonging to nobody — the passport's seven followed by the ИНН's twelve.
+    """
+    assert _read("FB0717527 / 072501692992")[0] == "072501692992"
+    assert _read("FB0717527/072501692992")[0] == "072501692992"
+    assert _read("Документ удост. личность/ИНН  FB0717527 / 072501692992")[0] \
+        == "072501692992"
+
+
+def test_a_leading_zero_survives():
+    """«072501692992» is not «72501692992» — it is somebody else's number."""
+    got, _ = _read("072501692992")
+    assert got == "072501692992"
+    assert got.startswith("0")
+
+
+def test_digits_glued_across_the_boundary_are_refused():
+    """If the reading has already lost the slash, nothing can be trusted."""
+    assert _read("0717527072501692992")[0] == ""
+
+
+def test_the_patents_own_number_is_not_mistaken_for_an_inn():
+    assert _read("Серия 77 №2500523150")[0] == ""
+
+
+def test_two_different_twelve_digit_numbers_are_refused():
+    """Ambiguity is not resolved by guessing; the operator types it."""
+    assert _read("072501692992 и 111122223333")[0] == ""
+
+
+def test_the_transcript_is_the_second_chance():
+    """An empty field but a card read cleanly into the transcript still works."""
+    from src.ai.base import AiRawResult
+
+    class _Silent(_Reader):
+        def extract(self, image, doc_type, prompt):
+            return AiRawResult(
+                document_type=doc_type, fields={"inn": ""},
+                text="Документ удост. личность/ИНН\nFB0717527 / 072501692992")
+
+    assert OcrService(_Silent()).read_inn(_jpeg()) == "072501692992"
+
+
+def test_the_reader_is_told_where_to_look_on_a_patent():
+    _, reader = _read("072501692992")
+    prompt = reader.prompts[0]
+    assert "Документ удост" in prompt, "it must be told which line carries it"
+    assert "slash" in prompt.lower()
+    assert "leading zero" in prompt.lower()

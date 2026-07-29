@@ -7,6 +7,7 @@ assembles into an Employee with the operator-chosen company, date and должн
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from src.ai.manager import AiManager
@@ -43,6 +44,50 @@ def _parse_date(value: str) -> date | None:
         except ValueError:
             continue
     return None
+
+
+#: A twelve-digit run standing on its own — not part of a longer number.
+#:
+#: The guards on both sides are the whole trick. A патент prints the passport
+#: and the ИНН on one line, «FB0717527 / 072501692992», and a reader will often
+#: hand that line back whole. Pulling every digit out of it and joining them
+#: gives a nineteen-digit number that is nobody's. Matching a *bounded* run
+#: instead finds the ИНН inside the line and leaves the passport's seven digits
+#: alone — and a run of nineteen glued digits matches nothing at all, which is
+#: the right answer for a reading that has already lost the boundary.
+_TWELVE_DIGITS = re.compile(r"(?<!\d)(\d{12})(?!\d)")
+
+
+#: Nothing but the number and its own label — «ИНН 77 23 65 21 54 25».
+_LABEL_AND_DIGITS = re.compile(r"^(?:ИНН|INN)?[\s:№.-]*([\d\s-]{12,20})$",
+                               re.IGNORECASE)
+
+
+def twelve_digit_inn(text: str) -> str:
+    """The one twelve-digit number in ``text``, or "" if it is not unambiguous.
+
+    Leading zeros are kept: a Russian individual's ИНН very often starts with
+    one, and «072501692992» is not «72501692992».
+    """
+    text = (text or "").strip()
+    found = list(dict.fromkeys(_TWELVE_DIGITS.findall(text)))
+    if len(found) == 1:
+        return found[0]
+    if len(found) > 1:
+        log.info("ИНН аниқ эмас — %d та 12 хонали рақам топилди", len(found))
+        return ""
+
+    # A number typed in groups — «77 23 65 21 54 25» — has no bounded run of
+    # twelve. Closing the gaps is only safe when the answer holds NOTHING else:
+    # the moment a letter or a second number is in there, the gaps might be the
+    # boundary between two different numbers, which is exactly how «FB0717527 /
+    # 072501692992» turns into a nineteen-digit number belonging to nobody.
+    grouped = _LABEL_AND_DIGITS.match(text)
+    if grouped:
+        digits = re.sub(r"\D", "", grouped.group(1))
+        if len(digits) == 12:
+            return digits
+    return ""
 
 
 def _passport_from(f: dict[str, str]) -> Passport:
@@ -165,12 +210,19 @@ class OcrService:
         except Exception as exc:            # noqa: BLE001 - reading is optional here
             log.info("ИНН ўқилмади: %s", exc)
             return ""
-        digits = "".join(c for c in str(answer.fields.get("inn", "")) if c.isdigit())
-        if len(digits) != 12:
-            if digits:
-                log.info("ИНН рад этилди — %d та рақам", len(digits))
-            return ""
-        return digits
+        found = twelve_digit_inn(str(answer.fields.get("inn", "")))
+        if not found:
+            # second chance: the number is there but under another name, or in
+            # the transcript rather than in a field. Every value is searched
+            # with the same bounded rule, so a stray passport or ОГРН still
+            # cannot get through — only a clean, unambiguous twelve.
+            rest = " | ".join(str(v) for k, v in answer.fields.items()
+                              if k != "inn")
+            found = (twelve_digit_inn(rest)
+                     or twelve_digit_inn(getattr(answer, "text", "") or ""))
+        if not found:
+            log.info("ИНН топилмади ёки 12 хона эмас")
+        return found
 
     def read_sts(self, front: bytes, back: bytes | None = None) -> Sts:
         """Read the vehicle registration card.

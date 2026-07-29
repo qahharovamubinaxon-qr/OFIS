@@ -127,15 +127,24 @@ _INN_ONLY = (
     "(a патент, an ИНН certificate, or another form) and find the INDIVIDUAL'S "
     "ИНН — идентификационный номер налогоплательщика. Return ONLY a JSON "
     "object, no explanation, no markdown.\n"
-    "IMPORTANT — an individual's ИНН is EXACTLY 12 digits. A 10-digit number is "
-    "an ORGANISATION's ИНН (the issuing office, the employer) and must NOT be "
-    "returned. A 13-digit or 15-digit number is an ОГРН/ОГРНИП and must NOT be "
-    "returned. The patent's own серия and номер are NOT an ИНН.\n"
+    "WHERE IT IS ON A ПАТЕНТ — this is the important case. The card has a line "
+    'labelled "Документ удост. личность/ИНН". Under that label are TWO values '
+    'separated by a slash: the PASSPORT on the left and the ИНН on the right, '
+    'like "FB0717527 / 072501692992". Return ONLY the right-hand part — the 12 '
+    "digits after the slash. NEVER return the passport (it has letters in it), "
+    "and NEVER glue the two numbers together into one long number.\n"
+    "IMPORTANT — an individual's ИНН is EXACTLY 12 digits and OFTEN STARTS "
+    'WITH ZERO ("072501692992"). Return it as a quoted JSON STRING and keep '
+    "every leading zero — dropping one turns it into somebody else's number.\n"
+    "IMPORTANT — a 10-digit number is an ORGANISATION's ИНН (the issuing "
+    "office, the employer) and must NOT be returned. A 13- or 15-digit number "
+    'is an ОГРН/ОГРНИП and must NOT be returned. The patent\'s own "Серия 77 '
+    '№2500523150" is NOT an ИНН.\n'
     "Copy the digits exactly as printed, character for character. Do not "
     "calculate, correct or invent a single digit — if you cannot read all 12 "
     "cleanly, return an empty string instead. A wrong ИНН on a form is worse "
     "than an empty box the operator fills in.\n"
-    'Keys: {"inn":"123456789012"}  (empty string if there is none)\n'
+    'Keys: {"inn":"072501692992"}  (empty string if there is none)\n'
 )
 
 
