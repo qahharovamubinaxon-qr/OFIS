@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 
 from PIL import Image
-
 from src.services.photo_service import (
     OUT_H,
     OUT_W,
