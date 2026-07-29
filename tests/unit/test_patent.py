@@ -85,7 +85,7 @@ def test_a_card_already_there_is_never_overwritten(tmp_path) -> None:
 
 
 def test_the_photograph_is_laid_on_at_nine_parts_in_ten() -> None:
-    assert patent_service.PHOTO_OPACITY == pytest.approx(0.90)
+    assert pytest.approx(0.90) == patent_service.PHOTO_OPACITY
 
 
 def test_the_frame_is_three_by_four() -> None:
