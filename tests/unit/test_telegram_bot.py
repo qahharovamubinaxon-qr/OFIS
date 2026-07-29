@@ -141,7 +141,9 @@ _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
 #: ЧЕК stays on the computer. Its renderer makes up the payment's own proof —
 #: a random 6-digit код авторизации and a random company id on a bank-receipt
 #: background — and I will not build the machinery that mails those out.
-_NOT_ON_THE_PHONE = {"nav.chek"}
+_NOT_ON_THE_PHONE = {"nav.chek",
+                     # ППУ needs the office's own blank uploaded first
+                     "nav.ppu"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:

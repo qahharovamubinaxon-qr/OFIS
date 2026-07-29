@@ -566,6 +566,59 @@ class PhotoService:
         return cv2.resize(crop, out or (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
 
 
+def cutout_portrait(data: bytes, aspect: float = 0.75, height: int = 900,
+                    opacity: float = 1.0) -> bytes | None:
+    """The same crop as :func:`prepare_portrait`, but cut OUT — no backdrop.
+
+    The person keeps their own pixels and everything behind them becomes
+    transparent, so whatever the card has under the window shows through
+    instead of a white rectangle sitting on it. ``opacity`` then lays the
+    person on at less than full strength, which is how the office's own ППУ
+    cards read.
+
+    Falls back to the white-backed portrait when the segmentation model is not
+    there — a photograph on the card beats no photograph on the card.
+    """
+    import io as _io
+
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image
+    except ImportError:                      # pragma: no cover - ships with app
+        return None
+
+    try:
+        rgb = _load_rgb(data)
+    except Exception:                        # noqa: BLE001 - unreadable upload
+        return None
+
+    svc = PhotoService()
+    found = svc._detect_face(cv2, rgb)
+    size = (max(60, int(height * aspect)), height)
+    crop = (svc._document_crop(cv2, rgb, *found[:4], aspect) if found
+            else svc._center_crop(cv2, rgb, aspect, size))
+    crop = cv2.resize(crop, size, interpolation=cv2.INTER_AREA)
+
+    from src.services.bg_segment import segment
+
+    mask = segment(crop)
+    if mask is None:
+        log.info("ППУ: сегментация йўқ — оқ фонли расм қўйилади")
+        return prepare_portrait(data, aspect=aspect, height=height)
+
+    person = cv2.GaussianBlur(
+        cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
+                         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))),
+        (5, 5), 0)
+    alpha = (person.astype(np.float32) * max(0.0, min(1.0, opacity))).astype("uint8")
+    out = Image.fromarray(crop).convert("RGBA")
+    out.putalpha(Image.fromarray(alpha))
+    buf = _io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def prepare_portrait(data: bytes, aspect: float = 0.75, height: int = 800) -> bytes | None:
     """Head-and-shoulders crop at ``aspect`` (width/height) on a white
     background, ready to drop into a document frame edge to edge.

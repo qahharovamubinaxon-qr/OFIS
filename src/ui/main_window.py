@@ -64,6 +64,8 @@ _NAV = [
     (None, "nav.chek", "ЧЕК", "Премия чеки — патент + сумма → PDF", "🧾"),
     (None, "nav.razreshenie", "РАЗРЕШЕНИЯ",
      "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
+    (None, "nav.ppu", "ППУ",
+     "Регистрациядан ППУ жуфтлиги — олд + орқа → расм", "🧾"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     (None, "nav.sertifikat", "СЕРТИФИКАТ",
      "Рус тили сертификати (УЦ «СФЕРА») → PDF", "📜"),
@@ -226,6 +228,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.ppu":
+            from src.controllers.ppu_controller import PpuController
+            from src.services.ppu_service import PpuService
+            from src.ui.views.ppu_view import PpuView
+
+            return PpuView(PpuController(
+                self._container.resolve(OcrService),
+                PpuService(self._settings),
             ))
         if key == "nav.sertifikat":
             from src.controllers.sertifikat_controller import (

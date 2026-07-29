@@ -15,6 +15,7 @@ from src.ai.prompts import inn_prompt, patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
+from src.domain.passport_rules import series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
 from src.ocr import mrz_reader
 from src.ocr.preprocess import prepare_image
@@ -233,6 +234,35 @@ class OcrService:
         log.info("ИНН топилмади. Ўқувчи қайтарган: %s",
                  {k: str(v)[:60] for k, v in fields.items()} or "—")
         return ""
+
+    def read_registration(self, image: bytes) -> dict[str, str]:
+        """A регистрация read for the ППУ pair — plain strings, nothing invented.
+
+        Free-form, like :meth:`read_inn`: this asks for a set of keys no
+        document model has, so it must not be judged against one. Whatever
+        cannot be read comes back empty and the operator types it — a guessed
+        address or a guessed end date is worse than a blank box.
+        """
+        from src.ai.prompts import registration_prompt
+
+        answer = self._ai.extract(prepare_image(image), DocType.UNKNOWN,
+                                  registration_prompt())
+        f = answer.fields
+        series = series_in_latin(str(f.get("series", "")))
+        number = str(f.get("number", "")).strip()
+        return {
+            "surname": to_cyrillic(str(f.get("surname", ""))).strip(),
+            "name": to_cyrillic(str(f.get("name", ""))).strip(),
+            "patronymic": to_cyrillic(str(f.get("patronymic", ""))).strip(),
+            "birth_date": str(f.get("birth_date", "")).strip(),
+            "gender": to_cyrillic(str(f.get("gender", ""))).strip(),
+            "citizenship": to_cyrillic(str(f.get("citizenship", ""))).strip(),
+            # the passport is an identifier: Latin as printed, never translated
+            "document": " ".join(p for p in (series, number) if p),
+            "address": str(f.get("address", "")).strip(),
+            "stay_from": str(f.get("stay_from", "")).strip(),
+            "stay_to": str(f.get("stay_to", "")).strip(),
+        }
 
     def read_sts(self, front: bytes, back: bytes | None = None) -> Sts:
         """Read the vehicle registration card.

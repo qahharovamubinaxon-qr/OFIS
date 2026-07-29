@@ -44,6 +44,7 @@ PAPER: dict[str, str] = {
     "nav.beydjik": "pink",         # ўша бланка
     "nav.chek": "pink",            # патентнинг чеки — ўша дастада юради
     "nav.razreshenie": "sage",     # яшил разрешение
+    "nav.ppu": "sage",             # регистрация оиласи
     "nav.strahovka": "blue",       # ОСАГО полиси
     "nav.dms": "red",              # ДМС
     "nav.svera": "violet",         # свера

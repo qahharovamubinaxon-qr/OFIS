@@ -154,3 +154,32 @@ _INN_ONLY = (
 
 def inn_prompt() -> str:
     return _INN_ONLY
+
+
+#: A регистрация — «Уведомление о прибытии иностранного гражданина» — read for
+#: the ППУ pair. Everything the pair needs is already on it, including the day
+#: the stay runs to, which is the one value the operator would otherwise have
+#: to copy by hand and is therefore the one most worth reading.
+_REGISTRATION = (
+    "You are an OCR extraction engine. This is a Russian «Уведомление о "
+    "прибытии иностранного гражданина в место пребывания» (регистрация). "
+    "Return ONLY a JSON object, no explanation, no markdown.\n"
+    "Read: the holder's ФАМИЛИЯ, ИМЯ, ОТЧЕСТВО; ДАТА РОЖДЕНИЯ; ПОЛ "
+    '("Мужской" or "Женский"); ГРАЖДАНСТВО; the passport series and number; '
+    "the ADDRESS of the place of stay («Место пребывания» / адрес — house, "
+    "flat and all, exactly as printed, on one line); and the two dates of the "
+    "stay, «Срок пребывания с … по …».\n"
+    "IMPORTANT — output names, the citizenship and the address in RUSSIAN "
+    "CYRILLIC. But the passport series and number are IDENTIFIERS: copy them "
+    "character for character as printed, in LATIN if they are printed in "
+    "Latin. FA stays FA, never ФА.\n"
+    "Dates as YYYY-MM-DD. Use an empty string for anything you cannot read "
+    "cleanly — a guessed date or address is worse than a blank the operator "
+    "fills in.\n"
+    'Keys: {"surname","name","patronymic","birth_date","gender",'
+    '"citizenship","series","number","address","stay_from","stay_to"}\n'
+)
+
+
+def registration_prompt() -> str:
+    return _REGISTRATION
