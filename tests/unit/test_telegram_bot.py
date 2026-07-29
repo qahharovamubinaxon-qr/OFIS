@@ -143,7 +143,9 @@ _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
 #: background — and I will not build the machinery that mails those out.
 _NOT_ON_THE_PHONE = {"nav.chek",
                      # ППУ needs the office's own blank uploaded first
-                     "nav.ppu"}
+                     "nav.ppu",
+                     # СНИЛС likewise
+                     "nav.snils"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:

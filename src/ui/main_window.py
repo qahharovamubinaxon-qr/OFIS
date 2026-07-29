@@ -66,6 +66,8 @@ _NAV = [
      "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
     (None, "nav.ppu", "ППУ",
      "Регистрациядан ППУ жуфтлиги — олд + орқа → расм", "🧾"),
+    (None, "nav.snils", "СНИЛС",
+     "Ишчининг СНИЛС номери варағи → PDF", "🔖"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     (None, "nav.sertifikat", "СЕРТИФИКАТ",
      "Рус тили сертификати (УЦ «СФЕРА») → PDF", "📜"),
@@ -228,6 +230,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.snils":
+            from src.controllers.snils_controller import SnilsController
+            from src.services.snils_service import SnilsService
+            from src.ui.views.snils_view import SnilsView
+
+            return SnilsView(SnilsController(
+                self._container.resolve(OcrService),
+                SnilsService(self._settings),
             ))
         if key == "nav.ppu":
             from src.controllers.ppu_controller import PpuController
