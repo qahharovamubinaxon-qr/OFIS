@@ -95,6 +95,37 @@ def test_the_permit_runs_a_year_to_the_day_before(start, end) -> None:
     assert cover_until(start) == end
 
 
+@pytest.mark.parametrize("shouted, written", [
+    ("САИДОВ", "Саидов"),
+    ("САРДОР", "Сардор"),
+    ("САИДОВИЧ", "Саидович"),
+    ("ТАДЖИКИСТАН", "Таджикистан"),
+    ("АБДУЛЛА-ЗОДА", "Абдулла-Зода"),      # a hyphen starts a word too
+    ("Саидов", "Саидов"),                  # already written — left alone
+    ("", ""),
+])
+def test_a_name_is_written_not_shouted(shouted, written) -> None:
+    """«САИДОВ САРДОР» эмас, «Саидов Сардор» — the card writes names.
+
+    A passport prints in capitals and the readers hand them over that way; the
+    card does not.
+    """
+    from src.pdf.razreshenie_renderer import title_case
+
+    assert title_case(shouted) == written
+
+
+def test_the_card_carries_the_name_in_case() -> None:
+    page = _pages(_data(surname="САИДОВ", name="САРДОР",
+                        patronymic="САИДОВИЧ",
+                        citizenship="ТАДЖИКИСТАН"))[0]
+    words = _words(page)
+    for written in ("Саидов", "Сардор", "Саидович", "Таджикистан"):
+        assert written in words, written
+    for shouted in ("САИДОВ", "САРДОР", "САИДОВИЧ", "ТАДЖИКИСТАН"):
+        assert shouted not in words, shouted
+
+
 def test_both_dates_are_printed_on_the_front() -> None:
     page = _pages(_data())[0]
     words = _words(page)

@@ -97,6 +97,21 @@ def _dmy(value: date | None) -> str:
     return value.strftime("%d.%m.%Y") if value else ""
 
 
+def title_case(text: str) -> str:
+    """«САИДОВ САРДОР САИДОВИЧ» → «Саидов Сардор Саидович».
+
+    A passport is printed in capitals and the readers hand them over that way,
+    but the card writes a name the way a name is written. Hyphens count as word
+    breaks too, so «АБДУЛЛА-ЗОДА» comes out «Абдулла-Зода» and not
+    «Абдулла-зода».
+    """
+    def one(word: str) -> str:
+        return "-".join(part[:1].upper() + part[1:].lower()
+                        for part in word.split("-"))
+
+    return " ".join(one(word) for word in (text or "").split())
+
+
 def _wrap(text: str, font: fitz.Font, size: float, width: float) -> list[str]:
     """Break a firm's name the way the card does — on words, never mid-word."""
     words = text.split()
@@ -230,11 +245,12 @@ def _fill_front(page, data: RazreshenieData) -> None:
     values = {
         "seria": data.seria.strip(),
         "number": data.number.strip(),
-        "surname": data.surname.strip(),
-        "name": data.name.strip(),
-        "patronymic": data.patronymic.strip(),
+        # the card writes a name, not a passport's shouting capitals
+        "surname": title_case(data.surname),
+        "name": title_case(data.name),
+        "patronymic": title_case(data.patronymic),
         "birth_date": _dmy(data.birth_date),
-        "citizenship": data.citizenship.strip(),
+        "citizenship": title_case(data.citizenship),
         "document": document_line(data.document, data.inn),
         "activity": data.activity.strip(),
         "valid_from": _dmy(data.valid_from),
