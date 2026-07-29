@@ -4,16 +4,22 @@ Pipeline (all offline and free):
 1. EXIF-orient and decode.
 2. Detect the face with YuNet (bundled ONNX model, works on any OpenCV ≥4.8).
    Its eye landmarks give the head tilt — the image is rotated straight.
-3. Crop a 3:4 portrait around the face with document proportions (head ≈ 65%
-   of frame, 12–18% air above the head).
+3. Crop a 3:4 portrait around the face: head and a little shoulder, the head
+   filling ~62% of the frame — see :data:`HEAD_HEIGHT` and :data:`HEAD_AIR`.
 4. Separate the person from the background with U²-Net
    (:mod:`src.services.bg_segment`) and repaint the background in the chosen
-   colour (white / light grey / blue). No model yet → edge flood-fill
-   whitening, so the feature never depends on a download.
+   colour (white / light grey / blue / studio sweep). No model yet → edge
+   flood-fill whitening, so the feature never depends on a download.
 5. Output 413×531 px (3×4 cm at 300 DPI) PNG.
 
 If no face is found the photo is centre-cropped to 3:4 without background
 cleanup, so the operator always gets a usable result.
+
+**This is the one crop.** :func:`prepare_portrait` runs the same steps for
+every card that carries a photograph — патент, бейджик, разрешение, сфера — so
+the picture on a card is framed exactly like the one the РАСМ-ФОТО screen
+shows. Changing the framing here changes it everywhere, which is the point:
+the office asked for one crop, not five.
 """
 
 from __future__ import annotations
@@ -29,6 +35,33 @@ log = get_logger(__name__)
 
 OUT_W, OUT_H = 413, 531  # 3×4 cm at 300 DPI
 OUT_DPI = 300
+
+#: How tightly the head is framed, in multiples of the detector's face box.
+#:
+#: The office crops these by hand as head-and-a-little-shoulder — the head
+#: filling about three fifths of the frame, the hair almost touching the top,
+#: the shoulders only just entering at the bottom. That is what a патент, a
+#: бейджик and a разрешение want: the window on those cards is small, and a
+#: portrait taken from the chest up arrives on them as a face too small to
+#: recognise. Measured against the office's own crop, 1.70 puts the head at
+#: ~62% of the frame.
+#:
+#: Both numbers are multiples of YuNet's box height, so they hold whatever the
+#: photograph's own size and distance were.
+HEAD_HEIGHT = 1.70
+#: Air above the box top. A shade more than the office leaves, because the
+#: detector's box starts at the hairline on a bald sitter but *below* tall
+#: hair — the extra keeps a hairstyle from being sliced off.
+HEAD_AIR = 0.22
+
+#: The cloud «AI studio» retouch is off.
+#:
+#: It re-draws the sitter — its own prompt puts them in a black t-shirt — which
+#: is the one thing a document photo may not do, and on the free Gemini tier it
+#: answered 429 and took twenty minutes to give up. :meth:`PhotoService._ai_studio`
+#: is kept and still works; flip this to True to use it. The local pipeline is
+#: the default because it is instant, offline, free, and keeps the real face.
+AI_STUDIO = False
 
 # document backdrop colours the operator can pick from
 BG_COLORS: dict[str, tuple[int, int, int]] = {
@@ -106,7 +139,6 @@ class PhotoService:
             return None
         import base64
         import json
-        import urllib.error
         import urllib.request
 
         img_b64 = base64.b64encode(data).decode()
@@ -143,21 +175,12 @@ class PhotoService:
                 url, data=body, headers={"Content-Type": "application/json"}
             )
             try:
-                import time
-                try:
-                    with urllib.request.urlopen(req, timeout=90) as resp:
-                        payload = json.loads(resp.read().decode())
-                except urllib.error.HTTPError as he:
-                    if he.code == 429:  # free-tier rate limit — wait and retry
-                        time.sleep(35)
-                        with urllib.request.urlopen(
-                            urllib.request.Request(url, data=body,
-                                headers={"Content-Type": "application/json"}),
-                            timeout=90,
-                        ) as resp:
-                            payload = json.loads(resp.read().decode())
-                    else:
-                        raise
+                # One attempt per model, and no sleep-then-retry: the operator
+                # is standing at the counter with the worker in front of them.
+                # A rate-limited key must cost seconds and fall through to the
+                # local pipeline, not hold the screen for a quarter of an hour.
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    payload = json.loads(resp.read().decode())
                 for cand in payload.get("candidates", []):
                     for part in cand.get("content", {}).get("parts", []):
                         inline = part.get("inlineData") or part.get("inline_data")
@@ -201,9 +224,12 @@ class PhotoService:
     def process(self, data: bytes, bg: str = "white") -> PhotoResult:
         import cv2
 
-        # 1) AI studio edit when a Gemini key is available — professional
-        #    quality; the local pipeline stays as offline fallback.
-        studio = self._ai_studio(data) if bg == "white" else None
+        # 1) The cloud retouch, only if somebody deliberately turned it on.
+        #    See AI_STUDIO: it re-draws the sitter, which a document photo may
+        #    not do, and it is the reason «Oq» once sat at 90% for twenty
+        #    minutes while «Studiya» finished in two seconds — that path went
+        #    to Gemini, this one did not.
+        studio = self._ai_studio(data) if (AI_STUDIO and bg == "white") else None
         if studio is not None:
             rgb = _load_rgb(studio)
             found = self._detect_face(cv2, rgb)
@@ -266,13 +292,13 @@ class PhotoService:
         """
         H, W = float(rgb.shape[0]), float(rgb.shape[1])
 
-        crop_h = h * 2.3
+        crop_h = h * HEAD_HEIGHT
         crop_w = crop_h * aspect
         scale = min(1.0, W / crop_w, H / crop_h)   # keep the aspect exact
         crop_w, crop_h = crop_w * scale, crop_h * scale
 
         left = x + w / 2 - crop_w / 2              # centred on the face
-        top = y - 0.42 * h                         # air above the hair
+        top = y - HEAD_AIR * h                     # air above the hair
         left = max(0.0, min(left, W - crop_w))     # slide fully inside
         top = max(0.0, min(top, H - crop_h))
 

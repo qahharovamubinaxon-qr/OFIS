@@ -6,6 +6,8 @@ import io
 
 from PIL import Image
 from src.services.photo_service import (
+    HEAD_AIR,
+    HEAD_HEIGHT,
     OUT_H,
     OUT_W,
     STUDIO_HI,
@@ -80,3 +82,58 @@ def test_studio_photo_is_still_a_document_3x4() -> None:
     result = PhotoService().process(_photo_bytes(1200, 900), bg="studio")
     img = Image.open(io.BytesIO(result.png))
     assert img.size == (OUT_W, OUT_H)
+
+
+# ----------------------------------------------- head-and-shoulders framing
+def _crop_box(face_h: int = 200, aspect: float = OUT_W / OUT_H):
+    """Where the window lands for a face box of ``face_h`` in a 1000×1000 photo."""
+    import cv2
+    import numpy as np
+
+    rgb = np.zeros((1000, 1000, 3), dtype="uint8")
+    crop = PhotoService._document_crop(cv2, rgb, 400, 300, face_h, face_h, aspect)
+    return crop.shape[0], crop.shape[1]
+
+
+def test_the_window_is_head_and_a_little_shoulder() -> None:
+    """The head must fill ~3/5 of the frame, not a third of it.
+
+    The office crops these by hand this tight because the card windows are
+    small; anything looser puts a face on the патент too small to check.
+    """
+    h, _w = _crop_box(face_h=200)
+    assert h == int(round(200 * HEAD_HEIGHT))
+    share = 200 / h
+    assert 0.55 < share < 0.65, f"head fills {share:.0%} of the frame"
+
+
+def test_there_is_air_above_the_hair_but_not_a_field_of_it() -> None:
+    """Enough that tall hair survives, little enough that it is not a landscape."""
+    air = HEAD_AIR / HEAD_HEIGHT
+    assert 0.08 < air < 0.18, f"air above is {air:.0%} of the frame"
+
+
+def test_the_window_keeps_the_asked_for_shape() -> None:
+    """Card windows are not all 3:4 — whatever is asked for is what comes back."""
+    for aspect in (OUT_W / OUT_H, 0.75, 0.8):
+        h, w = _crop_box(face_h=200, aspect=aspect)
+        assert abs(w / h - aspect) < 0.02, f"{w}×{h} is not {aspect}"
+
+
+def test_every_card_photo_goes_through_the_same_crop() -> None:
+    """патент · бейджик · разрешение · сфера must not each invent a framing."""
+    import re
+    from pathlib import Path
+
+    users = ("src/pdf/razreshenie_renderer.py", "src/services/beydjik_service.py",
+             "src/services/patent_service.py", "src/services/svera_service.py")
+    for path in users:
+        source = Path(path).read_text(encoding="utf-8")
+        assert re.search(r"\bprepare_portrait\s*\(", source), path
+
+
+def test_the_cloud_retouch_stays_off_by_default() -> None:
+    """It re-draws the sitter and once held the screen for twenty minutes."""
+    from src.services.photo_service import AI_STUDIO
+
+    assert AI_STUDIO is False
