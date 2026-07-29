@@ -35,7 +35,29 @@ BG_COLORS: dict[str, tuple[int, int, int]] = {
     "white": (255, 255, 255),
     "gray": (235, 235, 235),
     "blue": (99, 140, 190),
+    # «studio» is not a flat colour — see _studio_backdrop. The entry is here
+    # so the rest of the pipeline can treat it like any other choice, and so a
+    # caller that cannot build the gradient still gets a sensible grey.
+    "studio": (222, 222, 222),
 }
+
+#: The seamless light-grey sweep a portrait studio actually has behind the
+#: sitter: brightest just behind the head, falling off gently to the corners.
+#:
+#: This is a **backdrop**, not a filter. It is painted only where the person is
+#: not — the face, the hair and the clothes come through the segmentation mask
+#: untouched, pixel for pixel. That distinction is the whole point: the photo
+#: goes on a патент, a бейджик and a разрешение, where an inspector holds the
+#: card up against the worker's own face, so nothing about the person may be
+#: redrawn, softened or invented. Only what is behind them changes.
+STUDIO_HI = 240          # behind the head
+STUDIO_LO = 196          # into the corners
+STUDIO_CENTRE = (0.50, 0.30)   # (x, y) of the bright spot, as a share of frame
+STUDIO_FALLOFF = 1.25    # >1 keeps the middle open and darkens late
+#: A soft contact shadow cast onto the backdrop, which is what separates the
+#: shoulders from the sweep in a real studio frame.
+STUDIO_SHADOW = 0.16
+STUDIO_SHADOW_OFFSET = (0.020, 0.014)   # (x, y), as a share of frame
 
 
 @dataclass(frozen=True)
@@ -260,6 +282,35 @@ class PhotoService:
         return rgb[y0:y1, x0:x1]
 
     @staticmethod
+    def _studio_backdrop(np, h: int, w: int):
+        """The grey sweep, as a float32 H×W×3 image.
+
+        An ellipse rather than a circle, so a 3:4 frame falls off at the same
+        rate sideways as it does top to bottom and the sweep does not read as a
+        vignette bolted onto a portrait.
+        """
+        cx, cy = STUDIO_CENTRE
+        ys = (np.arange(h, dtype=np.float32)[:, None] / max(h - 1, 1) - cy) / 0.85
+        xs = (np.arange(w, dtype=np.float32)[None, :] / max(w - 1, 1) - cx) / 0.72
+        distance = np.clip(np.sqrt(xs * xs + ys * ys), 0.0, 1.0)
+        level = STUDIO_HI - (STUDIO_HI - STUDIO_LO) * distance ** STUDIO_FALLOFF
+        return np.repeat(level[..., None], 3, axis=2)
+
+    @staticmethod
+    def _cast_shadow(cv2, np, backdrop, alpha, h: int, w: int):
+        """Darken the sweep where the sitter would shade it — background only."""
+        blur = max(3, int(min(h, w) * 0.09) | 1)
+        shadow = cv2.GaussianBlur(alpha[..., 0], (blur, blur), 0)
+        dx = int(round(w * STUDIO_SHADOW_OFFSET[0]))
+        dy = int(round(h * STUDIO_SHADOW_OFFSET[1]))
+        shadow = np.roll(np.roll(shadow, dy, axis=0), dx, axis=1)
+        if dy:
+            shadow[:dy, :] = 0
+        if dx:
+            shadow[:, :dx] = 0
+        return backdrop * (1.0 - STUDIO_SHADOW * shadow[..., None])
+
+    @staticmethod
     def _apply_background(cv2, crop, bg: str = "white") -> tuple:
         """Repaint the backdrop in ``BG_COLORS[bg]``. U²-Net segmentation when
         the model is available; otherwise the flood-fill whitening.
@@ -287,8 +338,13 @@ class PhotoService:
                     cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
                 person = cv2.GaussianBlur(person, (5, 5), 0)
                 alpha = person.astype(np.float32)[..., None] / 255.0
-                backdrop = np.full_like(crop, 0, dtype=np.float32)
-                backdrop[..., 0], backdrop[..., 1], backdrop[..., 2] = colour
+                if bg == "studio":
+                    backdrop = PhotoService._studio_backdrop(np, h, w)
+                    backdrop = PhotoService._cast_shadow(
+                        cv2, np, backdrop, alpha, h, w)
+                else:
+                    backdrop = np.full_like(crop, 0, dtype=np.float32)
+                    backdrop[..., 0], backdrop[..., 1], backdrop[..., 2] = colour
                 out = crop.astype(np.float32) * alpha + backdrop * (1 - alpha)
                 return out.astype("uint8"), "u2net"
             log.info("U²-Net mask rejected (share %.2f) — flood fill", share)
@@ -297,8 +353,15 @@ class PhotoService:
             return PhotoService._whiten_backdrop(cv2, crop), "flood"
         # the flood fill can only whiten; tint its white afterwards
         whitened = PhotoService._whiten_backdrop(cv2, crop)
+        white_zone = (whitened.astype(np.int16).min(axis=2) > 247)
+        if bg == "studio":
+            # no mask to cast a shadow from, so the sweep goes on alone — it is
+            # still a studio backdrop, just without the contact shadow
+            swept = whitened.copy()
+            swept[white_zone] = PhotoService._studio_backdrop(
+                np, h, w)[white_zone].astype("uint8")
+            return swept, "flood"
         if colour != (255, 255, 255):
-            white_zone = (whitened.astype(np.int16).min(axis=2) > 247)
             tinted = whitened.copy()
             tinted[white_zone] = colour
             return tinted, "flood"

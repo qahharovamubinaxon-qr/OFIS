@@ -51,8 +51,12 @@ class PhotoView(QWidget):
         opts.addWidget(QLabel("Fon rangi:"))
         self._bg = QComboBox()
         for label, key in (("⬜ Oq", "white"), ("◽ Och kulrang", "gray"),
-                           ("🟦 Ko'k", "blue")):
+                           ("🟦 Ko'k", "blue"), ("🎬 Studiya", "studio")):
             self._bg.addItem(label, key)
+        self._bg.setToolTip(
+            "«Studiya» — och kulrang fon, o'rtasi yorug', chetiga qarab "
+            "yumshoq qorayadi va yelka ortida mayin soya bo'ladi.\n"
+            "Yuzga umuman tegilmaydi: faqat odamning ORQASI bo'yaladi.")
         self._bg.setFixedWidth(180)
         self._bg.currentIndexChanged.connect(self._on_photo)
         opts.addWidget(self._bg)
