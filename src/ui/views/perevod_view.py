@@ -1,9 +1,12 @@
 """ПЕРЕВОД screen — notarial translation of personal documents into Russian.
 
+The office prints its translations on its own three pre-printed sheets, so they
+are uploaded here once and kept: sheet 1 the copy of the original is centred on,
+sheet 2 the translation is set on, sheet 3 the notary completes by hand. All
+three come out as one three-page PDF.
+
 Drop the document photos (front/back — passport, driving licence, birth or
 marriage certificate, diploma, аттестат …), leave the type on «Авто» and RUN.
-The program recognises the document, translates every field and saves the
-standard notarial-translation PDF + Word for the notary to certify.
 """
 
 from __future__ import annotations
@@ -13,8 +16,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDateEdit,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -30,6 +35,23 @@ from src.services.perevod_service import DOC_TYPES, PerevodResult, PerevodServic
 from src.ui.widgets.multi_drop import MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
 
+#: What the office may hand over as a blank, as a file dialog filter.
+_BLANK_FILTER = "Бланка (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
+
+#: What each sheet is for, shown under its slot.
+_SHEET_ROLES = (
+    "1 — ҳужжат нусхаси",
+    "2 — таржима матни",
+    "3 — нотариус ўзи тўлдиради",
+)
+
+
+def _desktop() -> Path:
+    for candidate in (Path.home() / "Desktop", Path.home() / "OneDrive" / "Desktop"):
+        if candidate.exists():
+            return candidate
+    return Path.home()
+
 
 class PerevodView(QWidget):
     def __init__(self, service: PerevodService) -> None:
@@ -44,12 +66,24 @@ class PerevodView(QWidget):
         title.setObjectName("viewTitle")
         root.addWidget(title)
 
+        blanks = QHBoxLayout()
+        blanks.addWidget(QLabel("Бланкалар:"))
+        self._blank_labels: list[QLabel] = []
+        for index in range(1, 4):
+            blanks.addWidget(self._blank_slot(index), stretch=1)
+        root.addLayout(blanks)
+
         row = QHBoxLayout()
         self._type = QComboBox()
         for _key, label in DOC_TYPES:
             self._type.addItem(label)
         row.addWidget(QLabel("Ҳужжат тури:"))
         row.addWidget(self._type, stretch=2)
+        self._negative = QCheckBox("Негатив")
+        self._negative.setToolTip(
+            "Ҳужжат нусхаси одатда оқ-қора бўлиб тушади. Негатив — ранглар "
+            "тескари (қора қоғоз, оқ ёзув); фақат жуда қора асл нусха учун.")
+        row.addWidget(self._negative)
         self._date = QDateEdit()
         self._date.setDisplayFormat("dd.MM.yyyy")
         self._date.setDate(QDate.currentDate())
@@ -78,14 +112,73 @@ class PerevodView(QWidget):
         root.addWidget(line)
 
         self._status = QLabel(
-            "Таржима PDF + Word бўлиб сақланади — нотариус текшириб тасдиқлайди. "
-            "Паспорт · ҳайдовчилик гувоҳномаси · туғилганлик/никоҳ гувоҳномаси · "
-            "диплом · аттестат қўллаб-қувватланади."
+            "Учта бланка бир марта юкланади ва сақланиб қолади. Битта PDF, уч "
+            "саҳифа: 1 — ҳужжат нусхаси оқ-қора, марказда; 2 — таржима; 3 — "
+            "бўш, нотариус ўзи тўлдиради. Таржима Word бўлиб ҳам сақланади."
         )
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
         root.addStretch(1)
+
+        self._refresh_blanks()
+
+    # ---------------------------------------------------------- blanks
+    def _blank_slot(self, index: int) -> QWidget:
+        """One sheet: what is loaded, a button to load it, a button to clear."""
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(2)
+
+        state = QLabel()
+        state.setWordWrap(True)
+        state.setToolTip(_SHEET_ROLES[index - 1])
+        column.addWidget(state)
+        self._blank_labels.append(state)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(4)
+        load = QPushButton(f"➕ {index}-бланка")
+        load.setToolTip(_SHEET_ROLES[index - 1])
+        load.clicked.connect(lambda _=False, i=index: self._load_blank(i))
+        buttons.addWidget(load, stretch=1)
+        clear = QPushButton("✕")
+        clear.setFixedWidth(28)
+        clear.setToolTip("Бу бланкани олиб ташлаш")
+        clear.clicked.connect(lambda _=False, i=index: self._clear_blank(i))
+        buttons.addWidget(clear)
+        column.addLayout(buttons)
+        return box
+
+    def _refresh_blanks(self) -> None:
+        for index, blank in enumerate(self._svc.blanks(), 1):
+            label = self._blank_labels[index - 1]
+            role = _SHEET_ROLES[index - 1]
+            if blank is None:
+                label.setText(f"⛔ {role} — юкланмаган")
+                label.setStyleSheet("color:#c08a3e;")
+            else:
+                label.setText(f"✅ {role}\n{blank.name}")
+                label.setStyleSheet("color:#8a94a3;")
+
+    def _load_blank(self, index: int) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"{index}-бланка (бўш варақ)", str(_desktop()), _BLANK_FILTER)
+        if not path:
+            return
+        try:
+            self._svc.set_blank(index, Path(path))
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._refresh_blanks()
+        self._status.setText(f"✅ {index}-бланка юкланди: {Path(path).name}")
+
+    def _clear_blank(self, index: int) -> None:
+        self._svc.clear_blank(index)
+        self._refresh_blanks()
+        self._status.setText(f"🗑 {index}-бланка олиб ташланди.")
 
     # ------------------------------------------------------------------
     def _run_ai(self) -> None:
@@ -94,14 +187,21 @@ class PerevodView(QWidget):
             return
         images = [f.read_bytes() for f in self._dz.files]
         doc_type = DOC_TYPES[self._type.currentIndex()][0]
+        negative = self._negative.isChecked()
         q = self._date.date()
         form_date = date(q.year(), q.month(), q.day())
 
         def work():
-            return self._svc.translate(images, doc_type=doc_type, form_date=form_date)
+            return self._svc.translate(images, doc_type=doc_type,
+                                       form_date=form_date, negative=negative)
 
+        missing = [str(i) for i, blank in enumerate(self._svc.blanks(), 1)
+                   if blank is None]
         self._run.setEnabled(False)
-        self._status.setText("⏳ AI ҳужжатни ўқияпти ва таржима қиляпти…")
+        self._status.setText(
+            "⏳ AI ҳужжатни ўқияпти ва таржима қиляпти…"
+            + (f"  ⚠️ Юкланмаган бланка: {', '.join(missing)} — "
+               "ўша саҳифа оқ варақда чиқади." if missing else ""))
         self._progress.start("Таржима тайёрланяпти…")
         run_async(work, on_success=self._done, on_error=self._failed)
 

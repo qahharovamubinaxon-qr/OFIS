@@ -242,13 +242,19 @@ class MainWindow(QMainWindow):
             ))
         if key == "nav.ppu":
             from src.controllers.ppu_controller import PpuController
+            from src.controllers.trud_ppu_controller import TrudPpuController
             from src.services.ppu_service import PpuService
-            from src.ui.views.ppu_view import PpuView
+            from src.services.trud_ppu_service import TrudPpuService
+            from src.ui.views.ppu_section_view import PpuSectionView
 
-            return PpuView(PpuController(
-                self._container.resolve(OcrService),
-                PpuService(self._settings),
-            ))
+            ocr = self._container.resolve(OcrService)
+            return PpuSectionView(
+                PpuController(ocr, PpuService(self._settings)),
+                TrudPpuController(
+                    ocr, TrudPpuService(self._settings),
+                    key_getter=lambda: str(
+                        self._settings.get("ai.gemini_key", "") or "")),
+            )
         if key == "nav.sertifikat":
             from src.controllers.sertifikat_controller import (
                 SertifikatController,
