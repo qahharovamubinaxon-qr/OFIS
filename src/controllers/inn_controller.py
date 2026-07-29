@@ -20,6 +20,16 @@ class InnController:
     def ai_available(self) -> bool:
         return self._ocr.available()
 
+    def read_inn(self, image: bytes) -> str:
+        """The worker's ИНН as the патент prints it, or "" if it is not on it.
+
+        Read as soon as the photograph is dropped, so the box is already filled
+        by the time the operator looks at it. Whatever comes back is only a
+        suggestion — the box stays editable, and an empty one simply means the
+        number is typed by hand, as it always was.
+        """
+        return self._ocr.read_inn(image)
+
     def generate_from_image(
         self,
         image: bytes,

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from src.ai.manager import AiManager
-from src.ai.prompts import patent_back_prompt, prompt_for
+from src.ai.prompts import inn_prompt, patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
@@ -147,6 +147,30 @@ class OcrService:
             holder_patronymic=to_cyrillic(f.get("patronymic", "")) or None,
             holder_citizenship=to_cyrillic(f.get("citizenship", "")) or None,
         )
+
+    def read_inn(self, image: bytes) -> str:
+        """The individual's twelve-digit ИНН off a патент — or "" if it is not there.
+
+        Twelve digits and nothing else is accepted. A patent is covered in
+        numbers — its own серия and номер, the issuing office's ten-digit ИНН,
+        its thirteen-digit ОГРН — and a reader having a bad day will happily
+        offer one of those. Anything that is not exactly twelve digits is
+        dropped on the floor and the operator types the number themselves,
+        which is the right way round: a blank box is a question, a wrong ИНН is
+        a form filed against the wrong person.
+        """
+        try:
+            answer = self._ai.extract(prepare_image(image), DocType.PATENT,
+                                      inn_prompt())
+        except Exception as exc:            # noqa: BLE001 - reading is optional here
+            log.info("ИНН ўқилмади: %s", exc)
+            return ""
+        digits = "".join(c for c in str(answer.fields.get("inn", "")) if c.isdigit())
+        if len(digits) != 12:
+            if digits:
+                log.info("ИНН рад этилди — %d та рақам", len(digits))
+            return ""
+        return digits
 
     def read_sts(self, front: bytes, back: bytes | None = None) -> Sts:
         """Read the vehicle registration card.

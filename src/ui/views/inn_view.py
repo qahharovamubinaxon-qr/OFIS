@@ -66,6 +66,7 @@ class InnView(QWidget):
         root.addLayout(row)
 
         self._dz = DropZone("🛂", "Ишчининг паспорти ёки патенти")
+        self._dz.changed.connect(self._read_inn)
         root.addWidget(self._dz, stretch=1)
 
         actions = QHBoxLayout()
@@ -110,6 +111,39 @@ class InnView(QWidget):
     def _form_date(self) -> date:
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
+
+    # -- the ИНН off the патент ----------------------------------------
+    def _read_inn(self) -> None:
+        """Fill the ИНН box from the патент the moment it is dropped.
+
+        Only into an EMPTY box. If the operator has already typed a number
+        they meant that number — a reader must never quietly replace it.
+        """
+        if self._dz.path is None or not self._c.ai_available():
+            return
+        if "".join(c for c in self._inn.text() if c.isdigit()):
+            return
+        data = Path(self._dz.path).read_bytes()
+        self._status.setText("⏳ Патентдан ИНН қидирилаяпти…")
+        run_async(self._c.read_inn, data,
+                  on_success=self._inn_read, on_error=self._inn_not_read)
+
+    def _inn_read(self, digits: str) -> None:
+        if not digits:
+            self._inn_not_read(None)
+            return
+        # still empty? the operator may have typed while the reader was working,
+        # and what they typed wins
+        if "".join(c for c in self._inn.text() if c.isdigit()):
+            return
+        self._inn.setText(digits)
+        self._status.setText(
+            f"✅ ИНН патентдан олинди: {digits} — текширинг, керак бўлса "
+            "ўчириб ўзингиз ёзинг.")
+
+    def _inn_not_read(self, _error) -> None:
+        self._status.setText(
+            "ℹ️ Ҳужжатда 12 хонали ИНН топилмади — ИНН рақамини ўзингиз ёзинг.")
 
     def _run_ai(self) -> None:
         if self._dz.path is None:

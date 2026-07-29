@@ -112,3 +112,32 @@ def prompt_for(doc_type: DocType) -> str:
 
 def patent_back_prompt() -> str:
     return _PATENT_BACK
+
+
+#: The worker's ИНН, off whatever document happens to carry it.
+#:
+#: Asked for on its own rather than folded into the patent prompt, because the
+#: ИНН screen is given "a passport or a patent" and the operator should not
+#: have to care which they dropped. The one thing this must never do is hand
+#: back somebody else's number: a patent is covered in figures — its own
+#: series and number, the issuing office's ИНН and ОГРН — and only the
+#: twelve-digit one belongs to the person.
+_INN_ONLY = (
+    "You are an OCR extraction engine. Look at this Russian migration document "
+    "(a патент, an ИНН certificate, or another form) and find the INDIVIDUAL'S "
+    "ИНН — идентификационный номер налогоплательщика. Return ONLY a JSON "
+    "object, no explanation, no markdown.\n"
+    "IMPORTANT — an individual's ИНН is EXACTLY 12 digits. A 10-digit number is "
+    "an ORGANISATION's ИНН (the issuing office, the employer) and must NOT be "
+    "returned. A 13-digit or 15-digit number is an ОГРН/ОГРНИП and must NOT be "
+    "returned. The patent's own серия and номер are NOT an ИНН.\n"
+    "Copy the digits exactly as printed, character for character. Do not "
+    "calculate, correct or invent a single digit — if you cannot read all 12 "
+    "cleanly, return an empty string instead. A wrong ИНН on a form is worse "
+    "than an empty box the operator fills in.\n"
+    'Keys: {"inn":"123456789012"}  (empty string if there is none)\n'
+)
+
+
+def inn_prompt() -> str:
+    return _INN_ONLY
