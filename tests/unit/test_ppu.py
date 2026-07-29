@@ -141,7 +141,8 @@ def test_a_line_never_ends_on_a_bare_abbreviation():
     for text in ("г. Москва, ул. Домодедовская, д. 46, кв. 6",
                  "г. Москва, ул. Тульская, д. 2, кв. 15"):
         for line in address_lines(text):
-            assert not line.rstrip(",").endswith(("д.", "кв.", "ул.", "корп.")), line
+            tail = line.rstrip(",")
+            assert not tail.endswith(("д.", "кв.", "ул.", "корп.")), line
 
 
 def test_a_street_run_into_its_abbreviation_is_put_right():
