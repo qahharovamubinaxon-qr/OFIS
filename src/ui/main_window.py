@@ -61,9 +61,12 @@ _NAV = [
     (None, "nav.beydjik", "БЕЙДЖИК", "Ишчининг бейджиги (77 / 50) → PDF", "🪪"),
     (None, "nav.patent", "ПАТЕНТ",
      "Патент картаси (77 / 50) — олд + орқа → PDF", "🩷"),
+    (None, "nav.chek", "ЧЕК", "Премия чеки — патент + сумма → PDF", "🧾"),
     (None, "nav.razreshenie", "РАЗРЕШЕНИЯ",
      "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
+    (None, "nav.sertifikat", "СЕРТИФИКАТ",
+     "Рус тили сертификати (УЦ «СФЕРА») → PDF", "📜"),
     ("НОТАРИУС", "nav.dover", "Доверенность", "Нотариал ҳужжат Word + PDF", "📜"),
     (None, "nav.perevod", "ПЕРЕВОД", "Нотариал таржима — рус тилига", "🌐"),
     ("ҲУЖЖАТ", "nav.umumiy", "УМУМИЙ", "Ҳужжатни янги ишчига мослаш", "♻️"),
@@ -72,7 +75,6 @@ _NAV = [
     (None, "nav.photo", "РАСМ-ФОТО", "Документ учун 3×4 расм тайёрлаш", "📷"),
     (None, "nav.jpg2pdf", "JPG→PDF", "Расмлардан PDF йиғиш", "🖼️"),
     (None, "nav.summa", "СУММА-ДАТА", "Сумма ва санани пропись қилиш", "🔢"),
-    (None, "nav.chek", "ЧЕК", "Премия чеки — патент + сумма → PDF", "🧾"),
     ("БАЗА", "nav.companies", "Companies", "Templates, logos and company data", "🏢"),
     (None, "nav.archive", "Archive",
      "Every generated package, by year and company", "🗂️"),
@@ -109,12 +111,17 @@ class MainWindow(QMainWindow):
         # Section headers are non-selectable list rows, so the nav reads as
         # grouped sections while the stack still maps 1:1 to real entries.
         self._row_to_page: dict[int, int] = {}
+        #: which section owns each row, so the open one can colour the window
+        self._row_to_key: dict[int, str] = {}
+        self._theme = str(getattr(self._settings, "theme", constants.DEFAULT_THEME))
+        self._nav_key = "nav.dashboard"
         for section, key, title, subtitle, icon in _NAV:
             if section:
                 self._nav_list.addItem(self._section_item(section))
             item = QListWidgetItem(f"{icon}   {self._tr.tr(key, title)}")
             self._nav_list.addItem(item)
             self._row_to_page[self._nav_list.count() - 1] = self._stack.count()
+            self._row_to_key[self._nav_list.count() - 1] = key
             self._stack.addWidget(self._make_view(key, title, subtitle))
 
         self._nav_list.currentRowChanged.connect(self._on_nav)
@@ -220,6 +227,17 @@ class MainWindow(QMainWindow):
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
             ))
+        if key == "nav.sertifikat":
+            from src.controllers.sertifikat_controller import (
+                SertifikatController,
+            )
+            from src.services.sertifikat_service import SertifikatService
+            from src.ui.views.sertifikat_view import SertifikatView
+
+            return SertifikatView(SertifikatController(
+                self._container.resolve(OcrService),
+                SertifikatService(self._settings),
+            ))
         if key == "nav.strahovka":
             from src.controllers.insurance_controller import InsuranceController
             from src.database.repositories.insurance_template_repo import (
@@ -322,7 +340,7 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _section_item(text: str) -> QListWidgetItem:
         """A small, muted, non-selectable group heading inside the nav list."""
-        from PySide6.QtGui import QColor, QFont
+        from PySide6.QtGui import QFont
 
         item = QListWidgetItem(text)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -331,8 +349,9 @@ class MainWindow(QMainWindow):
         font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
         item.setFont(font)
-        item.setForeground(QColor("#7c879a"))
-        item.setSizeHint(QSize(0, 30))
+        # the colour is the theme's to choose — a heading has to stay muted on
+        # paper and on ink alike, and a value fixed here would suit only one
+        item.setSizeHint(QSize(0, 32))
         return item
 
     def _select_page(self, page_index: int) -> None:
@@ -347,19 +366,32 @@ class MainWindow(QMainWindow):
         if page is None:  # a section header — ignore
             return
         self._stack.setCurrentIndex(page)
+        # the screen takes the colour of the paper it prints on
+        self._nav_key = self._row_to_key.get(row, self._nav_key)
+        self._repaint()
         view = self._stack.currentWidget()
         refresh = getattr(view, "refresh", None)
         if callable(refresh):
             refresh()
 
     def _apply_theme(self, theme: str) -> None:
+        """Switch light/dark without losing which section's colour is showing."""
+        self._theme = theme
+        self._repaint()
+
+    def _repaint(self) -> None:
         from PySide6.QtWidgets import QApplication
 
-        from src.ui.theme import apply_theme
+        from src.ui.theme import INKS, apply_theme, stock_for
 
         app = QApplication.instance()
         if app is not None:
-            apply_theme(app, theme)  # type: ignore[arg-type]
+            apply_theme(app, self._theme, self._nav_key)  # type: ignore[arg-type]
+        brand = getattr(self, "_brand", None)
+        if brand is not None:
+            ink, muted = INKS.get(self._theme, INKS["dark"])
+            brand.set_palette(stock_for(self._nav_key, self._theme).base,
+                              ink, muted)
 
     def _build_sidebar(self) -> QWidget:
         panel = QWidget()
@@ -369,10 +401,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        brand = QLabel(constants.APP_SHORT)
-        brand.setObjectName("brand")
-        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(brand)
+        from src.ui.widgets.brand_mark import BrandMark
+
+        self._brand = BrandMark()
+        self._brand.setToolTip(constants.APP_NAME)
+        layout.addWidget(self._brand)
 
         self._nav_list.setObjectName("navList")
         self._nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
