@@ -59,6 +59,8 @@ _NAV = [
      "ОСАГО полиси — машина + ҳайдовчилар → Word/PDF", "🚗"),
     (None, "nav.inn", "ИНН", "Ишчининг ИНН рақами варағи → PDF", "🔢"),
     (None, "nav.beydjik", "БЕЙДЖИК", "Ишчининг бейджиги (77 / 50) → PDF", "🪪"),
+    (None, "nav.patent", "ПАТЕНТ",
+     "Патент картаси (77 / 50) — олд + орқа → PDF", "🩷"),
     (None, "nav.razreshenie", "РАЗРЕШЕНИЯ",
      "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
@@ -197,6 +199,15 @@ class MainWindow(QMainWindow):
             return BeydjikView(BeydjikController(
                 self._container.resolve(OcrService),
                 BeydjikService(self._settings),
+            ))
+        if key == "nav.patent":
+            from src.controllers.patent_controller import PatentController
+            from src.services.patent_service import PatentService
+            from src.ui.views.patent_view import PatentView
+
+            return PatentView(PatentController(
+                self._container.resolve(OcrService),
+                PatentService(self._settings),
             ))
         if key == "nav.razreshenie":
             from src.controllers.razreshenie_controller import (
