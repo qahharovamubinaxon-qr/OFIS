@@ -50,18 +50,32 @@ FRONT: dict[str, Slot] = {
     "citizenship":  Slot(0.309, 0.470, 0.0175),
     "citizenship_2": Slot(0.309, 0.512, 0.0175),
     "country":      Slot(0.309, 0.567, 0.0175, SANS_BOLD, BLUE),
-    "number":       Slot(0.319, 0.943, 0.0185),
+    # «Иностранный паспорт» — the foot of the front sheet
+    "passport":     Slot(0.319, 0.943, 0.0185),
 }
 
+#: The passport is printed FIVE times across the pair: once at the foot of
+#: the front and four times down the head of the back, each against its own
+#: «Иностранный паспорт» label. The same number every time — the back is
+#: torn into four parts and filed separately, so each part must carry it.
 BACK: dict[str, Slot] = {
-    "number_1":  Slot(0.238, 0.079, 0.0185),
-    "number_2":  Slot(0.238, 0.173, 0.0185),
-    "number_3":  Slot(0.239, 0.270, 0.0185),
-    "number_4":  Slot(0.243, 0.362, 0.0185),
+    "passport_1":  Slot(0.238, 0.079, 0.0185),
+    "passport_2":  Slot(0.238, 0.173, 0.0185),
+    "passport_3":  Slot(0.239, 0.270, 0.0185),
+    "passport_4":  Slot(0.243, 0.362, 0.0185),
     "date_from": Slot(0.288, 0.894, 0.0175),
     "date_to":   Slot(0.375, 0.894, 0.0175),
     "address":   Slot(0.463, 0.892, 0.0175, SANS_BOLD, BLUE, width=0.45),
 }
+
+#: A long address is broken over lines rather than shrunk into illegibility:
+#: three words to a line, at most three lines. The office writes them that
+#: way by hand, and «Московская обл., г. Балашиха, ул. Ленина, д. 33, корп. 2,
+#: кв. 15» does not fit on one line of this sheet at a readable size.
+ADDRESS_WORDS = 3
+ADDRESS_LINES = 3
+#: The step down to the next line, as a share of the page height.
+ADDRESS_LEADING = 0.022
 
 #: The window on the front the worker's photograph goes in, as
 #: (left, top, right, bottom) shares of the page.

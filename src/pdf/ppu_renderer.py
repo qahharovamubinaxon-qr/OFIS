@@ -22,6 +22,9 @@ import fitz
 from src.common.logging import get_logger
 from src.pdf.engine import _font_file
 from src.pdf.ppu_spec import (
+    ADDRESS_LEADING,
+    ADDRESS_LINES,
+    ADDRESS_WORDS,
     BACK,
     FRONT,
     PHOTO_BOX,
@@ -61,13 +64,12 @@ class PpuData:
     birth_date: date | None = None
     gender: str = ""
     citizenship: str = ""
-    #: the passport as printed — «FA 1234567»
+    #: the foreign passport as printed — «AL0531591». Printed five times
+    #: across the pair, against every «Иностранный паспорт» label.
     document: str = ""
     address: str = ""
     valid_from: date | None = None
     valid_to: date | None = None
-    #: «AL0531591» — the blank's own number, printed in five places
-    number: str = ""
     photo: bytes | None = None
 
 
@@ -95,9 +97,44 @@ def to_latin(text: str) -> str:
     return "".join(out)
 
 
+def passport_line(document: str) -> str:
+    """«FA 1234567» → «№FA1234567», the way the sheet prints it.
+
+    The reader hands the series and the number back with a space between them
+    because that is how a passport prints them; the ППУ runs them together
+    behind a «№», as the office's own filled pair does.
+    """
+    packed = "".join((document or "").split())
+    return f"№{packed}" if packed else ""
+
+
 def full_name(surname: str, name: str, patronymic: str = "") -> str:
     parts = [title_case(p) for p in (surname, name, patronymic) if (p or "").strip()]
     return " ".join(parts)
+
+
+def address_lines(address: str, per_line: int = ADDRESS_WORDS,
+                  max_lines: int = ADDRESS_LINES) -> list[str]:
+    """A whole address broken the way the office writes it: three words a line.
+
+    A registered address is «Московская обл., г. Балашиха, ул. Ленина, д. 33,
+    корп. 2, кв. 15» — region, district, town, street, house, block, building,
+    flat. On one line of this sheet that is either unreadably small or off the
+    edge, so it goes over up to three lines, three words each.
+
+    Whatever will not fit in those lines is kept on the last one rather than
+    dropped: an address missing its flat number is not the address.
+    """
+    words = (address or "").split()
+    if not words:
+        return []
+    lines = []
+    for start in range(0, len(words), per_line):
+        if len(lines) == max_lines - 1:
+            lines.append(" ".join(words[start:]))   # the rest, all of it
+            break
+        lines.append(" ".join(words[start:start + per_line]))
+    return lines
 
 
 def _dmy(value: date | None) -> str:
@@ -164,7 +201,8 @@ def render(data: PpuData, template: Path) -> bytes:
 
     _fill_front(out[0], data)
     _fill_back(out[1], data)
-    log.info("ППУ: %s %s — №%s, %s — %s", data.surname, data.name, data.number,
+    log.info("ППУ: %s %s — %s, %s — %s", data.surname, data.name,
+             passport_line(data.document),
              _dmy(data.valid_from), _dmy(data.valid_to))
     return out.tobytes()
 
@@ -184,7 +222,7 @@ def _fill_front(page, data: PpuData) -> None:
         "citizenship": citizenship,
         "citizenship_2": citizenship,
         "country": title_case(citizenship),
-        "number": f"№{data.number}" if data.number else "",
+        "passport": passport_line(data.document),
     }
     for key, text in values.items():
         _write(page, FRONT[key], text, fonts)
@@ -192,12 +230,19 @@ def _fill_front(page, data: PpuData) -> None:
 
 def _fill_back(page, data: PpuData) -> None:
     fonts = _fonts(page)
-    number = f"№{data.number}" if data.number else ""
-    for key in ("number_1", "number_2", "number_3", "number_4"):
-        _write(page, BACK[key], number, fonts)
+    passport = passport_line(data.document)
+    for key in ("passport_1", "passport_2", "passport_3", "passport_4"):
+        _write(page, BACK[key], passport, fonts)
     _write(page, BACK["date_from"], _dmy(data.valid_from), fonts)
     _write(page, BACK["date_to"], _dmy(data.valid_to), fonts)
-    _write(page, BACK["address"], (data.address or "").strip(), fonts)
+    # the address goes over as many lines as it needs, three words each, and
+    # the block is drawn UPWARDS from its baseline so the last line stays on
+    # the printed rule whatever the address turned out to be
+    lines = address_lines(data.address or "")
+    slot = BACK["address"]
+    for index, line in enumerate(lines):
+        lift = (len(lines) - 1 - index) * ADDRESS_LEADING
+        _write(page, slot._replace(baseline=slot.baseline - lift), line, fonts)
 
 
 def pages_as_png(pdf: bytes, zoom: float = 3.0) -> list[bytes]:

@@ -23,10 +23,6 @@ from src.pdf.ppu_renderer import PAGE_FILES, PpuData, pages_as_png, render
 
 log = get_logger(__name__)
 
-KEY_NUMBER = "ppu.number"
-
-#: What the office's own sheet carried, so the first run starts somewhere real.
-DEFAULT_NUMBER = "AL0531591"
 
 
 @dataclass(frozen=True)
@@ -36,7 +32,8 @@ class PpuResult:
     pages: list[bytes]
     #: where each page was written
     saved: list[Path]
-    number: str
+    #: the foreign passport, as printed on all five «Иностранный паспорт» places
+    passport: str
     valid_from: date | None
     valid_to: date | None
 
@@ -82,10 +79,6 @@ class PpuService:
         if self._settings is not None:
             self._settings.set(key, value)
 
-    def number(self) -> str:
-        """The blank number standing in the box from the last worker."""
-        return self._get(KEY_NUMBER, DEFAULT_NUMBER)
-
     # ---------------------------------------------------------- templates
     def templates(self) -> list[Path]:
         """The blank pairs on offer. Empty until the office uploads one."""
@@ -129,7 +122,6 @@ class PpuService:
         address: str = "",
         valid_from: date,
         valid_to: date | None = None,
-        number: str = "",
         photo: bytes | None = None,
         template: Path | None = None,
     ) -> PpuResult:
@@ -140,12 +132,11 @@ class PpuService:
                 "ППУ бланкаси юкланмаган — «Шаблон қўшиш» орқали олд ва орқа "
                 "саҳифани юкланг.")
 
-        number = number.strip() or self.number()
         data = PpuData(
             surname=surname, name=name, patronymic=patronymic,
             birth_date=birth_date, gender=gender, citizenship=citizenship,
             document=document, address=address, valid_from=valid_from,
-            valid_to=valid_to, number=number, photo=photo)
+            valid_to=valid_to, photo=photo)
         pdf = render(data, Path(template))
         pages = pages_as_png(pdf)
 
@@ -156,7 +147,7 @@ class PpuService:
             target.write_bytes(png)
             saved.append(target)
 
-        self._set(KEY_NUMBER, number)
         log.info("ППУ: %s — %d саҳифа сақланди", surname, len(saved))
-        return PpuResult(pdf=pdf, pages=pages, saved=saved, number=number,
+        return PpuResult(pdf=pdf, pages=pages, saved=saved,
+                         passport=document.strip(),
                          valid_from=valid_from, valid_to=valid_to)

@@ -27,9 +27,6 @@ class PpuController:
     def ai_available(self) -> bool:
         return self._ocr.available()
 
-    def number(self) -> str:
-        return self._service.number()
-
     def templates(self) -> list[Path]:
         return self._service.templates()
 

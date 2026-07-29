@@ -166,9 +166,17 @@ _REGISTRATION = (
     "Return ONLY a JSON object, no explanation, no markdown.\n"
     "Read: the holder's ФАМИЛИЯ, ИМЯ, ОТЧЕСТВО; ДАТА РОЖДЕНИЯ; ПОЛ "
     '("Мужской" or "Женский"); ГРАЖДАНСТВО; the passport series and number; '
-    "the ADDRESS of the place of stay («Место пребывания» / адрес — house, "
-    "flat and all, exactly as printed, on one line); and the two dates of the "
-    "stay, «Срок пребывания с … по …».\n"
+    "the ADDRESS of the place of stay; and the two dates of the stay, «Срок "
+    "пребывания с … по …».\n"
+    "IMPORTANT — the ADDRESS («Место пребывания» / адрес) must be the WHOLE "
+    "address, every part that is printed, from the largest down to the "
+    "smallest, joined into ONE line with commas: ОБЛАСТЬ, РАЙОН, ГОРОД or "
+    "НАСЕЛЁННЫЙ ПУНКТ, УЛИЦА, ДОМ, КОРПУС, СТРОЕНИЕ, КВАРТИРА. Keep the "
+    'labels the form uses — "обл.", "р-н", "г.", "ул.", "д.", "корп.", '
+    '"стр.", "кв." — and keep every number. Do NOT return the house number on '
+    "its own: «д. 33» is useless; «Московская обл., г. Балашиха, ул. Ленина, "
+    "д. 33, корп. 2, кв. 15» is the answer. Leave out only the parts the form "
+    "does not print — never a part it does.\n"
     "IMPORTANT — output names, the citizenship and the address in RUSSIAN "
     "CYRILLIC. But the passport series and number are IDENTIFIERS: copy them "
     "character for character as printed, in LATIN if they are printed in "

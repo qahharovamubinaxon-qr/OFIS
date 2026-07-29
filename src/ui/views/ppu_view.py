@@ -74,7 +74,9 @@ class PpuView(QWidget):
         self._gender.setPlaceholderText("Мужской")
         self._citizenship = self._line(grid, 2, 2, "Гражданство:")
         self._document = self._line(grid, 3, 0, "Паспорт (серия/номер):")
-        self._number = self._line(grid, 3, 2, "Бланк №:")
+        self._document.setToolTip(
+            "«Иностранный паспорт» — олд бетнинг пастига ва орқа бетнинг "
+            "тепасидаги тўртта жойга, беш марта ёзилади.")
         self._address = self._line(grid, 4, 0, "Адрес:")
         grid.addWidget(self._address, 4, 1, 1, 3)
         root.addLayout(grid)
@@ -135,7 +137,6 @@ class PpuView(QWidget):
         root.addWidget(self._status)
 
         self._reload_templates()
-        self._number.setText(self._c.number())
 
     # ------------------------------------------------------------ helpers
     @staticmethod
@@ -230,7 +231,7 @@ class PpuView(QWidget):
                 address=self._address.text(),
                 valid_from=self._from.date().toPython(),
                 valid_to=self._to.date().toPython(),
-                number=self._number.text(), photo=photo,
+                photo=photo,
                 template=Path(template) if template else None)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
@@ -248,7 +249,7 @@ class PpuView(QWidget):
         names = ", ".join(p.name for p in result.saved)
         self._status.setText(
             f"✅ Рабочий столга сақланди: {names}\n"
-            f"№{result.number} · {result.valid_from:%d.%m.%Y} — "
+            f"{result.passport} · {result.valid_from:%d.%m.%Y} — "
             f"{result.valid_to:%d.%m.%Y}" + warning)
 
     def _failed(self, error: Exception) -> None:
