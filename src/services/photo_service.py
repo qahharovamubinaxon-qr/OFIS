@@ -54,12 +54,22 @@ OUT_DPI = 300
 #:
 #: Raising this loosens the frame — more shoulder, smaller head; lowering it
 #: tightens. It is the one knob, and it moves every section at once.
+#:
+#: Kept only for the fallback path; the crop is normally driven by HEAD_SHARE.
 HEAD_HEIGHT = 1.45
-#: Air above the box top. The detector's box starts at the hairline on a bald
-#: sitter but *below* tall hair, so a little is held back to stop a hairstyle
-#: being sliced off — but only a little. This is a document photo, not a
-#: portrait, and the office crops them close.
-HEAD_AIR = 0.17
+
+#: What share of the frame the HEAD fills — hair top to chin. This is the
+#: office's own number: they crop these by hand at about three fifths.
+HEAD_SHARE = 0.62
+#: And how much of the frame is air above the hair. Small — the office crops
+#: close — but never zero, because a head touching the edge reads as cut off.
+AIR_SHARE = 0.07
+#: How far the head rises above the detector's brow-line box when the
+#: silhouette cannot be read. A middle value: too small clips thick hair, too
+#: large strands a bald sitter in empty space. Only the fallback uses it.
+HAIR_GUESS = 0.32
+#: Deprecated alias of the old fixed offset, kept so nothing importing it breaks.
+HEAD_AIR = HAIR_GUESS
 
 #: The cloud «AI studio» retouch is off.
 #:
@@ -286,25 +296,81 @@ class PhotoService:
 
     # ------------------------------------------------------------------
     @staticmethod
+    @staticmethod
+    def _hair_top(cv2, rgb, x, y, w, h) -> float | None:
+        """The real top of the head, found on the silhouette — or None.
+
+        The detector's box starts at the brow. How far the head rises above it
+        is not a constant: on a bald sitter almost nothing, on thick hair or a
+        headscarf a third of the box again. Measuring from the box therefore
+        cuts one person's hair off and leaves another floating in empty space —
+        which is exactly what the office saw.
+
+        So the silhouette is asked instead. The same U²-Net that removes the
+        background knows where the person ends, and its topmost pixel above the
+        face is the top of the hair, whatever the hair happens to be.
+        """
+        import numpy as np
+
+        from src.services.bg_segment import segment
+
+        height, width = rgb.shape[:2]
+        # a generous window: the head cannot rise more than about its own
+        # height above the brow, and the mask needs some context around it
+        top = max(0, int(y - 1.6 * h))
+        bottom = min(height, int(y + 1.4 * h))
+        left = max(0, int(x - 0.7 * w))
+        right = min(width, int(x + 1.7 * w))
+        if bottom - top < 40 or right - left < 40:
+            return None
+        mask = segment(rgb[top:bottom, left:right])
+        if mask is None:
+            return None
+
+        # only the columns the face occupies — a raised hand or a second person
+        # at the edge of the frame is not this head
+        face_left = max(0, int(x - left + 0.15 * w))
+        face_right = min(mask.shape[1], int(x - left + 0.85 * w))
+        if face_right - face_left < 10:
+            return None
+        band = mask[:, face_left:face_right] > 128
+        rows = np.flatnonzero(band.sum(axis=1) > (face_right - face_left) * 0.25)
+        if rows.size == 0:
+            return None
+        found = top + float(rows[0])
+        # a mask that says the head starts below the brow is a bad mask
+        return found if found <= y + 0.1 * h else None
+
+    @staticmethod
     def _document_crop(cv2, rgb, x, y, w, h, aspect: float = OUT_W / OUT_H):
         """Window around the face at ``aspect`` (w/h), taken entirely from real
         pixels.
 
-        The window is sized for document proportions (head ≈65% of the height,
-        a little air above the hair), then shrunk and slid until it lies wholly
-        inside the photo. Nothing is padded, so the portrait fills the frame
-        evenly whatever shape the original was — a source narrower than the
-        target simply yields a shorter window instead of white side bars.
+        The window is built from the HEAD — the top of the hair down to the
+        chin — so the head lands at :data:`HEAD_SHARE` of the frame with
+        :data:`AIR_SHARE` of air above it, whatever the sitter's hair is doing.
+        When the silhouette cannot be read it falls back to a fixed offset off
+        the detector's box, which is the old behaviour and good enough.
+
+        The window is then shrunk and slid until it lies wholly inside the
+        photo. Nothing is padded, so the portrait fills the frame evenly
+        whatever shape the original was — a source narrower than the target
+        simply yields a shorter window instead of white side bars.
         """
         H, W = float(rgb.shape[0]), float(rgb.shape[1])
 
-        crop_h = h * HEAD_HEIGHT
+        hair = PhotoService._hair_top(cv2, rgb, x, y, w, h)
+        if hair is None:
+            hair = y - HAIR_GUESS * h
+        chin = y + h
+        head = max(1.0, chin - hair)
+        crop_h = head / HEAD_SHARE
         crop_w = crop_h * aspect
         scale = min(1.0, W / crop_w, H / crop_h)   # keep the aspect exact
         crop_w, crop_h = crop_w * scale, crop_h * scale
 
         left = x + w / 2 - crop_w / 2              # centred on the face
-        top = y - HEAD_AIR * h                     # air above the hair
+        top = hair - AIR_SHARE * crop_h            # air above the real hair
         left = max(0.0, min(left, W - crop_w))     # slide fully inside
         top = max(0.0, min(top, H - crop_h))
 

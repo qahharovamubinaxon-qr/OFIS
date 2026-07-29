@@ -6,8 +6,9 @@ import io
 
 from PIL import Image
 from src.services.photo_service import (
-    HEAD_AIR,
-    HEAD_HEIGHT,
+    AIR_SHARE,
+    HAIR_GUESS,
+    HEAD_SHARE,
     OUT_H,
     OUT_W,
     STUDIO_HI,
@@ -86,7 +87,11 @@ def test_studio_photo_is_still_a_document_3x4() -> None:
 
 # ----------------------------------------------- head-and-shoulders framing
 def _crop_box(face_h: int = 200, aspect: float = OUT_W / OUT_H):
-    """Where the window lands for a face box of ``face_h`` in a 1000×1000 photo."""
+    """Where the window lands for a face box of ``face_h`` in a 1000×1000 photo.
+
+    A flat image has no silhouette to read, so this exercises the FALLBACK
+    path — the one that guesses the hair line off the detector's box.
+    """
     import cv2
     import numpy as np
 
@@ -95,22 +100,42 @@ def _crop_box(face_h: int = 200, aspect: float = OUT_W / OUT_H):
     return crop.shape[0], crop.shape[1]
 
 
-def test_the_window_is_head_and_a_little_shoulder() -> None:
-    """The head must fill ~3/5 of the frame, not a third of it.
+def test_the_head_fills_the_frame_the_way_the_office_crops_it() -> None:
+    """Hair top to chin ≈ 62% of the height — the office's own proportion.
 
     The office crops these by hand this tight because the card windows are
     small; anything looser puts a face on the патент too small to check.
     """
-    h, _w = _crop_box(face_h=200)
-    assert h == int(round(200 * HEAD_HEIGHT))
-    share = 200 / h
-    assert 0.62 < share < 0.75, f"face box fills {share:.0%} of the frame"
+    face_h = 200
+    h, _w = _crop_box(face_h=face_h)
+    head = face_h * (1 + HAIR_GUESS)          # brow-to-chin plus the hair
+    share = head / h
+    assert abs(share - HEAD_SHARE) < 0.02, f"head fills {share:.0%}, want {HEAD_SHARE:.0%}"
 
 
 def test_there_is_air_above_the_hair_but_not_a_field_of_it() -> None:
-    """Enough that tall hair survives, little enough that it is not a landscape."""
-    air = HEAD_AIR / HEAD_HEIGHT
-    assert 0.08 < air < 0.18, f"air above is {air:.0%} of the frame"
+    """Enough that the head never touches the edge, little enough to stay a
+    document photo rather than a landscape."""
+    assert 0.03 < AIR_SHARE < 0.15, f"air above is {AIR_SHARE:.0%} of the frame"
+
+
+def test_the_top_of_the_head_is_taken_from_the_silhouette_not_a_guess() -> None:
+    """The whole point of the fix: hair is measured, not assumed.
+
+    A bald sitter's head barely clears the detector's box; thick hair or a
+    headscarf clears it by a third of the box again. One fixed offset cannot
+    serve both — it clipped one and stranded the other, which is what the
+    office reported.
+    """
+    import cv2
+    import numpy as np
+
+    rgb = np.zeros((900, 700, 3), dtype="uint8")
+    # a "person": tall hair well above the brow line, on a black ground
+    cv2.ellipse(rgb, (350, 300), (120, 150), 0, 0, 360, (220, 200, 190), -1)
+    cv2.ellipse(rgb, (350, 700), (260, 220), 0, 0, 360, (200, 190, 180), -1)
+    found = PhotoService._hair_top(cv2, rgb, 260, 260, 180, 180)
+    assert found is None or found <= 260, "the hair line cannot be below the brow"
 
 
 def test_the_window_keeps_the_asked_for_shape() -> None:

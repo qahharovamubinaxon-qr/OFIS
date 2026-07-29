@@ -197,8 +197,10 @@ class PhotoView(QWidget):
         self._progress.start("Hujjat skanerlanyapti…")
 
         def work():
-            return (doc_scan_service.build_pdf(images, grayscale=grey),
-                    doc_scan_service.preview_png(images[0], grayscale=grey))
+            # scanned once: the preview is page one of the very PDF that will
+            # be saved, so what the operator approves is what they get
+            pdf = doc_scan_service.build_pdf(images, grayscale=grey)
+            return pdf, doc_scan_service.first_page_png(pdf)
 
         run_async(work, on_success=self._scanned, on_error=self._failed)
 

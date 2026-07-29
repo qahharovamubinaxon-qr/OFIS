@@ -127,6 +127,43 @@ def _find_quad(cv2, np, rgb):
     return None
 
 
+def _find_paper(cv2, np, rgb):
+    """The document found as PAPER rather than as edges — the second try.
+
+    Canny wants clean straight borders. A passport lying on a wooden desk does
+    not give them: the grain draws lines of its own, the page curls, and the
+    binding throws a shadow along one side. But the page is still the one
+    bright, colourless region in the frame, and a desk is neither. So threshold
+    on «pale and unsaturated», take the largest blob, and put a rotated
+    rectangle round it — which tolerates a corner the edge detector lost.
+    """
+    height, width = rgb.shape[:2]
+    scale = min(1.0, DETECT_SIDE / max(height, width))
+    small = cv2.resize(rgb, (int(width * scale), int(height * scale)),
+                       interpolation=cv2.INTER_AREA) if scale < 1.0 else rgb
+
+    hsv = cv2.cvtColor(small, cv2.COLOR_RGB2HSV)
+    value, saturation = hsv[..., 2], hsv[..., 1]
+    paper = ((value > np.percentile(value, 55)) &
+             (saturation < max(60, np.percentile(saturation, 55)))
+             ).astype("uint8") * 255
+    # close the print up into one solid page, then drop the speckle
+    side = max(3, int(min(small.shape[:2]) * 0.02) | 1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (side, side))
+    paper = cv2.morphologyEx(paper, cv2.MORPH_CLOSE, kernel)
+    paper = cv2.morphologyEx(paper, cv2.MORPH_OPEN, kernel)
+
+    found, _ = cv2.findContours(paper, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not found:
+        return None
+    biggest = max(found, key=cv2.contourArea)
+    share = cv2.contourArea(biggest) / (small.shape[0] * small.shape[1])
+    if not (MIN_AREA <= share <= MAX_AREA):
+        return None
+    box = cv2.boxPoints(cv2.minAreaRect(biggest))
+    return _order(np, np.array(box, dtype="float32")) / (scale or 1.0)
+
+
 def _warp(cv2, np, rgb, quad):
     """Pull the four corners onto a true rectangle."""
     tl, tr, br, bl = quad
@@ -193,8 +230,14 @@ def scan_one(data: bytes, grayscale: bool = True):
     import numpy as np
 
     rgb = _rgb(data)
-    quad = _find_quad(cv2, np, rgb)
-    page = _warp(cv2, np, rgb, quad) if quad is not None else None
+    page = None
+    for find in (_find_quad, _find_paper):
+        quad = find(cv2, np, rgb)
+        if quad is None:
+            continue
+        page = _warp(cv2, np, rgb, quad)
+        if page is not None:
+            break
     if page is None:
         log.info("Ҳужжат чегараси топилмади — фақат тўғриланади")
         page = _straighten(cv2, np, rgb)
@@ -267,10 +310,27 @@ def build_pdf(images: list[bytes], grayscale: bool = True) -> bytes:
     return buf.getvalue()
 
 
-def preview_png(data: bytes, grayscale: bool = True) -> bytes:
-    """The single scanned document as a PNG, for the screen to show."""
+def first_page_png(pdf: bytes) -> bytes:
+    """Page one of a finished PDF, for the screen to show.
+
+    The PAGE, not the cut-out document: what the operator needs to judge is
+    whether the thing came out straight and centred on white A4, and a preview
+    of the crop alone cannot answer that. Rendered from the PDF that will
+    actually be saved, so what they approve is what they get.
+    """
+    import fitz
     from PIL import Image
 
+    doc = fitz.open("pdf", pdf)
+    shot = doc[0].get_pixmap(matrix=fitz.Matrix(0.7, 0.7))
+    page = Image.frombytes("RGB", (shot.width, shot.height), shot.samples)
     buf = io.BytesIO()
-    Image.fromarray(scan_one(data, grayscale)).save(buf, format="PNG")
+    page.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def preview_png(images: list[bytes] | bytes, grayscale: bool = True) -> bytes:
+    """Convenience: scan ``images`` and hand back page one as a PNG."""
+    if isinstance(images, bytes):
+        images = [images]
+    return first_page_png(build_pdf(images, grayscale))
