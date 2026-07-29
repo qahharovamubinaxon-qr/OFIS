@@ -1,0 +1,6 @@
+# Windows batch files must keep CRLF: cmd.exe eats the first characters of
+# every line in a LF-only .bat, which turns "echo" into "ho" and the whole
+# script into nonsense. Checked out CRLF on every machine, whatever the
+# local core.autocrlf happens to be.
+*.bat text eol=crlf
+*.cmd text eol=crlf
