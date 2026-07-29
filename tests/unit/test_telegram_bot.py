@@ -131,6 +131,7 @@ _DESKTOP_TO_MODULE = {
     "nav.template": "shablon",
     "nav.photo": "photo",
     "nav.jpg2pdf": "jpg2pdf",
+    "nav.jpg2pdf": "jpg2pdf",
     "nav.summa": "summa",
 }
 
