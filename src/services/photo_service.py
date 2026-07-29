@@ -43,16 +43,23 @@ OUT_DPI = 300
 #: the shoulders only just entering at the bottom. That is what a патент, a
 #: бейджик and a разрешение want: the window on those cards is small, and a
 #: portrait taken from the chest up arrives on them as a face too small to
-#: recognise. Measured against the office's own crop, 1.70 puts the head at
-#: ~62% of the frame.
+#: recognise.
+#:
+#: Set against the office's own pair, same sitter and same source photograph:
+#: the program's 413 × 531 output put the head at 53 % of the frame, the crop
+#: they made by hand at 62 %. That ratio is clean — 1.70 × 53/62 = 1.45.
 #:
 #: Both numbers are multiples of YuNet's box height, so they hold whatever the
 #: photograph's own size and distance were.
-HEAD_HEIGHT = 1.70
-#: Air above the box top. A shade more than the office leaves, because the
-#: detector's box starts at the hairline on a bald sitter but *below* tall
-#: hair — the extra keeps a hairstyle from being sliced off.
-HEAD_AIR = 0.22
+#:
+#: Raising this loosens the frame — more shoulder, smaller head; lowering it
+#: tightens. It is the one knob, and it moves every section at once.
+HEAD_HEIGHT = 1.45
+#: Air above the box top. The detector's box starts at the hairline on a bald
+#: sitter but *below* tall hair, so a little is held back to stop a hairstyle
+#: being sliced off — but only a little. This is a document photo, not a
+#: portrait, and the office crops them close.
+HEAD_AIR = 0.17
 
 #: The cloud «AI studio» retouch is off.
 #:
@@ -206,7 +213,6 @@ class PhotoService:
 
     def _detect_face(self, cv2, rgb):
         """Largest face → (x, y, w, h, right_eye, left_eye) or None."""
-        import numpy as np
 
         det = self._detector(cv2, rgb.shape[1], rgb.shape[0])
         if det is None:

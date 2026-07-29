@@ -30,12 +30,14 @@ class _Reader:
         self.answer = answer
         self.blow_up = blow_up
         self.prompts: list[str] = []
+        self.doc_types: list[DocType] = []
 
     def available(self) -> bool:
         return True
 
     def extract(self, image: bytes, doc_type: DocType, prompt: str) -> AiRawResult:
         self.prompts.append(prompt)
+        self.doc_types.append(doc_type)
         if self.blow_up is not None:
             raise self.blow_up
         return AiRawResult(document_type=doc_type, fields={"inn": self.answer})
@@ -182,3 +184,49 @@ def test_the_reader_is_told_where_to_look_on_a_patent():
     assert "Документ удост" in prompt, "it must be told which line carries it"
     assert "slash" in prompt.lower()
     assert "leading zero" in prompt.lower()
+
+
+def test_the_line_is_used_when_the_reader_will_not_commit():
+    """«I read the line but cannot tell you which half» is a good answer."""
+    from src.ai.base import AiRawResult
+
+    class _Unsure(_Reader):
+        def extract(self, image, doc_type, prompt):
+            return AiRawResult(document_type=doc_type, fields={
+                "inn": "", "line": "FB0717527 / 072501692992"})
+
+    assert OcrService(_Unsure()).read_inn(_jpeg()) == "072501692992"
+
+
+def test_a_wrong_inn_beside_a_right_line_is_still_refused():
+    """The field is tried first, but a bad one does not poison the line."""
+    from src.ai.base import AiRawResult
+
+    class _Muddled(_Reader):
+        def extract(self, image, doc_type, prompt):
+            return AiRawResult(document_type=doc_type, fields={
+                "inn": "FB0717527", "line": "FB0717527 / 072501692992"})
+
+    assert OcrService(_Muddled()).read_inn(_jpeg()) == "072501692992"
+
+
+def test_the_reader_is_asked_for_the_whole_line():
+    _, reader = _read("072501692992")
+    assert '"line"' in reader.prompts[0]
+
+
+def test_the_answer_is_not_judged_against_the_patent_schema():
+    """This request asks for a number, not for a патент.
+
+    Every answer is validated against the schema for its DocType, and PATENT
+    requires the card's own fields — номер, фамилия, бланк. Asked under PATENT,
+    an answer carrying only «inn» was thrown away as «керакли майдонлар йўқ»
+    before anything here ever saw it, which is why reading a real card returned
+    nothing at all. The free-form schema requires none of those.
+    """
+    from src.ai.schemas import schema_for
+
+    _, reader = _read("072501692992")
+    used = reader.doc_types[0]
+    assert not schema_for(used).required_any, (
+        f"{used} demands fields this request never asks for")

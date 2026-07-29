@@ -205,24 +205,34 @@ class OcrService:
         a form filed against the wrong person.
         """
         try:
-            answer = self._ai.extract(prepare_image(image), DocType.PATENT,
+            # UNKNOWN, deliberately: every answer is validated against the
+            # schema for its DocType, and PATENT demands the card's own fields
+            # — номер, фамилия, бланк. This request asks for one number and
+            # gets one number back, so under PATENT the answer was thrown away
+            # as «жавобда керакли майдонлар йўқ» before it was ever read.
+            # UNKNOWN maps to the free-form schema, which requires nothing.
+            answer = self._ai.extract(prepare_image(image), DocType.UNKNOWN,
                                       inn_prompt())
         except Exception as exc:            # noqa: BLE001 - reading is optional here
             log.info("ИНН ўқилмади: %s", exc)
             return ""
-        found = twelve_digit_inn(str(answer.fields.get("inn", "")))
-        if not found:
-            # second chance: the number is there but under another name, or in
-            # the transcript rather than in a field. Every value is searched
-            # with the same bounded rule, so a stray passport or ОГРН still
-            # cannot get through — only a clean, unambiguous twelve.
-            rest = " | ".join(str(v) for k, v in answer.fields.items()
-                              if k != "inn")
-            found = (twelve_digit_inn(rest)
-                     or twelve_digit_inn(getattr(answer, "text", "") or ""))
-        if not found:
-            log.info("ИНН топилмади ёки 12 хона эмас")
-        return found
+        fields = answer.fields
+        # In order: the reader's own answer, then the whole «Документ удост.
+        # личность/ИНН» line it was asked to copy, then anything else it
+        # returned, then its transcript. Every one of them goes through the
+        # same bounded rule, so a stray passport, ОГРН or patent number cannot
+        # get through at any step — only a clean, unambiguous twelve.
+        sources = (str(fields.get("inn", "")), str(fields.get("line", "")),
+                   " | ".join(str(v) for k, v in fields.items()
+                              if k not in ("inn", "line")),
+                   str(getattr(answer, "text", "") or ""))
+        for source in sources:
+            found = twelve_digit_inn(source)
+            if found:
+                return found
+        log.info("ИНН топилмади. Ўқувчи қайтарган: %s",
+                 {k: str(v)[:60] for k, v in fields.items()} or "—")
+        return ""
 
     def read_sts(self, front: bytes, back: bytes | None = None) -> Sts:
         """Read the vehicle registration card.

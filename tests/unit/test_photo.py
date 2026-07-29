@@ -104,7 +104,7 @@ def test_the_window_is_head_and_a_little_shoulder() -> None:
     h, _w = _crop_box(face_h=200)
     assert h == int(round(200 * HEAD_HEIGHT))
     share = 200 / h
-    assert 0.55 < share < 0.65, f"head fills {share:.0%} of the frame"
+    assert 0.62 < share < 0.75, f"face box fills {share:.0%} of the frame"
 
 
 def test_there_is_air_above_the_hair_but_not_a_field_of_it() -> None:

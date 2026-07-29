@@ -144,7 +144,11 @@ _INN_ONLY = (
     "calculate, correct or invent a single digit — if you cannot read all 12 "
     "cleanly, return an empty string instead. A wrong ИНН on a form is worse "
     "than an empty box the operator fills in.\n"
-    'Keys: {"inn":"072501692992"}  (empty string if there is none)\n'
+    'Also copy the WHOLE line you read it from into "line", exactly as '
+    'printed — "FB0717527 / 072501692992". If you are not sure which half is '
+    'the ИНН, still give the line: the program can split it. An empty "inn" '
+    'with a correct "line" is a good answer; a guessed "inn" is not.\n'
+    'Keys: {"inn":"072501692992","line":"FB0717527 / 072501692992"}\n'
 )
 
 
