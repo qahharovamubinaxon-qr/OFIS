@@ -102,15 +102,44 @@ def _check(data: ChekData) -> tuple[str, str]:
 def _ensure_font(page, fontfile):
     page.insert_font(fontname="micross", fontfile=fontfile)
 
-def _put(page, key, text, fontfile):
-    f = FIELDS[key]
+#: The baseline sits this far above the bottom of the measured rect.
+_BASELINE_LIFT = 2.2
+
+
+def effective(page, layout: dict | None) -> dict:
+    """The fields this blank actually uses.
+
+    :data:`FIELDS` was measured off the owner's own filled receipt and is in
+    POINTS. Anything the office has since dragged into place with the mouse is
+    kept in FRACTIONS of the page — so it survives a firm re-scanning its blank
+    — and is converted back here. A blank nobody has arranged uses the measured
+    numbers unchanged.
+    """
+    fields = {k: dict(v) for k, v in FIELDS.items()}
+    moved = (layout or {}).get("fields") or {}
+    if not moved:
+        return fields
+    width, height = page.rect.width, page.rect.height
+    for key, value in moved.items():
+        if key not in fields or len(value) != 3:
+            continue
+        x, baseline, size = (float(v) for v in value)
+        rect = fields[key]["rect"]
+        fields[key]["rect"] = [x * width, rect[1],
+                               rect[2], baseline * height + _BASELINE_LIFT]
+        fields[key]["size"] = size * height
+    return fields
+
+
+def _put(page, key, text, fontfile, fields=None):
+    f = (fields or FIELDS)[key]
     x0, y0, x1, y1 = f["rect"]
-    page.insert_text((x0, y1 - 2.2), text, fontsize=f["size"],
+    page.insert_text((x0, y1 - _BASELINE_LIFT), text, fontsize=f["size"],
                      fontname="micross", color=(0, 0, 0))
 
-def _put_wrapped(page, key, text, fontfile, line_h=12.3, max_w=200.0):
+def _put_wrapped(page, key, text, fontfile, line_h=12.3, max_w=200.0, fields=None):
     """propis/sana_baza can overflow the narrow strip — wrap by width."""
-    f = FIELDS[key]
+    f = (fields or FIELDS)[key]
     x0, y0, x1, y1 = f["rect"]
     font = fitz.Font(fontfile=fontfile)
     words, line, lines = text.split(" "), "", []
@@ -120,10 +149,12 @@ def _put_wrapped(page, key, text, fontfile, line_h=12.3, max_w=200.0):
         else: lines.append(line); line = w
     lines.append(line)
     for i, ln in enumerate(lines):
-        page.insert_text((x0, y1 - 2.2 + i * line_h), ln, fontsize=f["size"],
+        page.insert_text((x0, y1 - _BASELINE_LIFT + i * line_h), ln,
+                         fontsize=f["size"],
                          fontname="micross", color=(0, 0, 0))
 
-def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes, str]:
+def render_chek(data: ChekData, template_path: str | None = None,
+                layout: dict | None = None) -> tuple[bytes, str]:
     """Returns (pdf_bytes, suggested_filename)."""
     tpl = template_path or TEMPLATE_DEFAULT
     avtoriz, idci = _check(data)
@@ -133,29 +164,34 @@ def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes
     doc = fitz.open(tpl)
     page = doc[0]
     _ensure_font(page, fontfile)
+    fields = effective(page, layout)
     w = data.when
     fam, ism, otch = data.fam.upper().strip(), data.ism.upper().strip(), data.otch.upper().strip()
     inn = "".join(ch for ch in data.inn if ch.isdigit())
     amount = format_amount(data.rub, data.kop)
 
-    _put(page, "datetime", f"{w.day} {MONTHS_RU[w.month - 1]} {w.year} {w:%H:%M:%S} мск", fontfile)
-    _put(page, "fio_l1", f"{fam} {ism}", fontfile)
-    _put(page, "fio_l2", otch, fontfile)
-    _put(page, "card4", "".join(ch for ch in data.card4 if ch.isdigit())[-4:], fontfile)
-    _put(page, "inn", inn, fontfile)
-    _put(page, "ism", ism, fontfile)
-    _put(page, "otch", otch, fontfile)
-    _put(page, "fam", fam, fontfile)
-    _put_wrapped(page, "inn12", f"121000000000{inn}", fontfile)
-    _put_wrapped(page, "sana_baza", f"1044525225009006{w:%d%m%Y}11071538", fontfile)
-    _put(page, "avtoriz", avtoriz, fontfile)
+    _put(page, "datetime",
+         f"{w.day} {MONTHS_RU[w.month - 1]} {w.year} {w:%H:%M:%S} мск",
+         fontfile, fields=fields)
+    _put(page, "fio_l1", f"{fam} {ism}", fontfile, fields=fields)
+    _put(page, "fio_l2", otch, fontfile, fields=fields)
+    _put(page, "card4",
+         "".join(ch for ch in data.card4 if ch.isdigit())[-4:],
+         fontfile, fields=fields)
+    _put(page, "inn", inn, fontfile, fields=fields)
+    _put(page, "ism", ism, fontfile, fields=fields)
+    _put(page, "otch", otch, fontfile, fields=fields)
+    _put(page, "fam", fam, fontfile, fields=fields)
+    _put_wrapped(page, "inn12", f"121000000000{inn}", fontfile, fields=fields)
+    _put_wrapped(page, "sana_baza", f"1044525225009006{w:%d%m%Y}11071538", fontfile, fields=fields)
+    _put(page, "avtoriz", avtoriz, fontfile, fields=fields)
     # company idci: white-out the baked value, write the office's own
     page.draw_rect(fitz.Rect(*IDCI_COVER), color=None, fill=(1, 1, 1))
     page.insert_text(IDCI_POS, idci, fontsize=IDCI_SIZE,
                      fontname="micross", color=(0, 0, 0))
-    _put(page, "summa_1", amount, fontfile)
-    _put(page, "summa_2", amount, fontfile)
-    _put_wrapped(page, "propis", amount_in_words(data.rub, data.kop), fontfile)
+    _put(page, "summa_1", amount, fontfile, fields=fields)
+    _put(page, "summa_2", amount, fontfile, fields=fields)
+    _put_wrapped(page, "propis", amount_in_words(data.rub, data.kop), fontfile, fields=fields)
 
     name = f"Документ-{w:%Y-%m-%d-%H-%M-%S}.pdf"
     out = doc.tobytes(deflate=True)

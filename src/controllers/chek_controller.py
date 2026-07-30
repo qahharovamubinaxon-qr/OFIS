@@ -102,6 +102,24 @@ class ChekController:
         kop = int((kop_s + "00")[:2]) if kop_s else 0
         return int(rub_s), kop
 
+    # ── where this blank wants its values ────────────────────────────
+    SECTION = "chek"
+
+    def layout(self, template: Path | None) -> dict:
+        from src.services import blank_layout
+
+        return blank_layout.load(self.SECTION, template)
+
+    def save_layout(self, template: Path, layout: dict):
+        from src.services import blank_layout
+
+        return blank_layout.save(self.SECTION, template, layout)
+
+    def reset_layout(self, template: Path) -> None:
+        from src.services import blank_layout
+
+        blank_layout.reset(self.SECTION, template)
+
     def generate(self, *, fam: str, ism: str, otch: str, inn: str,
                  card4: str, when: datetime, rub: int, kop: int,
                  avtoriz: str, template: Path | None = None) -> tuple[bytes, str]:
@@ -111,7 +129,8 @@ class ChekController:
         data = ChekData(fam=fam, ism=ism, otch=otch, inn=inn,
                         card4=card4, when=when, rub=rub, kop=kop,
                         avtoriz=avtoriz, idci=self.company_id())
-        return render_chek(data, str(template) if template else None)
+        return render_chek(data, str(template) if template else None,
+                           layout=self.layout(template))
 
     @staticmethod
     def read_image(path: Path) -> bytes:

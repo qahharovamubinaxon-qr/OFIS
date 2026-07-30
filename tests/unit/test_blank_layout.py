@@ -1,0 +1,168 @@
+"""Arranging a blank's printed values — the store, and ЧЕК using it.
+
+The office drags each value into place against its own blank instead of editing
+numbers in a file and rebuilding the program. What it arranges is kept per
+section and per blank; nothing else moves.
+"""
+
+from __future__ import annotations
+
+import datetime
+import tempfile
+from pathlib import Path
+
+import fitz
+import pytest
+
+from src.config import paths
+
+
+@pytest.fixture(autouse=True)
+def isolated_data_dir(monkeypatch):
+    sandbox = tempfile.mkdtemp()
+    monkeypatch.setenv("XDG_DATA_HOME", sandbox)
+    monkeypatch.setenv("LOCALAPPDATA", sandbox)
+    paths.data_dir.cache_clear()
+    yield
+    paths.data_dir.cache_clear()
+
+
+# ------------------------------------------------------------- the store
+
+
+def test_a_layout_is_kept_per_section_and_per_blank(tmp_path) -> None:
+    from src.services import blank_layout
+
+    one, two = tmp_path / "СФЕРА.pdf", tmp_path / "ЭКСПЕРТ.pdf"
+    assert blank_layout.load("chek", one) == {}
+    assert blank_layout.load("chek", None) == {}
+
+    blank_layout.save("chek", one, {"fields": {"fam": [0.3, 0.5, 0.01]}})
+    assert blank_layout.load("chek", one)["fields"]["fam"] == [0.3, 0.5, 0.01]
+    # the other blank is untouched, and so is the same blank in another section
+    assert blank_layout.load("chek", two) == {}
+    assert blank_layout.load("registration", one) == {}
+
+    blank_layout.reset("chek", one)
+    assert blank_layout.load("chek", one) == {}
+
+
+def test_it_is_kept_in_appdata_not_beside_the_blank(tmp_path) -> None:
+    """ЧЕК keeps its blanks inside the program folder, and anything written
+    there is lost the next time the EXE is rebuilt."""
+    from src.services import blank_layout
+
+    template = tmp_path / "СФЕРА.pdf"
+    blank_layout.save("chek", template, {"fields": {}})
+    assert not (tmp_path / "СФЕРА.json").exists()
+    assert blank_layout.layout_file("chek", template).is_relative_to(
+        paths.user_templates_dir())
+
+
+def test_a_damaged_layout_file_is_ignored_not_fatal(tmp_path) -> None:
+    from src.services import blank_layout
+
+    template = tmp_path / "СФЕРА.pdf"
+    blank_layout.save("chek", template, {"fields": {"fam": [0.3, 0.5, 0.01]}})
+    blank_layout.layout_file("chek", template).write_text("{ бузуқ",
+                                                          encoding="utf-8")
+    assert blank_layout.load("chek", template) == {}
+
+
+# ---------------------------------------------------------------- ЧЕК
+
+
+def _chek(**over):
+    from src.pdf.chek_renderer import ChekData
+
+    base = dict(fam="ИСАКОВ", ism="ШАХБОЗ", otch="БАХТИЁРОВИЧ",
+                inn="123456789012", card4="1234",
+                when=datetime.datetime(2026, 7, 20, 10, 11, 12),
+                rub=15000, kop=50, avtoriz="123456", idci="123456789012ABCD")
+    base.update(over)
+    return ChekData(**base)
+
+
+def _origin(pdf: bytes, needle: str):
+    page = fitz.open("pdf", pdf)[0]
+    for block in page.get_text("dict")["blocks"]:
+        if block["type"] != 0:
+            continue
+        for line in block["lines"]:
+            for span in line["spans"]:
+                if span["text"].strip() == needle:
+                    return (span["origin"][0] / page.rect.width,
+                            span["origin"][1] / page.rect.height,
+                            span["size"] / page.rect.height)
+    raise AssertionError(f"{needle!r} чекда йўқ")
+
+
+def test_a_chek_with_nothing_arranged_prints_where_it_always_did() -> None:
+    from src.pdf.chek_renderer import render_chek
+    from src.pdf.chek_spec import FIELDS
+
+    pdf, _name = render_chek(_chek())
+    x, baseline, _size = _origin(pdf, "ИСАКОВ")
+    page = fitz.open("pdf", pdf)[0]
+    rect = FIELDS["fam"]["rect"]
+    assert abs(x * page.rect.width - rect[0]) < 0.5
+    assert abs(baseline * page.rect.height - (rect[3] - 2.2)) < 0.5
+
+
+def test_what_the_office_arranged_is_what_gets_printed() -> None:
+    from src.pdf.chek_renderer import render_chek
+
+    pdf, _name = render_chek(_chek(),
+                             layout={"fields": {"fam": [0.30, 0.50, 0.010]}})
+    x, baseline, size = _origin(pdf, "ИСАКОВ")
+    assert abs(x - 0.30) < 0.002
+    assert abs(baseline - 0.50) < 0.002
+    assert abs(size - 0.010) < 0.0005
+    # and only that one moved
+    from src.pdf.chek_spec import FIELDS
+
+    page = fitz.open("pdf", pdf)[0]
+    ism_x, _b, _s = _origin(pdf, "ШАХБОЗ")
+    assert abs(ism_x * page.rect.width - FIELDS["ism"]["rect"][0]) < 0.5
+
+
+def test_the_chek_screen_offers_every_field_to_arrange() -> None:
+    """A field the office cannot reach on the screen can never be corrected."""
+    from src.pdf.chek_spec import FIELDS, SAMPLES
+
+    assert {key for key, _label, _sample in SAMPLES} == set(FIELDS)
+    assert all(label and sample for _key, label, sample in SAMPLES)
+
+
+# ------------------------------------ every section builds the same editor
+
+
+def test_the_mig_card_hands_the_editor_every_value_it_prints() -> None:
+    """МИГ and ЧЕК share one editor; МИГ only says WHAT is on its card."""
+    from src.pdf.mig_renderer import effective
+    from src.ui.widgets.mig_layout_editor import build
+
+    fields, sex, jobs = effective(None)
+    items, rules = build(fields, sex, jobs)
+
+    keys = {i.key for i in items}
+    assert keys == set(fields) | {"sex:male", "sex:female"}
+    assert {r.key for r in rules} == set(jobs)
+    assert all(i.sample and i.label for i in items)
+    # the issue date is the one printed in blue, and stays blue on screen
+    issued = next(i for i in items if i.key == "issued")
+    assert issued.colour[2] > issued.colour[0]
+
+
+def test_what_the_editor_returns_is_what_the_renderer_reads() -> None:
+    """The shape saved by the screen must be the shape ``effective`` expects —
+    otherwise an afternoon of arranging silently does nothing."""
+    from src.pdf.mig_renderer import effective
+
+    saved = {"fields": {"surname": [0.40, 0.30, 0.030]},
+             "sex": {"female": [0.90, 0.42, 0.034]},
+             "jobs": {"uchenik": [0.10, 0.25, 0.70]}}
+    fields, sex, jobs = effective(saved)
+    assert (fields["surname"].x, fields["surname"].baseline) == (0.40, 0.30)
+    assert sex["female"].x == 0.90
+    assert (jobs["uchenik"].x0, jobs["uchenik"].y) == (0.10, 0.70)

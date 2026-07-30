@@ -123,6 +123,12 @@ class ChekView(QWidget):
         add_btn = QPushButton("➕ Шаблон қўшиш")
         add_btn.clicked.connect(self._add_template)
         trow.addWidget(add_btn)
+        arrange = QPushButton("📐 Матнларни жойлаш")
+        arrange.setToolTip("Бланка ва унга ёзиладиган маълумотлар экранга "
+                           "чиқади — сичқонча билан суриб, катта-кичик қилиб "
+                           "жойига қўйинг. Шу шаблон учун сақланиб қолади.")
+        arrange.clicked.connect(self._arrange)
+        trow.addWidget(arrange)
         trow.addStretch(1)
         root.addLayout(trow)
 
@@ -269,6 +275,54 @@ class ChekView(QWidget):
         self._reload_templates()
         self._tpl.setCurrentIndex(self._tpl.findData(str(dest)))
         self._status.setText(f"✅ Шаблон қўшилди: {dest.name}")
+        if QMessageBox.question(
+                self, "Матнларни жойлаш",
+                "Маълумотларни шу бланкага мослаб қўяйликми? "
+                "(сичқонча билан суриб, катта-кичик қилиб — сақланиб қолади)"
+        ) == QMessageBox.StandardButton.Yes:
+            self._arrange()
+
+    def _arrange(self) -> None:
+        """Drag every printed value into place on THIS blank and keep it."""
+        import fitz
+
+        from src.pdf.chek_renderer import effective
+        from src.pdf.chek_spec import SAMPLES, SCREEN_FONT
+        from src.ui.widgets.layout_editor import Item, LayoutEditor
+
+        tpl = self._tpl.currentData()
+        if not tpl:
+            self._status.setText("⚠️ Аввал шаблонни танланг.")
+            return
+        template = Path(tpl)
+        try:
+            with fitz.open(str(template)) as doc:
+                page = doc[0]
+                width, height = page.rect.width, page.rect.height
+                fields = effective(page, self._c.layout(template))
+                png = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6)).tobytes("png")
+        except Exception as exc:                  # noqa: BLE001
+            self._status.setText(f"❌ Бланка очилмади: {exc}")
+            return
+
+        items = []
+        for key, label, sample in SAMPLES:
+            spot = fields.get(key)
+            if spot is None:
+                continue
+            x0, _y0, _x1, y1 = spot["rect"]
+            items.append(Item(key=key, label=label, sample=sample,
+                              x=x0 / width, baseline=(y1 - 2.2) / height,
+                              size=spot["size"] / height,
+                              font_family=SCREEN_FONT))
+        dialog = LayoutEditor(png, items, title="ЧЕК — матнларни жойлаш",
+                              parent=self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._c.save_layout(template, {"fields": dialog.result().items})
+        self._status.setText(
+            f"✅ «{template.stem}» шаблонининг матн жойлари сақланди — "
+            "бу шаблонга босиладиган ҳар бир чек шу жойларга тушади.")
 
     # -- «Обновить» support -------------------------------------------
     def reset(self) -> None:
