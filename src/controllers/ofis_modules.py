@@ -248,6 +248,81 @@ def _run_razreshenie(ctx: RunContext, state: dict) -> list[Path]:
     return [out]
 
 
+def _run_ppu(ctx: RunContext, state: dict) -> list[Path]:
+    """ППУ — everything comes off the регистрация the office already issued.
+
+    The operator sends that регистрация and the worker's photograph; the only
+    thing typed is the day the pair starts, and even the end date is taken off
+    the регистрация unless it could not be read. The blank is the office's own,
+    uploaded on the computer — there is nothing bundled to fall back on, which
+    is why the template is picked first.
+    """
+    from src.config import paths
+
+    answers = state["answers"]
+    ctl = ctx.ctl["ppu"]
+    fields = ctl.read_registration(state["photos"][0])
+
+    valid_from = answers.get("valid_from") or parse_date(
+        fields.get("stay_from", "")) or date.today()
+    valid_to = parse_date(str(answers.get("valid_to_text") or "")) or parse_date(
+        fields.get("stay_to", ""))
+
+    result = ctl.generate(
+        surname=fields.get("surname", ""), name=fields.get("name", ""),
+        patronymic=fields.get("patronymic", ""),
+        birth_date=parse_date(fields.get("birth_date", "")),
+        gender=fields.get("gender", ""),
+        citizenship=fields.get("citizenship", ""),
+        document=fields.get("document", ""),
+        address=fields.get("address", ""),
+        valid_from=valid_from, valid_to=valid_to,
+        photo=state["photos"][1] if len(state["photos"]) > 1 else None,
+        template=state["target"])
+
+    folder = paths.output_dir() / "ppu"
+    out: list[Path] = []
+    for index, png in enumerate(result.pages, 1):
+        page = _free_path(folder, f"{_stem(fields.get('surname', ''))} ППУ "
+                                  f"{index}.png")
+        page.write_bytes(png)
+        out.append(page)
+    span = (f"{result.valid_from:%d.%m.%Y} — {result.valid_to:%d.%m.%Y}"
+            if result.valid_to else f"{result.valid_from:%d.%m.%Y} — ?")
+    ctx.note(f"{result.passport} · {span}")
+    if not result.valid_to:
+        ctx.note("⚠️ Тугаш санаси регистрациядан ўқилмади — жуфтликда бўш "
+                 "қолди, керак бўлса қўлда ёзиб қўйинг.")
+    return out
+
+
+def _run_snils(ctx: RunContext, state: dict) -> list[Path]:
+    """СНИЛС — the passport, the day it was registered, and the number."""
+    from src.config import paths
+
+    answers = state["answers"]
+    ctl = ctx.ctl["snils"]
+    fields = ctl.read_passport(state["photos"][0])
+    birth = parse_date(fields.pop("birth_date", ""))
+
+    result = ctl.generate(
+        **fields, birth_date=birth,
+        reg_date=answers.get("reg_date") or date.today(),
+        snils=str(answers.get("snils") or "").strip(),
+        template=state["target"])
+
+    out = _free_path(paths.output_dir() / "snils", result.filename)
+    out.write_bytes(result.pdf)
+    ctx.note(f"СНИЛС {result.snils}"
+             + (f" · {result.reg_date:%d.%m.%Y}" if result.reg_date else ""))
+    return [out]
+
+
+def _stem(surname: str) -> str:
+    return "".join(c for c in (surname or "").strip()
+                   if c.isalnum() or c in " _-").strip() or "ISHCHI"
+
+
 def _run_sertifikat(ctx: RunContext, state: dict) -> list[Path]:
     """СЕРТИФИКАТ — the passport, the city, the day it was issued.
 
@@ -717,6 +792,25 @@ MODULES: tuple[Module, ...] = (
                      kind="text"),
                  Ask("firm_name", "Фирма номи (бўш — охиргиси):", kind="text"),
                  Ask("firm_inn", "Фирма ИННси (бўш — охиргиси):", kind="text"))),
+    Module("ppu", "🧾 ППУ", _run_ppu,
+           targets=lambda c: c["ppu"].templates(),
+           target_prompt="ППУ бланкасини танланг:",
+           photo_prompt=("Иккита расм: 1️⃣ Ишчининг РЕГИСТРАЦИЯСИ "
+                         "2️⃣ Ишчининг расми\n\nҚолган ҳамма нарса "
+                         "регистрациядан ўқилади."),
+           photo_labels=("Регистрация", "Ишчи расми"), min_photos=2,
+           asks=(Ask("valid_from", "ППУ БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("valid_to_text", "Тугаш санаси (бўш — регистрациядан "
+                     "олинади):", kind="text"))),
+    Module("snils", "🔖 СНИЛС", _run_snils,
+           targets=lambda c: c["snils"].templates(),
+           target_prompt="СНИЛС бланкасини танланг:",
+           photo_prompt="Ишчининг ПАСПОРТИ расмини юборинг.",
+           photo_labels=("Паспорт",),
+           asks=(Ask("reg_date", "Рўйхатга олинган сана (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("snils", "СНИЛС рақами (бўш — охиргиси):", kind="text"))),
     Module("sertifikat", "📜 СЕРТИФИКАТ", _run_sertifikat,
            photo_prompt="Ўқувчининг ПАСПОРТИ расмини юборинг.",
            photo_labels=("Паспорт",),
@@ -820,6 +914,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
     from src.controllers.sertifikat_controller import SertifikatController
+    from src.controllers.snils_controller import SnilsController
     from src.controllers.svera_controller import SveraController
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
@@ -851,6 +946,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
     from src.services.sertifikat_service import SertifikatService
+    from src.services.snils_service import SnilsService
     from src.services.svera_service import SveraService
     from src.services.trud_ppu_service import TrudPpuService
     from src.services.trud_service import TrudFirmService, TrudService
@@ -897,6 +993,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             ocr, RazreshenieService(container.resolve(SettingsService))),
         "sertifikat": SertifikatController(
             ocr, SertifikatService(container.resolve(SettingsService))),
+        "snils": SnilsController(
+            ocr, SnilsService(container.resolve(SettingsService))),
         # СТРАХОВКА and ЎЗ ШАБЛОНИМ own their services the same way the desktop
         # views do; only the repositories come from the container.
         "insurance": InsuranceController(

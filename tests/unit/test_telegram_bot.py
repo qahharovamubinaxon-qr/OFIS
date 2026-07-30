@@ -130,6 +130,8 @@ _DESKTOP_TO_MODULE = {
     "nav.beydjik": "beydjik",
     "nav.patent": "patent_card",
     "nav.razreshenie": "razreshenie",
+    "nav.ppu": "ppu",
+    "nav.snils": "snils",
     "nav.svera": "svera",
     "nav.sertifikat": "sertifikat",
     "nav.dover": "dover",
@@ -146,10 +148,8 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-_NOT_ON_THE_PHONE = {  # ППУ needs the office's own blank uploaded first
-                     "nav.ppu",
-                     # СНИЛС likewise
-                     "nav.snils"}
+#: Nothing is left off any more.
+_NOT_ON_THE_PHONE: set[str] = set()
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:
@@ -974,3 +974,129 @@ def test_a_new_address_needs_more_than_a_name(ready) -> None:
         _text(ready, "✅ Тайёрла")
     assert "манзил бўш" in _all(ready).lower()
     assert ready.ctl()["reg_addr"].count() == before, "an empty address was saved"
+
+
+# ---------------------------------------------------------- ППУ · СНИЛС
+
+
+def test_ppu_takes_everything_off_the_registration(ready, monkeypatch, tmp_path) -> None:
+    """Only the start date is typed; the Ф.И.О., passport, address and the end
+    date all come off the регистрация the office already issued."""
+    blank = tmp_path / "standart"
+    blank.mkdir()
+    seen = {}
+
+    def fake_generate(**kwargs):
+        seen.update(kwargs)
+
+        class R:
+            pages = [b"\x89PNG-front", b"\x89PNG-back"]
+            saved: list = []
+            pdf = b"%PDF-1.4\n"
+            passport = "AA 1234567"
+            valid_from = date(2026, 7, 27)
+            valid_to = date(2026, 10, 25)
+
+        return R()
+
+    ctl = ready.ctl()["ppu"]
+    monkeypatch.setattr(ctl, "templates", lambda: [blank])
+    monkeypatch.setattr(ctl, "read_registration", lambda image: {
+        "surname": "СЕЙТИМОВ", "name": "АЗИЗ", "patronymic": "",
+        "birth_date": "01.02.1990", "gender": "муж", "citizenship": "Узбекистан",
+        "document": "AA 1234567", "address": "Москва, Вяземская 1к1",
+        "stay_from": "27.07.2026", "stay_to": "25.10.2026"})
+    monkeypatch.setattr(ctl, "generate", fake_generate)
+
+    _text(ready, "🧾 ППУ")
+    _pick(ready, 0)
+    _photo(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "БОШЛАНИШ" in _last(ready)
+    _text(ready, "27.07.2026")
+    _text(ready, "✅ Тайёрла")        # тугаш санаси — регистрациядан
+
+    assert seen["template"] == blank
+    assert seen["valid_from"] == date(2026, 7, 27)
+    assert seen["valid_to"] == date(2026, 10, 25), "the end date was not read"
+    assert seen["address"] == "Москва, Вяземская 1к1"
+    assert seen["photo"], "the worker's photograph was dropped"
+    assert len(ready.files) == 2, "both sides must come back"
+    assert all(f.suffix == ".png" for f in ready.files)
+
+
+def test_ppu_says_so_when_the_end_date_could_not_be_read(
+        ready, monkeypatch, tmp_path) -> None:
+    blank = tmp_path / "standart"
+    blank.mkdir()
+
+    class R:
+        pages = [b"\x89PNG"]
+        pdf = b"%PDF-1.4\n"
+        passport = "AA 1234567"
+        valid_from = date(2026, 7, 27)
+        valid_to = None
+
+    ctl = ready.ctl()["ppu"]
+    monkeypatch.setattr(ctl, "templates", lambda: [blank])
+    monkeypatch.setattr(ctl, "read_registration", lambda image: {
+        "surname": "СЕЙТИМОВ", "name": "АЗИЗ", "document": "AA 1234567",
+        "stay_from": "27.07.2026", "stay_to": ""})
+    monkeypatch.setattr(ctl, "generate", lambda **k: R())
+
+    _text(ready, "🧾 ППУ")
+    _pick(ready, 0)
+    _photo(ready)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "27.07.2026")
+    _text(ready, "✅ Тайёрла")
+    assert "тугаш санаси" in _all(ready).lower()
+
+
+def test_ppu_with_no_blank_uploaded_says_so(ready, monkeypatch) -> None:
+    monkeypatch.setattr(ready.ctl()["ppu"], "templates", list)
+    _text(ready, "🧾 ППУ")
+    assert "бўш" in _last(ready)
+
+
+def test_snils_flow_keeps_the_last_number_when_left_blank(
+        ready, monkeypatch, tmp_path) -> None:
+    blank = tmp_path / "standart"
+    blank.mkdir()
+    seen = {}
+
+    def fake_generate(**kwargs):
+        seen.update(kwargs)
+
+        class R:
+            pdf = b"%PDF-1.4\n"
+            filename = "Сейтимов СНИЛС.pdf"
+            snils = "123-456-789 01"
+            reg_date = date(2026, 7, 27)
+
+        return R()
+
+    ctl = ready.ctl()["snils"]
+    monkeypatch.setattr(ctl, "templates", lambda: [blank])
+    monkeypatch.setattr(ctl, "read_passport", lambda image: {
+        "surname": "СЕЙТИМОВ", "name": "АЗИЗ", "patronymic": "",
+        "birth_date": "01.02.1990", "birth_place": "Узбекистан",
+        "gender": "муж"})
+    monkeypatch.setattr(ctl, "generate", fake_generate)
+
+    _text(ready, "🔖 СНИЛС")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "сана" in _last(ready).lower()
+    _text(ready, "27.07.2026")
+    _text(ready, "✅ Тайёрла")        # рақам — охиргиси
+
+    assert seen["reg_date"] == date(2026, 7, 27)
+    assert seen["snils"] == "", "a blank answer must mean «the last number»"
+    assert seen["birth_date"] == date(1990, 2, 1), "the date arrived as text"
+    assert seen["template"] == blank
+    assert "123-456-789 01" in _all(ready)
+    assert ready.files and ready.files[-1].name == "Сейтимов СНИЛС.pdf"
