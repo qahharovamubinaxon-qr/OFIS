@@ -7,7 +7,7 @@ every test exercises the real state machine and only stubs the wire.
 from __future__ import annotations
 
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -120,6 +120,7 @@ _DESKTOP_TO_MODULE = {
     "nav.dms": "dms",
     "nav.strahovka": "insurance",
     "nav.inn": "inn",
+    "nav.chek": "chek",
     "nav.beydjik": "beydjik",
     "nav.patent": "patent_card",
     "nav.razreshenie": "razreshenie",
@@ -139,11 +140,7 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-#: ЧЕК stays on the computer. Its renderer makes up the payment's own proof —
-#: a random 6-digit код авторизации and a random company id on a bank-receipt
-#: background — and I will not build the machinery that mails those out.
-_NOT_ON_THE_PHONE = {"nav.chek",
-                     # ППУ needs the office's own blank uploaded first
+_NOT_ON_THE_PHONE = {  # ППУ needs the office's own blank uploaded first
                      "nav.ppu",
                      # СНИЛС likewise
                      "nav.snils"}
@@ -750,9 +747,80 @@ def test_razreshenie_keeps_an_earlier_card_of_the_same_surname(
     assert first.exists(), "the first card was overwritten"
 
 
-def test_the_receipt_section_is_deliberately_not_on_the_phone() -> None:
-    """ЧЕК makes up the payment's own proof — a random код авторизации on a
-    bank-receipt background. It stays where it is; the bot does not mail it."""
-    from src.controllers.ofis_modules import BY_KEY
+# ---------------------------------------------------------------- ЧЕК flow
 
-    assert "chek" not in BY_KEY
+
+def _chek_ready(ready, monkeypatch, *, company="357852345266REGD"):
+    ctl = ready.ctl()["chek"]
+    ctl.set_company_id(company)
+    monkeypatch.setattr(ctl, "read_patent_fields", lambda image: {
+        "fam": "СЕЙТИМОВ", "ism": "АЗИЗ", "otch": "",
+        "inn": "772365215425"})
+    return ctl
+
+
+def _chek_answers(ready, *, avtoriz="357852") -> None:
+    _text(ready, "15000,50")
+    _text(ready, "1234")
+    _text(ready, avtoriz)
+    _text(ready, "27.07.2026")
+    _text(ready, "14:30:05")
+
+
+def test_chek_flow_passes_the_typed_authorisation_code_through(
+        ready, monkeypatch) -> None:
+    seen = {}
+
+    def fake_generate(**kwargs):
+        seen.update(kwargs)
+        return b"%PDF-1.4\n", "Документ-2026-07-27-14-30-05.pdf"
+
+    ctl = _chek_ready(ready, monkeypatch)
+    monkeypatch.setattr(ctl, "generate", fake_generate)
+
+    _text(ready, "🧾 ЧЕК")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert "Сумма" in _last(ready)
+    _chek_answers(ready)
+
+    assert seen["avtoriz"] == "357852", "the operator's code never arrived"
+    assert (seen["rub"], seen["kop"]) == (15000, 50)
+    assert seen["card4"] == "1234"
+    assert seen["when"] == datetime(2026, 7, 27, 14, 30, 5)
+    assert seen["fam"] == "СЕЙТИМОВ"
+    assert ready.files
+
+
+def test_chek_refuses_to_run_without_the_company_id(ready, monkeypatch) -> None:
+    _chek_ready(ready, monkeypatch, company="")
+    _text(ready, "🧾 ЧЕК")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _chek_answers(ready)
+    assert "компания коди" in _all(ready).lower()
+    assert not ready.files, "a receipt printed with no company id"
+
+
+def test_chek_refuses_a_missing_authorisation_code(ready, monkeypatch) -> None:
+    """The whole point of the section reaching the phone: the code is copied
+    off the bank's confirmation, never generated."""
+    _chek_ready(ready, monkeypatch)
+    _text(ready, "🧾 ЧЕК")
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _chek_answers(ready, avtoriz="✅ Тайёрла")   # left blank
+    assert "код авторизации" in _all(ready).lower()
+    assert not ready.files, "a receipt printed with an empty код авторизации"
+
+
+def test_the_receipt_never_invents_its_own_proof() -> None:
+    """No randomness anywhere in the receipt path — the authorisation code and
+    the company id both come from outside the program."""
+    from pathlib import Path as _P
+
+    for name in ("src/pdf/chek_renderer.py", "src/controllers/chek_controller.py"):
+        source = _P(name).read_text(encoding="utf-8")
+        for generator in ("import random", "random.", "randint", "getrandbits",
+                          "uuid4", "secrets."):
+            assert generator not in source, f"{name} still makes something up"

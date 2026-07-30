@@ -176,7 +176,8 @@ class MainWindow(QMainWindow):
             from src.controllers.chek_controller import ChekController
             from src.ui.views.chek_view import ChekView
 
-            return ChekView(ChekController(self._container.resolve(OcrService)))
+            return ChekView(ChekController(
+                self._container.resolve(OcrService), self._settings))
         if key == "nav.svera":
             from src.controllers.svera_controller import SveraController
 

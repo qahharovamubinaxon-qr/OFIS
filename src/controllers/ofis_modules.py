@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 from src.common.errors import OfisError
@@ -302,6 +302,53 @@ def _run_photo34(ctx: RunContext, state: dict) -> list[Path]:
     return [out]
 
 
+def _run_chek(ctx: RunContext, state: dict) -> list[Path]:
+    """ЧЕК — the receipt for a premium the office actually paid.
+
+    The two values that make it a record rather than a picture are not
+    generated here or anywhere else: the код авторизации is copied off the
+    bank's own confirmation by the operator, and the company id is the
+    office's, recorded once in Sozlamalar. Without either, nothing prints.
+    """
+    from src.config import paths
+
+    answers = state["answers"]
+    ctl = ctx.ctl["chek"]
+    if not ctl.company_id():
+        raise OfisError("Компания коди йўқ — компютерда ЧЕК бўлимида бир "
+                        "марта ёзиб қўйинг, кейин ботдан ишлатасиз.")
+
+    fields = ctl.read_patent_fields(state["photos"][0])
+    try:
+        rub, kop = ctl.parse_amount(str(answers.get("summa") or ""))
+    except ValueError:
+        raise OfisError("Суммани тўғри ёзинг, масалан: 15000,50") from None
+
+    when = datetime.combine(answers.get("when_date") or date.today(),
+                            _clock(str(answers.get("when_time") or "")))
+    pdf, name = ctl.generate(
+        **fields,
+        card4=str(answers.get("card4") or ""),
+        when=when, rub=rub, kop=kop,
+        avtoriz=str(answers.get("avtoriz") or ""))
+
+    out = _free_path(paths.output_dir() / "chek", name)
+    out.write_bytes(pdf)
+    ctx.note(f"{fields['fam']} {fields['ism']} · {rub:,}".replace(",", " ")
+             + f",{kop:02d} ₽ · {when:%d.%m.%Y %H:%M:%S}")
+    return [out]
+
+
+def _clock(text: str) -> time:
+    """«14:30» / «14:30:05» / blank → the time on the receipt."""
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(text.strip(), fmt).time()
+        except ValueError:
+            continue
+    return datetime.now().time().replace(microsecond=0)
+
+
 def _run_jpg2pdf(ctx: RunContext, state: dict) -> list[Path]:
     from src.config import paths
     from src.services.jpg2pdf_service import build_pdf
@@ -483,6 +530,16 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("Паспорт", "Патент"),
            asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("profession", "Профессия (ихтиёрий):", kind="text"))),
+    Module("chek", "🧾 ЧЕК", _run_chek,
+           photo_prompt="Ишчининг ПАТЕНТИ расмини юборинг.",
+           photo_labels=("Патент",),
+           asks=(Ask("summa", "Сумма (₽) — масалан 15000,50:", kind="text"),
+                 Ask("card4", "Карта рақамининг охирги 4 таси:", kind="text"),
+                 Ask("avtoriz", "Код авторизации — банк квитанциясидан "
+                     "кўчириб ёзинг (6 та рақам):", kind="text"),
+                 Ask("when_date", "Тўлов куни (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("when_time", "Тўлов соати (СС:ДД:СС, бўш — ҳозир):",
+                     kind="text"))),
     Module("inn", "🔢 ИНН", _run_inn,
            photo_prompt="Ишчининг паспорти ёки патенти расмини юборинг.",
            photo_labels=("Паспорт/патент",),
@@ -573,6 +630,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     """Build every controller the modules need. Qt-free, so it works from a
     background thread (the bot poller) as well as the HTTP server."""
     from src.controllers.beydjik_controller import BeydjikController
+    from src.controllers.chek_controller import ChekController
     from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
     from src.controllers.inn_controller import InnController
@@ -640,6 +698,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "inn": InnController(ocr, InnService()),
         "beydjik": BeydjikController(
             ocr, BeydjikService(container.resolve(SettingsService))),
+        "chek": ChekController(ocr, container.resolve(SettingsService)),
         # ПАТЕНТ is the badge on a different blank — same controller family.
         "patent": PatentController(
             ocr, PatentService(container.resolve(SettingsService))),

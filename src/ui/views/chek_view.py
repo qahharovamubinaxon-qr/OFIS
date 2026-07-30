@@ -95,6 +95,26 @@ class ChekView(QWidget):
         row.addStretch(1)
         root.addLayout(row)
 
+        # Neither of these two is ever generated: the authorisation code is
+        # copied off the bank's confirmation, the company id is the office's.
+        bank = QHBoxLayout()
+        bank.addWidget(QLabel("Код авторизации:"))
+        self._avtoriz = QLineEdit()
+        self._avtoriz.setMaxLength(6)
+        self._avtoriz.setFixedWidth(90)
+        self._avtoriz.setPlaceholderText("357852")
+        bank.addWidget(self._avtoriz)
+        bank.addWidget(QLabel("Компания коди:"))
+        self._company = QLineEdit()
+        self._company.setFixedWidth(190)
+        self._company.setPlaceholderText("бир марта ёзилади")
+        self._company.setText(self._c.company_id())
+        self._company.editingFinished.connect(
+            lambda: self._c.set_company_id(self._company.text()))
+        bank.addWidget(self._company)
+        bank.addStretch(1)
+        root.addLayout(bank)
+
         trow = QHBoxLayout()
         trow.addWidget(QLabel("Шаблон:"))
         self._tpl = QComboBox()
@@ -128,7 +148,9 @@ class ChekView(QWidget):
         self._status = QLabel(
             "Патент расмини ташланг — Ф.И.О. ва ИНН ўзи ўқилади (текшириб "
             "тўғрилаш мумкин). Число, соат, сумма ва карта рақамининг охирги "
-            "4 тасини киритиб RUN босинг — PDF Рабочий столга сақланади.")
+            "4 тасини киритиб RUN босинг — PDF Рабочий столга сақланади.\n"
+            "Код авторизации банк квитанциясидан кўчирилади, компания коди "
+            "бир марта ёзилади — иккисини ҳам программа ўйлаб чиқармайди.")
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
@@ -184,12 +206,23 @@ class ChekView(QWidget):
         except ValueError:
             self._warn("Суммани тўғри киритинг, масалан: 15000,50")
             return
+        avtoriz = "".join(c for c in self._avtoriz.text() if c.isdigit())
+        if len(avtoriz) != 6:
+            self._warn("Код авторизацияни банк квитанциясидан кўчириб ёзинг "
+                       "(6 та рақам). Программа уни ўзи ўйлаб чиқармайди.")
+            return
+        self._c.set_company_id(self._company.text())
+        if not self._c.company_id():
+            self._warn("Компания кодини бир марта ёзиб қўйинг — усиз чек "
+                       "чиқарилмайди.")
+            return
         q, t = self._date.date(), self._time.time()
         when = datetime(q.year(), q.month(), q.day(), t.hour(), t.minute(), t.second())
         tpl = self._tpl.currentData()
         try:
             pdf, name = self._c.generate(fam=fam, ism=ism, otch=otch, inn=inn,
                                          card4=card4, when=when, rub=rub, kop=kop,
+                                         avtoriz=avtoriz,
                                          template=Path(tpl) if tpl else None)
         except Exception as e:  # noqa: BLE001 — show the operator, don't crash
             self._failed(e)
@@ -240,7 +273,8 @@ class ChekView(QWidget):
     # -- «Обновить» support -------------------------------------------
     def reset(self) -> None:
         self._dz.clear()
-        for w in (self._fam, self._ism, self._otch, self._inn, self._summa, self._card4):
-            w.clear()
+        for w in (self._fam, self._ism, self._otch, self._inn, self._summa,
+                  self._card4, self._avtoriz):
+            w.clear()  # the company id stays — it belongs to the office
         self._last_pdf = None
         self._open.setEnabled(False)

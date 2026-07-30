@@ -4,27 +4,22 @@ Only the 12 measured fields are written; everything else on the template is
 never touched. Font is Microsoft Sans Serif from Windows, embedded per draw.
 """
 from __future__ import annotations
-import os, random
+import os
 from dataclasses import dataclass
 from datetime import datetime, date, time
 
 import fitz
 
+from src.common.errors import ValidationError
 from src.pdf.chek_spec import FIELDS, FONT_PATH, MONTHS_RU
 
 TEMPLATE_DEFAULT = os.path.join("templates", "chek", "premiya_blank.pdf")
 
-# «ишчини компания idcи» — the value is BAKED INTO the template image, so we
-# paint a white patch over it and write a fresh random one (12 digits + 4
-# uppercase Latin letters, e.g. 357852345266REGD) on every generated check.
+# «ишчини компания idcи» — the value is BAKED INTO the template image, so a
+# white patch goes over it and the office's own id is written in its place.
 IDCI_COVER = (13.0, 960.0, 172.0, 977.0)
 IDCI_POS = (14.2, 973.0)
 IDCI_SIZE = 10
-
-def random_idci() -> str:
-    import string
-    return ("".join(random.choice("0123456789") for _ in range(12))
-            + "".join(random.choice(string.ascii_uppercase) for _ in range(4)))
 
 # ── суммани сўз билан ёзиш (рубль, аёл-жинс минг) ──────────────────────────
 _U = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"]
@@ -72,12 +67,37 @@ def format_amount(rub: int, kop: int) -> str:
 
 @dataclass
 class ChekData:
+    """Everything printed on the receipt. Nothing here is invented.
+
+    ``avtoriz`` and ``idci`` in particular are what make the receipt a record
+    of a payment rather than a picture of one, so they are required: the
+    authorisation code is copied off the bank's own confirmation and the
+    company id is the office's, recorded once in Sozlamalar. Earlier versions
+    generated both at random — see :func:`_check`.
+    """
+
     fam: str; ism: str; otch: str; inn: str
     card4: str
     when: datetime            # entered date + h:m:s
     rub: int; kop: int
-    avtoriz: str | None = None   # 6-digit; random when None
-    idci: str | None = None      # 12 digits + 4 letters; random when None
+    avtoriz: str              # 6 digits, from the bank's confirmation
+    idci: str                 # the office's own company id
+
+
+def _check(data: ChekData) -> tuple[str, str]:
+    """The two values the program must never make up."""
+    avtoriz = "".join(ch for ch in (data.avtoriz or "") if ch.isdigit())
+    if len(avtoriz) != 6:
+        raise ValidationError(
+            "Код авторизации киритилмаган — уни банк квитанциясидан "
+            "(ёки выпискадан) кўчириб ёзинг. 6 та рақам. Программа ўзи "
+            "ўйлаб чиқармайди.")
+    idci = (data.idci or "").strip()
+    if not idci:
+        raise ValidationError(
+            "Компания коди йўқ — Sozlamalar бўлимида бир марта ёзиб "
+            "қўйинг (ЧЕК → компания коди).")
+    return avtoriz, idci
 
 def _ensure_font(page, fontfile):
     page.insert_font(fontname="micross", fontfile=fontfile)
@@ -106,6 +126,7 @@ def _put_wrapped(page, key, text, fontfile, line_h=12.3, max_w=200.0):
 def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes, str]:
     """Returns (pdf_bytes, suggested_filename)."""
     tpl = template_path or TEMPLATE_DEFAULT
+    avtoriz, idci = _check(data)
     fontfile = FONT_PATH if os.path.exists(FONT_PATH) else None
     if fontfile is None:
         raise RuntimeError("Microsoft Sans Serif topilmadi: " + FONT_PATH)
@@ -115,7 +136,6 @@ def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes
     w = data.when
     fam, ism, otch = data.fam.upper().strip(), data.ism.upper().strip(), data.otch.upper().strip()
     inn = "".join(ch for ch in data.inn if ch.isdigit())
-    avtoriz = data.avtoriz or f"{random.randint(0, 999999):06d}"
     amount = format_amount(data.rub, data.kop)
 
     _put(page, "datetime", f"{w.day} {MONTHS_RU[w.month - 1]} {w.year} {w:%H:%M:%S} мск", fontfile)
@@ -129,9 +149,9 @@ def render_chek(data: ChekData, template_path: str | None = None) -> tuple[bytes
     _put_wrapped(page, "inn12", f"121000000000{inn}", fontfile)
     _put_wrapped(page, "sana_baza", f"1044525225009006{w:%d%m%Y}11071538", fontfile)
     _put(page, "avtoriz", avtoriz, fontfile)
-    # company idci: white-out the baked value, write a fresh random one
+    # company idci: white-out the baked value, write the office's own
     page.draw_rect(fitz.Rect(*IDCI_COVER), color=None, fill=(1, 1, 1))
-    page.insert_text(IDCI_POS, data.idci or random_idci(), fontsize=IDCI_SIZE,
+    page.insert_text(IDCI_POS, idci, fontsize=IDCI_SIZE,
                      fontname="micross", color=(0, 0, 0))
     _put(page, "summa_1", amount, fontfile)
     _put(page, "summa_2", amount, fontfile)

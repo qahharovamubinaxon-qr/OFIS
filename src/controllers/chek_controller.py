@@ -23,6 +23,10 @@ log = get_logger(__name__)
 
 TEMPLATES_DIR = Path("templates") / "chek"
 
+#: The office's own company id, recorded once. It used to be generated at
+#: random on every receipt, which made the printed id belong to nobody.
+KEY_COMPANY_ID = "chek.company_id"
+
 _CHEK_PROMPT = (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
@@ -35,11 +39,22 @@ _CHEK_PROMPT = (
 
 
 class ChekController:
-    def __init__(self, ocr: OcrService) -> None:
+    def __init__(self, ocr: OcrService, settings=None) -> None:
         self._ocr = ocr
+        self._settings = settings
 
     def ai_available(self) -> bool:
         return self._ocr.available()
+
+    # ── the office's own company id ──────────────────────────────────
+    def company_id(self) -> str:
+        if self._settings is None:
+            return ""
+        return str(self._settings.get(KEY_COMPANY_ID, "") or "").strip()
+
+    def set_company_id(self, value: str) -> None:
+        if self._settings is not None:
+            self._settings.set(KEY_COMPANY_ID, (value or "").strip())
 
     # ── patent → editable fields ─────────────────────────────────────
     def read_patent_fields(self, image: bytes) -> dict[str, str]:
@@ -89,9 +104,13 @@ class ChekController:
 
     def generate(self, *, fam: str, ism: str, otch: str, inn: str,
                  card4: str, when: datetime, rub: int, kop: int,
-                 template: Path | None = None) -> tuple[bytes, str]:
+                 avtoriz: str, template: Path | None = None) -> tuple[bytes, str]:
+        """``avtoriz`` is the bank's own authorisation code, typed in by the
+        operator; the company id comes from Sozlamalar. The renderer refuses
+        to print without either — neither is ever generated."""
         data = ChekData(fam=fam, ism=ism, otch=otch, inn=inn,
-                        card4=card4, when=when, rub=rub, kop=kop)
+                        card4=card4, when=when, rub=rub, kop=kop,
+                        avtoriz=avtoriz, idci=self.company_id())
         return render_chek(data, str(template) if template else None)
 
     @staticmethod
