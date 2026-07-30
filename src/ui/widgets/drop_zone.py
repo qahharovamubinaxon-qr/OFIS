@@ -1,8 +1,10 @@
 """A large, modern upload tile: click to browse OR drag & drop a file onto it.
 
-Used for passport / patent images. Holds the chosen path; shows the filename and
-a "filled" style once set. Accepts a drag from Explorer or a click that opens a
-file dialog.
+Used for passport / patent images, and — where the caller passes ``extensions``
+— for ready documents such as the трудовой договор and the уведомление, which
+arrive as PDFs rather than photographs. Holds the chosen path; shows the
+filename and a "filled" style once set. Accepts a drag from Explorer or a click
+that opens a file dialog.
 """
 
 from __future__ import annotations
@@ -14,19 +16,27 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QFrame, QLabel, QVBoxLayout
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
+#: Tiles that take a ready document rather than a photograph of one — the
+#: трудовой договор and the уведомление arrive as PDFs.
+PDF_EXTS = {".pdf"}
+DOCUMENT_EXTS = _IMAGE_EXTS | PDF_EXTS
 
 
 class DropZone(QFrame):
     changed = Signal()
 
     def __init__(self, icon: str, title: str, parent=None,
-                 multiple: bool = False) -> None:
+                 multiple: bool = False,
+                 extensions: set[str] | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("dropZone")
         self.setAcceptDrops(True)
         self.setMinimumHeight(112)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._title = title
+        #: What this tile takes. Photographs unless the caller says otherwise.
+        self._exts = ({e.lower() for e in extensions} if extensions
+                      else set(_IMAGE_EXTS))
         self._path: Path | None = None
         #: In ``multiple`` mode every drop *adds* to the pile rather than
         #: replacing it — a licence is photographed front and then back, and
@@ -97,13 +107,18 @@ class DropZone(QFrame):
         self.style().polish(self)
 
     # -- interactions ------------------------------------------------------
+    def _dialog_filter(self) -> str:
+        patterns = " ".join(f"*{e}" for e in sorted(self._exts))
+        label = "Fayllar" if self._exts >= PDF_EXTS else "Images"
+        return f"{label} ({patterns})"
+
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
-        images = "Images (*.jpg *.jpeg *.png *.webp *.bmp *.tiff)"
+        allowed = self._dialog_filter()
         if self._multiple:
-            chosen, _ = QFileDialog.getOpenFileNames(self, self._title, "", images)
+            chosen, _ = QFileDialog.getOpenFileNames(self, self._title, "", allowed)
             self._add([Path(p) for p in chosen])
             return
-        path, _ = QFileDialog.getOpenFileName(self, self._title, "", images)
+        path, _ = QFileDialog.getOpenFileName(self, self._title, "", allowed)
         if path:
             self._set_path(Path(path))
 
@@ -127,19 +142,17 @@ class DropZone(QFrame):
             self._add(dropped if self._multiple else dropped[:1])
             event.acceptProposedAction()
 
-    @staticmethod
-    def _images(event) -> list[Path]:
+    def _images(self, event) -> list[Path]:
         mime = event.mimeData()
         if not mime.hasUrls():
             return []
         out = []
         for url in mime.urls():
             p = Path(url.toLocalFile())
-            if p.suffix.lower() in _IMAGE_EXTS and p.exists():
+            if p.suffix.lower() in self._exts and p.exists():
                 out.append(p)
         return out
 
-    @classmethod
-    def _first_image(cls, event) -> Path | None:
-        found = cls._images(event)
+    def _first_image(self, event) -> Path | None:
+        found = self._images(event)
         return found[0] if found else None

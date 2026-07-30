@@ -45,17 +45,40 @@ class Slot(NamedTuple):
 #: block over by hand every time; now it starts there.
 ADDRESS_SHIFT = 28.35 / 595.28
 
+#: The front sheet's value column, as a share of the page width.
+#:
+#: ONE number for the whole column, because the sheet's own values are in one
+#: straight line and a column that wanders reads as crooked at a glance — which
+#: is what the office said about it. The eight slots below were first read off
+#: their filled card by eye and ended up at two different x (0.304 and 0.309),
+#: both left of where the sheet puts its own.
+#:
+#: This is measured, not judged. The blank still carries four of the site's own
+#: values — «Отсутствует» twice, «Нет», «За пределами РФ» — so their leftmost ink
+#: was found by pixel and the pen position backed out of it through each
+#: letter's left side bearing («Н» is the reliable one: a flat stem, almost no
+#: bearing). Three of the four agree on 0.3135; «За пределами РФ» sits a shade
+#: left on the site itself, so it is not the one to follow.
+VALUE_X = 0.3135
+
 FRONT: dict[str, Slot] = {
-    "fio":          Slot(0.304, 0.200, 0.0187),
-    "fio_latin":    Slot(0.304, 0.259, 0.0187),
-    "fio_latin_2":  Slot(0.304, 0.301, 0.0187),
-    "birth_date":   Slot(0.304, 0.358, 0.0187),
-    "gender":       Slot(0.309, 0.415, 0.0187),
-    "citizenship":  Slot(0.309, 0.470, 0.0187),
-    "citizenship_2": Slot(0.309, 0.512, 0.0187),
-    "country":      Slot(0.309, 0.567, 0.0187, SANS_BOLD, BLUE),
-    # «Иностранный паспорт» — the foot of the front sheet
-    "passport":     Slot(0.319, 0.943, 0.0197),
+    # Baselines: each value's cap-top is level with its LABEL's cap-top, which
+    # is how the sheet sets its own. Measured off the label column of the blank
+    # and offset by the cap height of the value type.
+    "fio":          Slot(VALUE_X, 0.2006, 0.0187),
+    "fio_latin":    Slot(VALUE_X, 0.2592, 0.0187),
+    "fio_latin_2":  Slot(VALUE_X, 0.3012, 0.0187),
+    "birth_date":   Slot(VALUE_X, 0.3563, 0.0187),
+    "gender":       Slot(VALUE_X, 0.4138, 0.0187),
+    "citizenship":  Slot(VALUE_X, 0.4692, 0.0187),
+    "citizenship_2": Slot(VALUE_X, 0.5112, 0.0187),
+    "country":      Slot(VALUE_X, 0.5663, 0.0187, SANS_BOLD, BLUE),
+    # «Иностранный паспорт» — the foot of the front sheet. Its own row: the
+    # label there is a collapsible heading, set BOLD and running further right
+    # than the field labels above, so the value has to start further right than
+    # the column. Far enough that it still clears the heading on a blank
+    # photographed a little larger, where the heading is longer.
+    "passport":     Slot(0.330, 0.943, 0.0197),
 }
 
 #: The passport is printed FIVE times across the pair: once at the foot of

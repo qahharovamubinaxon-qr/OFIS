@@ -22,10 +22,24 @@ from src.domain.enums import Gender
 
 @pytest.fixture(autouse=True)
 def isolated_data_dir(monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", tempfile.mkdtemp())
+    # both roots: paths.data_dir() reads LOCALAPPDATA on Windows and
+    # XDG_DATA_HOME elsewhere, and these tests must not touch the real one
+    sandbox = tempfile.mkdtemp()
+    monkeypatch.setenv("XDG_DATA_HOME", sandbox)
+    monkeypatch.setenv("LOCALAPPDATA", sandbox)
     paths.data_dir.cache_clear()
     yield
     paths.data_dir.cache_clear()
+
+
+def _plain(text: str) -> str:
+    """PDF text as it reads, not as MuPDF spells it.
+
+    MuPDF hands the spaces a :class:`fitz.TextWriter` laid down back as
+    NO-BREAK SPACE (U+00A0), so a plain «Номер паспорта» never matches. Fold
+    them, and the newlines, into ordinary spaces before looking for anything.
+    """
+    return " ".join(text.replace("\xa0", " ").split())
 
 
 def _passport() -> Passport:
@@ -197,48 +211,81 @@ def test_translation_pdf_and_docx(monkeypatch) -> None:
     assert result.pdf_path.exists() and result.docx_path.exists()
 
     doc = fitz.open(result.pdf_path)
-    # page 1 = scan of the original, page 2 = translation, page 3 = certification
+    # sheet 1 = the original, sheet 2 = the translation, sheet 3 = untouched
     assert len(doc) == 3
-    translation = doc[1].get_text().replace("\n", " ")
+    translation = _plain(doc[1].get_text())
     assert "ПЕРЕВОД С УЗБЕКСКОГО ЯЗЫКА НА РУССКИЙ ЯЗЫК" in translation
     assert "ПАСПОРТ" in translation and "ИСАКОВ" in translation
     assert "FA7822242" in translation and "Отдел внутренних дел" in translation
     # the translation page itself carries no translator name and no date —
-    # those belong on the separate certification sheet
+    # those belong on the notary's own sheet, which he completes by hand
     assert "переводчик" not in translation.lower()
     assert "нотариус" not in translation.lower()
 
 
-def test_certification_page_is_a_blank_the_notary_completes(monkeypatch) -> None:
-    """Page 3 prints the standard wording but NEVER a seal, a signature or a
-    registry number — the notary applies those in person."""
-    import re
-
+def test_the_original_is_on_sheet_one_and_the_translation_fits_one_sheet(
+        monkeypatch) -> None:
+    """Sheet 1 carries the copy of the original; the translation is set to fit
+    sheet 2 whole, so the package is always exactly three sheets."""
     from src.services.perevod_service import PerevodService
 
+    long_answer = dict(_TRANSLATION)
+    long_answer["fields"] = _TRANSLATION["fields"] + [
+        {"label": f"Дополнительное поле {i}",
+         "value": "Отдел внутренних дел города Ташкента Республики Узбекистан"}
+        for i in range(40)
+    ]
     monkeypatch.setattr("src.services.perevod_service.ask",
-                        lambda *a, **k: json.dumps(_TRANSLATION))
+                        lambda *a, **k: json.dumps(long_answer))
     monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
 
-    svc = PerevodService(
-        key_getter=lambda: "test-key",
-        cert_getter=lambda: {"notary": "Акимов Глеб Борисович",
-                             "translator": "Варавва Мария Васильевна",
-                             "city": "город Москва"})
-    result = svc.translate([_valid_png()], form_date=date(2026, 7, 26))
-    cert = fitz.open(result.pdf_path)[2].get_text()
+    svc = PerevodService(key_getter=lambda: "test-key")
+    result = svc.translate([_valid_png(), _valid_png()], doc_type="passport")
 
-    # the wording and the configured names are printed …
-    assert "свидетельствую подлинность подписи" in cert.replace("\n", " ")
-    assert "нотариус города Москвы" in cert.replace("\n", " ")
-    assert "Акимов Глеб Борисович" in cert
-    assert "Варавва Мария Васильевна" in cert
-    # … but the registry number, fee and date are left blank
-    assert "Зарегистрировано в реестре: №" in cert.replace("\n", " ")
-    tail = cert.replace("\n", " ").split("реестре: №", 1)[1][:30]
-    assert not re.search(r"\d", tail), f"registry number must be blank: {tail!r}"
-    # no image is drawn on the page (no reproduced seal or signature)
-    assert not fitz.open(result.pdf_path)[2].get_images()
+    doc = fitz.open(result.pdf_path)
+    assert len(doc) == 3, "package must stay three sheets however long the text"
+    # both photographs of the original are pasted on sheet 1, not on later ones
+    assert len(doc[0].get_images()) == 2
+    assert not _plain(doc[0].get_text())
+    assert "Дополнительное поле 39" in _plain(doc[1].get_text())
+    # sheet 3 is the notary's — nothing at all is printed or drawn on it
+    assert not _plain(doc[2].get_text())
+    assert not doc[2].get_images()
+
+
+def test_blanks_are_kept_and_used_for_every_sheet(monkeypatch, tmp_path) -> None:
+    """The office uploads its three sheets once; every package is laid on them."""
+    from src.services import perevod_service as ps
+
+    monkeypatch.setattr(ps, "ask", lambda *a, **k: json.dumps(_TRANSLATION))
+    monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
+    monkeypatch.setattr(ps.paths, "user_templates_dir", lambda: tmp_path)
+
+    # a blank with a word on it, so it can be recognised in the output
+    marks = []
+    for index in range(1, 4):
+        blank = tmp_path / f"blank{index}.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((60, 60), f"BLANKA-{index}", fontsize=20)
+        doc.save(str(blank))
+        marks.append(ps.set_blank(index, blank))
+
+    assert [p.name for p in ps.blanks()] == ["page1.pdf", "page2.pdf", "page3.pdf"]
+    assert all(m.exists() for m in marks)
+
+    svc = ps.PerevodService(key_getter=lambda: "test-key")
+    result = svc.translate([_valid_png()], doc_type="passport")
+
+    doc = fitz.open(result.pdf_path)
+    assert len(doc) == 3
+    for index in range(3):
+        assert f"BLANKA-{index + 1}" in _plain(doc[index].get_text())
+    # sheet 3 carries the blank's own text and NOTHING the program added
+    assert _plain(doc[2].get_text()) == "BLANKA-3"
+
+    ps.clear_blank(2)
+    assert ps.blank_path(2) is None and ps.blank_path(1) is not None
 
 
 def test_fields_follow_the_standard_order(monkeypatch) -> None:
@@ -252,7 +299,7 @@ def test_fields_follow_the_standard_order(monkeypatch) -> None:
     svc = PerevodService(key_getter=lambda: "test-key")
     result = svc.translate([b"x"], doc_type="passport", form_date=date(2026, 7, 26))
 
-    text = "".join(p.get_text() for p in fitz.open(result.pdf_path))
+    text = _plain("".join(p.get_text() for p in fitz.open(result.pdf_path)))
     # Номер паспорта precedes Фамилия, which precedes Имя, which precedes
     # Дата рождения — the canonical passport order, not the AI's order.
     assert (text.index("Номер паспорта") < text.index("Фамилия")

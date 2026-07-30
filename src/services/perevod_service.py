@@ -2,14 +2,21 @@
 
 The office's notary offers translation services: a client's passport, driving
 licence, birth/marriage certificate, diploma or аттестат is translated into
-Russian, printed, stapled behind a copy of the original and certified by the
-notary.
+Russian, printed on the office's own three pre-printed sheets and certified by
+the notary.
 
 Flow: drop the document photos (front/back) → the AI recognises WHICH document
 it is, reads every field and returns a structured translation → the program
-renders it in the standard Russian notarial-translation layout (header naming
-the source language, the document body as «поле: значение», then the
-translator's attestation line the notary signs under).
+lays the package out on the three uploaded blanks:
+
+* **sheet 1** — the original itself, turned black-and-white and centred;
+* **sheet 2** — the translation;
+* **sheet 3** — nothing at all. It is the notary's own certification sheet:
+  he writes the registry number, the date, the names and the seal on it by
+  hand, so the program must not print a word there.
+
+All three come out as ONE three-page PDF (plus the translation as Word, for
+correcting a name before printing).
 
 ``templates/perevod/forms.v1.json`` holds the canonical field order per
 document type (CIS passports, driving licences, certificates …) so output stays
@@ -19,15 +26,34 @@ consistent no matter how the AI phrases things.
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from src.ai.text_client import ask
-from src.common.errors import OfisError
+from src.common.errors import OfisError, ValidationError
 from src.common.logging import get_logger
 from src.config import paths
 from src.pdf.engine import _font_file
+from src.pdf.perevod_spec import (
+    A4_LONG,
+    A4_SHORT,
+    BLANK_STEMS,
+    LABEL_SHARE,
+    LEADING,
+    MM,
+    PASSPORT_PAGE_MM,
+    PASSPORT_SPREAD_MM,
+    REAL_MM,
+    SCAN_BOX,
+    SCAN_GAP_MM,
+    SPREAD_ASPECT,
+    TEXT_BOX,
+    TEXT_OPACITY,
+    TEXT_SIZE,
+    TEXT_SIZE_MIN,
+)
 
 log = get_logger(__name__)
 
@@ -42,6 +68,10 @@ DOC_TYPES = [
     ("migration_card", "Миграционная карта"),
     ("other", "Бошқа ҳужжат"),
 ]
+
+#: What the office may hand over as a blank — its own sheet as PDF, or a scan
+#: of it as a picture.
+BLANK_SUFFIXES = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 _PROMPT = """Ты — присяжный переводчик, готовишь НОТАРИАЛЬНЫЙ перевод документа \
 на русский язык.
@@ -87,43 +117,94 @@ class PerevodResult:
     title: str
 
 
-def _scan_page(doc, image: bytes, crop: dict | None = None) -> bool:
-    """Add a page holding the original document as a clean B/W «scan».
+# ---------------------------------------------------------------- blanks
+
+
+def blanks_dir() -> Path:
+    """Where the office's own three sheets live.
+
+    In AppData, never in the program folder — rebuilding the EXE must not throw
+    the office's blanks away.
+    """
+    folder = paths.user_templates_dir() / "perevod"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def blank_path(index: int) -> Path | None:
+    """The uploaded blank for sheet ``index`` (1..3), or None if there is none."""
+    if not 1 <= index <= len(BLANK_STEMS):
+        return None
+    stem = BLANK_STEMS[index - 1]
+    for suffix in BLANK_SUFFIXES:
+        candidate = blanks_dir() / f"{stem}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def blanks() -> list[Path | None]:
+    return [blank_path(i) for i in range(1, len(BLANK_STEMS) + 1)]
+
+
+def set_blank(index: int, source: Path) -> Path:
+    """Register one sheet. Replaces whatever was there under any suffix."""
+    if not 1 <= index <= len(BLANK_STEMS):
+        raise ValidationError("Бланка рақами 1, 2 ёки 3 бўлиши керак",
+                              context={"index": index})
+    source = Path(source)
+    suffix = source.suffix.lower()
+    if suffix not in BLANK_SUFFIXES:
+        raise ValidationError(
+            "Бланка PDF ёки расм бўлиши керак (pdf, png, jpg)",
+            context={"path": str(source)})
+    if not source.exists():
+        raise ValidationError("Бланка файли топилмади", context={"path": str(source)})
+    clear_blank(index)
+    dest = blanks_dir() / f"{BLANK_STEMS[index - 1]}{suffix}"
+    shutil.copyfile(source, dest)
+    log.info("ПЕРЕВОД: %d-бланка юкланди — %s", index, dest.name)
+    return dest
+
+
+def clear_blank(index: int) -> None:
+    existing = blank_path(index)
+    if existing is not None:
+        existing.unlink(missing_ok=True)
+
+
+# ------------------------------------------------------------ the original
+
+
+def photocopy(image: bytes, crop: dict | None = None) -> bytes:
+    """The original as a clean black-and-white copy, ready to be pasted on.
+
+    Colourless — grey ink on white paper, the way a photocopier gives it. NOT a
+    negative: the office tried that and a negative turns the whole sheet black
+    and eats a printer's toner, and a passport copy is read from the black.
 
     ``crop`` are the document's bounds within the photo in 0..1 fractions (the
     AI returns them alongside the translation — it can see where the document
     is far more reliably than edge detection can on a patterned surface). The
     photo is trimmed to those bounds, its lighting evened out and lifted to
-    paper-white / ink-black, then centred on A4.
+    paper-white / ink-black.
 
-    Returns False (adding nothing) if the bytes are not a readable image.
+    Returns the original bytes untouched if OpenCV is unavailable or the bytes
+    are not a readable image — a package must still come out.
     """
-    import fitz
     import numpy as np
 
     try:
         import cv2
     except ImportError:  # pragma: no cover - cv2 ships with the app
-        cv2 = None
+        return image
 
-    data = image
-    if cv2 is not None:
-        arr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
-        if arr is None:
-            return False
-        arr = _apply_crop(arr, crop)
-        data = _scan_look(cv2, arr) or data
-
-    page = doc.new_page(width=595, height=842)
-    margin = 38.0
-    area = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
-    try:
-        page.insert_image(area, stream=data, keep_proportion=True)
-    except Exception:  # noqa: BLE001 - unreadable photo must not kill the run
-        doc.delete_page(doc.page_count - 1)
-        log.warning("Perevod: skipped an unreadable document photo")
-        return False
-    return True
+    arr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        return image
+    arr = _apply_crop(arr, crop)
+    out = _scan_look(cv2, arr)
+    return out or image
 
 
 def _apply_crop(arr, crop: dict | None):
@@ -164,6 +245,133 @@ def _scan_look(cv2, arr) -> bytes | None:
     return buf.tobytes() if ok else None
 
 
+# -------------------------------------------------------------- the sheets
+
+
+def _blank_page(doc, blank: Path | None):
+    """Start a sheet on ``blank``, keeping the blank's own proportions.
+
+    A PDF blank is inserted as-is, so its text, rules and letterhead stay
+    exactly as the office printed them. A picture blank gets a page cut to the
+    picture's own shape (long side A4) and is laid over the whole of it — no
+    stretching, no white bands. With no blank at all the sheet is plain A4, so
+    the section still works the day before the office uploads its sheets.
+    """
+    import fitz
+
+    if blank is not None and blank.suffix.lower() == ".pdf":
+        try:
+            source = fitz.open(str(blank))
+        except Exception as exc:                      # noqa: BLE001
+            log.warning("ПЕРЕВОД: бланка очилмади (%s): %s", blank.name, exc)
+        else:
+            with source:
+                if source.page_count:
+                    doc.insert_pdf(source, from_page=0, to_page=0)
+                    return doc[-1]
+            log.warning("ПЕРЕВОД: бланка бўш — %s", blank.name)
+
+    width, height = A4_SHORT, A4_LONG
+    stream = None
+    if blank is not None:
+        try:
+            picture = fitz.Pixmap(str(blank))
+            if picture.width and picture.height:
+                if picture.width > picture.height:
+                    width = A4_LONG
+                    height = A4_LONG * picture.height / picture.width
+                else:
+                    height = A4_LONG
+                    width = A4_LONG * picture.width / picture.height
+                stream = blank
+        except Exception as exc:                      # noqa: BLE001
+            log.warning("ПЕРЕВОД: бланка расми ўқилмади (%s): %s", blank.name, exc)
+
+    page = doc.new_page(width=width, height=height)
+    if stream is not None:
+        try:
+            page.insert_image(page.rect, filename=str(stream), keep_proportion=False)
+        except (RuntimeError, ValueError) as exc:
+            log.warning("ПЕРЕВОД: бланка жойлашмади (%s): %s", blank.name, exc)
+    return page
+
+
+def _aspect(shot: bytes) -> float:
+    """The photo's width over its height, 1.0 if it cannot be read."""
+    import fitz
+
+    try:
+        picture = fitz.Pixmap(shot)
+    except Exception:                                 # noqa: BLE001
+        return 1.0
+    return (picture.width / picture.height) if picture.height else 1.0
+
+
+def real_size_pt(doc_type: str, aspect: float) -> tuple[float, float]:
+    """How big this document is in real life, in points, for THIS photograph.
+
+    The size comes from the document, the ORIENTATION from the photograph: a
+    plastic card photographed on its side is still 85.6 × 54 mm, just turned.
+    A passport is the one that changes size rather than shape — photographed
+    open, the spread is two pages wide.
+    """
+    long_mm, short_mm = REAL_MM.get(doc_type, REAL_MM["other"])
+    if doc_type == "passport":
+        long_mm, short_mm = (PASSPORT_SPREAD_MM if aspect >= SPREAD_ASPECT
+                             else PASSPORT_PAGE_MM)
+    wide = long_mm >= short_mm
+    if (aspect >= 1.0) != wide:
+        long_mm, short_mm = short_mm, long_mm
+    return long_mm * MM, short_mm * MM
+
+
+def _place_originals(page, shots: list[bytes], doc_type: str) -> None:
+    """The copies of the original, at LIFE SIZE, centred on the sheet.
+
+    The office asked for this in as many words: a passport is not blown up to
+    fill an A4, it is printed the size a passport is and put in the middle of
+    the sheet — «ҳисоблаб ўртасига қўйилади». So each photograph is scaled to
+    the document's own real size (:func:`real_size_pt`) rather than to the
+    window, and the whole group is centred in the window both ways.
+
+    Front and back of the same card both go on this sheet, one under the other.
+    Only if the stack will not fit the window is it scaled down — evenly, so the
+    two halves of one document stay the same size as each other.
+    """
+    import fitz
+
+    if not shots:
+        return
+    rect = page.rect
+    left = SCAN_BOX[0] * rect.width
+    right = SCAN_BOX[2] * rect.width
+    top = SCAN_BOX[1] * rect.height
+    bottom = SCAN_BOX[3] * rect.height
+    room_w, room_h = right - left, bottom - top
+    gap = SCAN_GAP_MM * MM
+
+    sizes = [real_size_pt(doc_type, _aspect(shot)) for shot in shots]
+    stack_h = sum(h for _w, h in sizes) + gap * (len(sizes) - 1)
+    stack_w = max(w for w, _h in sizes)
+    # life size unless the sheet is too small for it
+    fit = min(1.0, room_w / stack_w, room_h / stack_h)
+    if fit < 1.0:
+        log.info("ПЕРЕВОД: ҳақиқий ўлчам варақга сиғмади — %.0f%% қилинди",
+                 fit * 100)
+
+    y = top + (room_h - stack_h * fit) / 2.0
+    centre_x = (left + right) / 2.0
+    for shot, (width, height) in zip(shots, sizes, strict=True):
+        width, height = width * fit, height * fit
+        box = fitz.Rect(centre_x - width / 2.0, y,
+                        centre_x + width / 2.0, y + height)
+        try:
+            page.insert_image(box, stream=shot, keep_proportion=True)
+        except Exception as exc:                      # noqa: BLE001
+            log.warning("ПЕРЕВОД: ҳужжат расми жойлашмади: %s", exc)
+        y += height + gap * fit
+
+
 def _forms() -> dict:
     path = paths.templates_dir() / "perevod" / "forms.v1.json"
     if not path.exists():
@@ -195,10 +403,25 @@ def _order_fields(doc_type: str, fields: list[dict]) -> list[dict]:
 class PerevodService:
     def __init__(self, key_getter, cert_getter=None) -> None:
         self._key_getter = key_getter
-        # returns {"notary": str, "translator": str, "city": str} for the
-        # certification page (page 3); names are printed, never signed/stamped.
+        # Kept for API compatibility only. The notary's names, the date and the
+        # registry number are NOT printed any more: sheet 3 is his own blank and
+        # he completes it in person.
         self._cert_getter = cert_getter
 
+    # ---------------------------------------------------------- templates
+    @staticmethod
+    def blanks() -> list[Path | None]:
+        return blanks()
+
+    @staticmethod
+    def set_blank(index: int, source: Path) -> Path:
+        return set_blank(index, source)
+
+    @staticmethod
+    def clear_blank(index: int) -> None:
+        clear_blank(index)
+
+    # ----------------------------------------------------------- printing
     def translate(
         self,
         images: list[bytes],
@@ -243,13 +466,15 @@ class PerevodService:
             base = folder / f"{stem}_{i:03d}"
             i += 1
 
-        cert = (self._cert_getter() if self._cert_getter else None) or {}
+        originals = [
+            photocopy(shot, crop)
+            for shot, crop in zip(images[:10],
+                                  list(crops) + [None] * len(images),
+                                  strict=False)
+        ]
         pdf = self._to_pdf(base.with_suffix(".pdf"), title=title, lang=lang,
                            country=country, fields=fields, stamps=stamps,
-                           notes=notes, cert=cert, scans=list(zip(
-                               images[:10],
-                               list(crops) + [None] * len(images),
-                               strict=False)))
+                           notes=notes, originals=originals, doc_type=kind)
         docx = self._to_docx(base.with_suffix(".docx"), title=title, lang=lang,
                              country=country, fields=fields, stamps=stamps,
                              notes=notes)
@@ -270,165 +495,51 @@ class PerevodService:
 
     def _to_pdf(self, out: Path, *, title: str, lang: str, country: str,
                 fields: list[dict], stamps: list[str], notes: list[str],
-                scans: list[tuple[bytes, dict | None]],
-                cert: dict | None = None) -> Path:
+                originals: list[bytes], doc_type: str = "other") -> Path:
+        """The package: three sheets, one PDF, in the office's own order."""
         import fitz
 
         serif = fitz.Font(fontfile=str(_font_file("OfisSerif")))
         bold = fitz.Font(fontfile=str(_font_file("OfisSerifBold")))
-        X0, X1 = 70.0, 525.0
-        width = X1 - X0
-        LABEL_W = 200.0
-        SIZE, LEAD = 11.0, 1.5
-        TOP, BOTTOM = 70.0, 780.0
+        sheets = blanks()
 
         doc = fitz.open()
-        page = None
-        tw = None
-        y = 0.0
 
-        def new_page() -> None:
-            nonlocal page, tw, y
-            if page is not None and tw is not None:
-                tw.write_text(page)
-            page = doc.new_page(width=595, height=842)
-            tw = fitz.TextWriter(page.rect)
-            y = TOP
+        # sheet 1 — the original, black-and-white, centred on the blank
+        _place_originals(_blank_page(doc, sheets[0]), originals, doc_type)
 
-        def room(need: float) -> None:
-            if page is None or y + need > BOTTOM:
-                new_page()
+        # sheet 2 — the translation, set to fit the blank in ONE page
+        page = _blank_page(doc, sheets[1])
+        rect = page.rect
+        x0 = TEXT_BOX[0] * rect.width
+        width = (TEXT_BOX[2] - TEXT_BOX[0]) * rect.width
+        top = TEXT_BOX[1] * rect.height
+        room = (TEXT_BOX[3] - TEXT_BOX[1]) * rect.height
 
-        def center(text: str, font, size: float) -> None:
-            nonlocal y
-            room(size * LEAD)
-            w = font.text_length(text, fontsize=size)
-            tw.append((X0 + (width - w) / 2, y + size), text, font=font, fontsize=size)
-            y += size * LEAD
+        size = TEXT_SIZE * rect.height
+        floor = TEXT_SIZE_MIN * rect.height
+        ops, height = _compose(title=title, lang=lang, country=country,
+                               fields=fields, stamps=stamps, notes=notes,
+                               serif=serif, bold=bold, width=width, size=size)
+        while height > room and size > floor:
+            size -= max(0.25, size * 0.04)
+            ops, height = _compose(title=title, lang=lang, country=country,
+                                   fields=fields, stamps=stamps, notes=notes,
+                                   serif=serif, bold=bold, width=width, size=size)
+        if height > room:
+            log.warning("ПЕРЕВОД: таржима бир варақдан узун — энг кичик ўлчамда "
+                        "чиқарилди (%.0f > %.0f)", height, room)
 
-        def wrapped(text: str, font, size: float, x: float, avail: float) -> list[str]:
-            rows, cur = [], ""
-            for word in text.split():
-                cand = (cur + " " + word).strip()
-                if cur and font.text_length(cand, fontsize=size) > avail:
-                    rows.append(cur)
-                    cur = word
-                else:
-                    cur = cand
-            if cur:
-                rows.append(cur)
-            return rows
+        writer = fitz.TextWriter(rect)
+        for dx, dy, text, font, font_size in ops:
+            writer.append((x0 + dx, top + dy), text, font=font, fontsize=font_size)
+        writer.write_text(page, opacity=TEXT_OPACITY)
 
-        # page(s) 1..n — the original document as a clean scan
-        for shot, crop in scans:
-            _scan_page(doc, shot, crop)
+        # sheet 3 — the notary's own certification blank. NOTHING is printed on
+        # it: no names, no city, no date, no registry number. He fills it and
+        # seals it by hand, and a program-printed name on it would be a forgery.
+        _blank_page(doc, sheets[2])
 
-        new_page()
-        center(f"ПЕРЕВОД С {lang.upper()} ЯЗЫКА НА РУССКИЙ ЯЗЫК", bold, 12.0)
-        y += 8
-        if country:
-            center(country.upper(), serif, 11.0)
-        center(title.upper(), bold, 13.0)
-        y += 12
-
-        for f in fields:
-            label = str(f.get("label", "")).strip()
-            value = str(f.get("value", "")).strip()
-            if not label:
-                continue
-            rows = wrapped(value, serif, SIZE, X0 + LABEL_W, width - LABEL_W) or [""]
-            for i, row in enumerate(rows):
-                room(SIZE * LEAD)
-                if i == 0:
-                    tw.append((X0, y + SIZE), f"{label}:", font=serif, fontsize=SIZE)
-                tw.append((X0 + LABEL_W, y + SIZE), row, font=bold, fontsize=SIZE)
-                y += SIZE * LEAD
-
-        if stamps:
-            y += 10
-            center("Печати и штампы:", bold, SIZE)
-            for s in stamps:
-                for row in wrapped(s, serif, SIZE, X0, width):
-                    room(SIZE * LEAD)
-                    tw.append((X0, y + SIZE), row, font=serif, fontsize=SIZE)
-                    y += SIZE * LEAD
-
-        if notes:
-            y += 10
-            for n in notes:
-                for row in wrapped(f"Примечание переводчика: {n}", serif, 10.0, X0, width):
-                    room(10.0 * LEAD)
-                    tw.append((X0, y + 10.0), row, font=serif, fontsize=10.0)
-                    y += 10.0 * LEAD
-
-        # page 3 — the notarial certification, as a BLANK the notary completes.
-        # The program prints only the standard wording (and the office's usual
-        # notary/translator names, if configured). The registry number, the
-        # date, the fee, the sheet count, both signatures and the round seal are
-        # left empty — the notary fills and stamps them in person, exactly like
-        # the Госуслуги block on the hostel form. It never prints a seal, a
-        # signature or a registry number, so it is a draft to be certified, not
-        # a finished notarial act.
-        def left(text: str, font, size: float, dx: float = 0.0) -> None:
-            nonlocal y
-            room(size * LEAD)
-            tw.append((X0 + dx, y + size), text, font=font, fontsize=size)
-            y += size * LEAD
-
-        def rule(x0: float, x1: float, dy: float = -3.0) -> None:
-            page.draw_line((x0, y + dy), (x1, y + dy), color=(0, 0, 0), width=0.6)
-
-        cert = cert or {}
-        notary = str(cert.get("notary") or "").strip()
-        translator = str(cert.get("translator") or "").strip()
-        city = str(cert.get("city") or "город Москва").strip()
-        # header form (nominative) vs. the genitive used after «нотариус …»
-        city_head = city[:1].upper() + city[1:] if city else city
-        city_gen = ("города Москвы" if city.lower() in ("город москва", "москва")
-                    else city)
-        blank = "_" * 34
-
-        new_page()
-        left(f"Перевод данного текста выполнен переводчиком {translator or blank}",
-             serif, SIZE)
-        y += 30  # room for the translator's own signature (left blank)
-
-        y += 14
-        center("Российская Федерация", bold, SIZE)
-        center(city_head, bold, SIZE)
-        center("«____» ________________ 20____ года", serif, SIZE)
-        y += 16
-
-        who = notary or blank
-        body = [
-            f"Я, {who}, нотариус {city_gen}, свидетельствую подлинность подписи",
-            f"переводчика {translator or blank}.",
-            "Подпись сделана в моём присутствии.",
-            "Личность подписавшего документ установлена.",
-        ]
-        for para in body:
-            for row in wrapped(para, serif, SIZE, X0, width):
-                left(row, serif, SIZE)
-        y += 16
-        left("Зарегистрировано в реестре: № ___________________________", serif, SIZE)
-        y += 8
-        left("Уплачено за совершение нотариального действия: ________ руб. ____ коп.",
-             serif, SIZE)
-        y += 40
-
-        # notary signature line (left blank) with the name printed to its right
-        room(SIZE * LEAD)
-        rule(X0, X0 + 150, dy=SIZE - 2)
-        tw.append((X0 + 165, y + SIZE), notary or "", font=serif, fontsize=SIZE)
-        y += SIZE * LEAD
-        left("(подпись нотариуса)", serif, 8.0, dx=35)
-        y += 24
-        left("Всего прошнуровано, пронумеровано и", serif, SIZE)
-        left("скреплено печатью ______ листа(ов)", serif, SIZE)
-        left("Нотариус: ______________________", serif, SIZE)
-
-        if page is not None and tw is not None:
-            tw.write_text(page)
         out.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out), garbage=4, deflate=True)
         doc.close()
@@ -479,3 +590,100 @@ class PerevodService:
             d.add_paragraph(f"Примечание переводчика: {n}")
         d.save(str(out))
         return out
+
+
+# ------------------------------------------------------------- typesetting
+
+
+def _wrap(text: str, font, size: float, avail: float) -> list[str]:
+    """Break ``text`` into lines no wider than ``avail``.
+
+    A single word longer than the line (a 30-character institution name run
+    together by the reader) is cut rather than allowed to run off the sheet.
+    """
+    rows: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = (current + " " + word).strip()
+        if current and font.text_length(candidate, fontsize=size) > avail:
+            rows.append(current)
+            current = word
+        else:
+            current = candidate
+        while font.text_length(current, fontsize=size) > avail and len(current) > 1:
+            cut = len(current) - 1
+            while cut > 1 and font.text_length(current[:cut], fontsize=size) > avail:
+                cut -= 1
+            rows.append(current[:cut])
+            current = current[cut:]
+    if current:
+        rows.append(current)
+    return rows
+
+
+def _compose(*, title: str, lang: str, country: str, fields: list[dict],
+             stamps: list[str], notes: list[str], serif, bold,
+             width: float, size: float) -> tuple[list[tuple], float]:
+    """The translation as draw operations relative to the block's top-left.
+
+    Returns the operations and the height they need, so the caller can step the
+    type size down until the whole translation fits the blank on one sheet.
+    """
+    ops: list[tuple] = []
+    y = 0.0
+    lead = size * LEADING
+    label_width = width * LABEL_SHARE
+
+    def centre(text: str, font, font_size: float) -> None:
+        nonlocal y
+        line_width = font.text_length(text, fontsize=font_size)
+        ops.append(((width - line_width) / 2, y + font_size, text, font, font_size))
+        y += font_size * LEADING
+
+    def left(text: str, font, font_size: float, dx: float = 0.0) -> None:
+        nonlocal y
+        ops.append((dx, y + font_size, text, font, font_size))
+        y += font_size * LEADING
+
+    centre(f"ПЕРЕВОД С {lang.upper()} ЯЗЫКА НА РУССКИЙ ЯЗЫК", bold, size * 1.09)
+    y += size * 0.7
+    if country:
+        centre(country.upper(), serif, size)
+    centre(title.upper(), bold, size * 1.18)
+    y += size * 1.1
+
+    for f in fields:
+        label = str(f.get("label", "")).strip()
+        value = str(f.get("value", "")).strip()
+        if not label:
+            continue
+        rows = _wrap(value, bold, size, width - label_width) or [""]
+        for index, row in enumerate(rows):
+            if index == 0:
+                # a label wider than its column is set smaller rather than
+                # allowed to run under the value beside it
+                label_size = size
+                text = f"{label}:"
+                while (label_size > 4.0
+                       and serif.text_length(text, fontsize=label_size)
+                       > label_width - size * 0.3):
+                    label_size -= 0.3
+                ops.append((0.0, y + size, text, serif, label_size))
+            ops.append((label_width, y + size, row, bold, size))
+            y += lead
+
+    if stamps:
+        y += size
+        centre("Печати и штампы:", bold, size)
+        for stamp in stamps:
+            for row in _wrap(stamp, serif, size, width):
+                left(row, serif, size)
+
+    if notes:
+        y += size
+        small = size * 0.9
+        for note in notes:
+            for row in _wrap(f"Примечание переводчика: {note}", serif, small, width):
+                left(row, serif, small)
+
+    return ops, y
