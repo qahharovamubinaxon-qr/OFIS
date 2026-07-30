@@ -19,7 +19,13 @@ CHAT = 7
 
 @pytest.fixture()
 def bot(monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", tempfile.mkdtemp())
+    # both roots: paths.data_dir() reads LOCALAPPDATA on Windows and
+    # XDG_DATA_HOME elsewhere. With only one of them set these tests read the
+    # real machine's AppData — the settings, the uploaded blanks, the address
+    # book — and then pass or fail depending on what happens to be on it.
+    sandbox = tempfile.mkdtemp()
+    monkeypatch.setenv("XDG_DATA_HOME", sandbox)
+    monkeypatch.setenv("LOCALAPPDATA", sandbox)
     paths.data_dir.cache_clear()
     from src.app import build_container
     from src.config.settings_service import SettingsService
@@ -824,3 +830,147 @@ def test_the_receipt_never_invents_its_own_proof() -> None:
         for generator in ("import random", "random.", "randint", "getrandbits",
                           "uuid4", "secrets."):
             assert generator not in source, f"{name} still makes something up"
+
+
+# ------------------------------- ТРУД ППУ, the blanks, and a new address
+# The office asked for these three on the phone: the ПЕРЕВОД sheets, ТРУД ППУ,
+# and adding an address without going to the computer.
+
+
+def _blank_pdf(path: Path, width: float = 842.0, height: float = 474.0) -> Path:
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page(width=width, height=height)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    return path
+
+
+def _pdf_doc(bot, chat_id: int = CHAT) -> None:
+    bot._handle({"update_id": 1, "message": {
+        "chat": {"id": chat_id},
+        "document": {"file_id": "d9", "mime_type": "application/pdf",
+                     "file_name": "blank.pdf"}}})
+
+
+def test_trud_ppu_runs_on_the_phone(ready, monkeypatch, tmp_path) -> None:
+    desktop = tmp_path / "desktop"
+    desktop.mkdir()
+    monkeypatch.setattr("src.services.ppu_service.paths.desktop_dir",
+                        lambda: desktop)
+    monkeypatch.setattr("src.services.trud_ppu_service.paths.desktop_dir",
+                        lambda: desktop)
+    ready.ctl()["ppu"].add_template(
+        "ОФИС", _blank_pdf(tmp_path / "f.pdf"), _blank_pdf(tmp_path / "b.pdf"))
+    trud = ready.ctl()["trud_ppu"]
+    trud.add_template("ОФИС", _blank_pdf(tmp_path / "p2.pdf", 1600.0, 900.0),
+                      _blank_pdf(tmp_path / "p3.pdf", 899.0, 1599.0))
+    monkeypatch.setattr(trud, "read_contract", lambda pdf: {
+        "contract_date": "20.09.2024", "firm": "ООО “ЭКСПЕРТ”",
+        "surname": "МУРТАЗОЕВ", "name": "АББОСХОН",
+        "patronymic": "АБДУЛОХОНОВИЧ", "birth_date": "03.03.1990",
+        "gender": "Мужской", "citizenship": "УЗБЕКИСТАН",
+        "document": "FA 7822242"})
+    monkeypatch.setattr(trud, "read_uved", lambda pdf: {
+        "uved_number": "4785796716",
+        "uved_fio": "Муртазоев Аббосхон Абдулохонович"})
+    monkeypatch.setattr(trud, "read_patent", lambda front, back=None: {
+        "patent_series": "77", "patent_number": "2400328451",
+        "patent_issue": "18.07.2024"})
+
+    _text(ready, "🧷 ТРУД ППУ")
+    _pick(ready, 0)
+    _text(ready, "✅ Тайёрла")
+    assert "2 та pdf" in _last(ready).lower(), "it must not start without them"
+
+    _pdf(ready)
+    assert "1/2" in _last(ready) and "яна 1" in _last(ready).lower()
+    _pdf(ready)
+    assert "2/2" in _last(ready)
+    _photo(ready)                       # патент олд
+    _photo(ready)                       # патент орқа
+    _text(ready, "✅ Тайёрла")
+
+    assert "2400328451" in _all(ready) and "ЭКСПЕРТ" in _all(ready)
+    assert len(ready.files) == 3, "ТРУД ППУ is three sheets"
+    assert all(f.suffix == ".png" and f.parent == desktop for f in ready.files)
+
+
+def test_the_perevod_sheets_can_be_uploaded_from_the_phone(ready, tmp_path) -> None:
+    """The three sheets used to be loadable only at the computer."""
+    from src.services.perevod_service import blank_path, blanks
+
+    assert not any(blanks()), "the sandbox should start with no blanks"
+
+    _text(ready, "🌐➕ ПЕРЕВОД бланкаси")
+    rows = ready.sent[-1][1]["inline_keyboard"]
+    assert len(rows) == 3, "one row per sheet"
+    assert "1 —" in rows[0][0]["text"] and "3 —" in rows[2][0]["text"]
+
+    _pick(ready, 1)                     # 2-саҳифа
+    _pdf_doc(ready)                     # a PDF blank, not a photograph
+    assert "қабул қилинди" in _last(ready)
+    _text(ready, "✅ Тайёрла")
+
+    assert blank_path(2) is not None, "the sheet was not stored"
+    assert blank_path(1) is None and blank_path(3) is None
+    assert "2-бланка юкланди" in _all(ready)
+
+    # a picture works just as well — the office's own sheets are JPEGs
+    _text(ready, "🌐➕ ПЕРЕВОД бланкаси")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    assert blank_path(1) is not None
+
+
+def test_perevod_offers_the_blank_button_next_to_the_work(ready) -> None:
+    _text(ready, "🌐 ПЕРЕВОД")
+    # ПЕРЕВОД has no list to pick from, so it goes straight to collecting —
+    # the blanks are reached from their own button in the menu
+    assert "ҳужжат расмларини" in _last(ready).lower()
+    from src.controllers.ofis_modules import BY_KEY
+
+    assert BY_KEY["perevod"].add_key == "perevod_blank"
+
+
+def test_registration_offers_adding_an_address_and_then_lists_it(
+        ready, monkeypatch) -> None:
+    """«🏠 Регистрация» used to be a dead end when the address book was empty,
+    and offered no way to add one. Now the pick list carries the button."""
+    before = {a.label for a in ready.ctl()["reg_addr"].list()}
+    monkeypatch.setattr(ready.ctl()["reg"], "addresses",
+                        lambda: [a for a in ready.ctl()["reg_addr"].list()
+                                 if a.label not in before])
+
+    _text(ready, "🏠 Регистрация")
+    rows = ready.sent[-1][1]["inline_keyboard"]
+    assert rows[-1][0]["callback_data"] == "pick:add"
+    assert "янги манзил" in rows[-1][0]["text"].lower()
+
+    ready._handle({"update_id": 1, "callback_query": {
+        "id": "cq", "message": {"chat": {"id": CHAT}}, "data": "pick:add"}})
+    assert "номи" in _last(ready).lower()
+
+    for answer in ("ПАРКОВАЯ 55", "Г МОСКВА", "✅ Тайёрла", "МОСКВА",
+                   "5-Я ПАРКОВАЯ", "55", "✅ Тайёрла", "✅ Тайёрла", "6",
+                   "ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ", "02/770-1234"):
+        _text(ready, answer)
+
+    assert "манзил қўшилди" in _all(ready).lower()
+    added = [a for a in ready.ctl()["reg_addr"].list() if a.label not in before]
+    assert [a.label for a in added] == ["ПАРКОВАЯ 55"]
+    assert "5-Я ПАРКОВАЯ" in added[0].address_text
+    assert added[0].template_path.exists(), "the template was not built"
+    _text(ready, "🏠 Регистрация")
+    assert "манзилни танланг" in _last(ready).lower()
+
+
+def test_a_new_address_needs_more_than_a_name(ready) -> None:
+    before = ready.ctl()["reg_addr"].count()
+    _text(ready, "🏠➕ Янги манзил")
+    for _ in range(11):
+        _text(ready, "✅ Тайёрла")
+    assert "манзил бўш" in _all(ready).lower()
+    assert ready.ctl()["reg_addr"].count() == before, "an empty address was saved"

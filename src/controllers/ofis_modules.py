@@ -32,9 +32,15 @@ def parse_date(text: str) -> date | None:
 
 
 def label_of(item) -> str:
+    """What to show for one item in a pick list.
+
+    ``callable`` is checked because a plain string is a perfectly good target —
+    the ПЕРЕВОД sheets are three of them — and ``"1 — ...".title`` is a METHOD,
+    so without this the button read «built-in method title of str object».
+    """
     for attr in ("name", "label", "title"):
         value = getattr(item, attr, None)
-        if value:
+        if value and not callable(value):
             return str(value)
     return str(item)
 
@@ -74,9 +80,17 @@ class Module:
     photo_labels: tuple[str, ...] = ()
     min_photos: int = 1
     wants_pdf: int = 0               # PDF documents required as well (УМУМИЙ: 1)
+    #: Takes ONE file that may be a PDF *or* a picture, either is fine — a blank
+    #: sheet arrives as whichever the office happens to have.
+    accepts_pdf: bool = False
     asks: tuple[Ask, ...] = ()
     text_only: bool = False          # no images — answers questions instead
     needs_ai: bool = True
+    #: A module the operator can jump to from THIS module's pick list, offered as
+    #: an extra «➕» row under the items. Регистрация uses it so a new address
+    #: can be added on the phone instead of only on the computer.
+    add_key: str | None = None
+    add_prompt: str = "➕ Янги қўшиш"
 
     @property
     def title(self) -> str:
@@ -438,7 +452,10 @@ def _run_shablon(ctx: RunContext, state: dict) -> list[Path]:
 
 def _run_summa(ctx: RunContext, state: dict) -> list[Path]:
     from src.utils.rus_words import (
-        amount_to_words, date_to_words, format_amount, parse_amount,
+        amount_to_words,
+        date_to_words,
+        format_amount,
+        parse_amount,
     )
 
     raw = str(state["answers"].get("value", "")).strip()
@@ -453,6 +470,125 @@ def _run_summa(ctx: RunContext, state: dict) -> list[Path]:
         return []
     ctx.note(f"{format_amount(rubles, kopecks)}\n{amount_to_words(rubles, kopecks)}")
     return []
+
+
+def _run_trud_ppu(ctx: RunContext, state: dict) -> list[Path]:
+    """ТРУД ППУ — трудовой + уведомление (PDFs) + патент (photos).
+
+    Sheet 1 goes on the ППУ front blank. The phone has one list to pick from and
+    it picks the ТРУД ППУ pair, so the ППУ front is taken from the FIRST ППУ
+    template the office uploaded — the office keeps one.
+    """
+    ctl = ctx.ctl["trud_ppu"]
+    pdfs = state["pdfs"]
+    photos = state["photos"]
+    fields: dict[str, str] = {}
+    fields.update(ctl.read_contract(pdfs[0]))
+    fields.update({k: v for k, v in ctl.read_uved(pdfs[1]).items() if v})
+    patent = ctl.read_patent(photos[0], photos[1] if len(photos) > 1 else None)
+    fields.update({k: v for k, v in patent.items() if v})
+    ctx.note(f"Ўқилди: {fields.get('surname', '')} · патент "
+             f"{fields.get('patent_series', '')} {fields.get('patent_number', '')} · "
+             f"{fields.get('firm', '')}".strip())
+
+    ppu_templates = ctx.ctl["ppu"].templates()
+    result = ctl.generate(
+        surname=fields.get("surname", ""), name=fields.get("name", ""),
+        patronymic=fields.get("patronymic", ""),
+        birth_date=ctl.parse_date(fields.get("birth_date", "")),
+        gender=fields.get("gender", ""),
+        citizenship=fields.get("citizenship", ""),
+        document=fields.get("document", ""),
+        patent_series=fields.get("patent_series", ""),
+        patent_number=fields.get("patent_number", ""),
+        patent_issue=ctl.parse_date(fields.get("patent_issue", "")),
+        contract_date=ctl.parse_date(fields.get("contract_date", "")),
+        firm=fields.get("firm", ""),
+        uved_number=fields.get("uved_number", ""),
+        uved_fio=fields.get("uved_fio", ""),
+        photo=photos[2] if len(photos) > 2 else None,
+        ppu_template=ppu_templates[0] if ppu_templates else None,
+        template=state["target"])
+    return result.saved
+
+
+def _run_perevod_blank(ctx: RunContext, state: dict) -> list[Path]:
+    """Upload one of the ПЕРЕВОД sheets from the phone.
+
+    The office prints its translations on its own three sheets. They used to be
+    uploadable only at the computer; now a sheet can be replaced from the phone
+    too — the same AppData folder, so the computer sees it at once.
+    """
+    from src.config import paths
+    from src.services.perevod_service import BLANK_SUFFIXES, blanks, set_blank
+
+    index = int(str(state["target"]).strip()[0])
+    data = (state["pdfs"] or state["photos"])[0]
+    suffix = ".pdf" if state["pdfs"] else ".png"
+    if suffix not in BLANK_SUFFIXES:                     # pragma: no cover
+        raise OfisError("Бланка PDF ёки расм бўлиши керак.")
+    staging = paths.output_dir() / "perevod" / f"blank_{uuid.uuid4().hex[:8]}{suffix}"
+    staging.parent.mkdir(parents=True, exist_ok=True)
+    staging.write_bytes(data)
+    try:
+        set_blank(index, staging)
+    finally:
+        staging.unlink(missing_ok=True)
+    loaded = [str(i) for i, blank in enumerate(blanks(), 1) if blank is not None]
+    ctx.note(f"✅ {index}-бланка юкланди.\n"
+             f"Юкланган бланкалар: {', '.join(loaded) or '—'} (3 та керак)")
+    return []
+
+
+#: What each ПЕРЕВОД sheet is for, in the order they are printed.
+PEREVOD_SHEETS = ("1 — ҳужжат нусхаси қўйилади",
+                  "2 — таржима матни ёзилади",
+                  "3 — бўш қолади, нотариус тўлдиради")
+
+
+def _run_reg_addr(ctx: RunContext, state: dict) -> list[Path]:
+    """Register a new address from the phone — the computer's ten-field table.
+
+    The template is built from the blank «Уведомление о прибытии» exactly as the
+    computer's dialog does when no ready-made PDF is uploaded, because a phone
+    cannot hand over a pre-filled template.
+    """
+    from src.domain.registration_address import RegistrationAddress
+
+    answers = {k: str(v or "").strip() for k, v in state["answers"].items()}
+    summary = ", ".join(part for part in (
+        answers.get("oblast", ""), answers.get("raion", ""),
+        answers.get("gorod", ""), answers.get("ulitsa", ""),
+        f"д. {answers['dom']}" if answers.get("dom") else "",
+        f"к. {answers['korpus']}" if answers.get("korpus") else "",
+        f"стр. {answers['stroenie']}" if answers.get("stroenie") else "",
+        f"кв. {answers['kvartira']}" if answers.get("kvartira") else "",
+    ) if part)
+    if not summary:
+        raise OfisError("Манзил бўш — камида область, шаҳар ва кўчани ёзинг.")
+
+    label = answers.get("label") or summary
+    code = answers.get("internal_code") or _code_from(label)
+    address = RegistrationAddress(
+        label=label, internal_code=code, address_text=summary,
+        host_fio=answers.get("host_fio") or "-",
+        oblast=answers.get("oblast") or None, raion=answers.get("raion") or None,
+        gorod=answers.get("gorod") or None, ulitsa=answers.get("ulitsa") or None,
+        dom=answers.get("dom") or None, korpus=answers.get("korpus") or None,
+        stroenie=answers.get("stroenie") or None,
+        kvartira=answers.get("kvartira") or None,
+        regional_number=answers.get("regional_number") or None,
+        template_path=Path("missing.pdf"))
+    ctx.ctl["reg_addr"].create(address, build_from_blank=True)
+    ctx.note(f"✅ Манзил қўшилди: {address.label}\n{summary}\n\n"
+             "Энди «🏠 Регистрация» босиб рўйхатдан танланг.")
+    return []
+
+
+def _code_from(label: str) -> str:
+    """A folder-safe unique key from the name the operator typed."""
+    latin = "".join(c if c.isalnum() else "_" for c in label.lower()).strip("_")
+    return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
 # ---------------------------------------------------------------- catalogue
@@ -488,7 +624,26 @@ MODULES: tuple[Module, ...] = (
            target_prompt="Манзилни танланг:",
            photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
            asks=(Ask("expiry", "Рўйхатдан ўтиш ТУГАШ санаси (КК.ОО.ЙЙЙЙ):",
-                     default_days=90),)),
+                     default_days=90),),
+           add_key="reg_addr", add_prompt="➕ Янги манзил қўшиш"),
+    # Reached from «🏠 Регистрация» («➕ Янги манзил қўшиш»), and offered on its
+    # own too. Ten questions — the same table the computer's dialog asks for —
+    # and the template is built from the blank, as it is there.
+    Module("reg_addr", "🏠➕ Янги манзил", _run_reg_addr,
+           text_only=True, needs_ai=False,
+           asks=(Ask("label", "Номи (рўйхатда кўринади, масалан ПАРКОВАЯ 55):",
+                     kind="text"),
+                 Ask("oblast", "1 · Область (масалан Г МОСКВА):", kind="text"),
+                 Ask("raion", "2 · Район (керак бўлмаса ўтказинг):", kind="text"),
+                 Ask("gorod", "3 · Город (населенный пункт):", kind="text"),
+                 Ask("ulitsa", "4 · Улица:", kind="text"),
+                 Ask("dom", "5 · Дом:", kind="text"),
+                 Ask("korpus", "6 · Корпус (бўш бўлса ўтказинг):", kind="text"),
+                 Ask("stroenie", "7 · Строение (бўш бўлса ўтказинг):", kind="text"),
+                 Ask("kvartira", "8 · Квартира:", kind="text"),
+                 Ask("host_fio", "9 · Хозяин / Владелец (ФИО):", kind="text"),
+                 Ask("regional_number", "10 · Региональный номер (02/770-…):",
+                     kind="text"))),
     Module("hostel", "🛏️ ХОСТЕЛ", _run_hostel,
            targets=lambda c: c["hostel"].addresses(),
            target_prompt="Хостелни танланг:",
@@ -574,7 +729,30 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("perevod", "🌐 ПЕРЕВОД", _run_perevod,
-           photo_prompt="Таржима қилинадиган ҳужжат расмларини юборинг."),
+           photo_prompt=("Таржима қилинадиган ҳужжат расмларини юборинг.\n"
+                         "(олди-орқаси бўлса иккисини — битта варақга "
+                         "устма-уст, ҳақиқий ўлчамида қўйилади)"),
+           add_key="perevod_blank", add_prompt="➕ Бланка юклаш (1/2/3)"),
+    # The three sheets the office prints its translations on. Uploadable from
+    # the phone as well as the computer — the same AppData folder, so whichever
+    # one it is done on, the other sees it at once.
+    Module("perevod_blank", "🌐➕ ПЕРЕВОД бланкаси", _run_perevod_blank,
+           needs_ai=False,
+           targets=lambda _c: list(PEREVOD_SHEETS),
+           target_prompt="Қайси саҳифанинг бланкаси?",
+           photo_prompt=("Бўш бланкани юборинг — PDF ёки расм.\n"
+                         "Битта файл, шу саҳифанинг ўрнига қўйилади."),
+           photo_labels=("Бланка",), min_photos=0, accepts_pdf=True),
+    Module("trud_ppu", "🧷 ТРУД ППУ", _run_trud_ppu,
+           targets=lambda c: c["trud_ppu"].templates(),
+           target_prompt="ТРУД ППУ бланкасини танланг (2–3 саҳифа):",
+           photo_prompt=("Аввал ИККИТА PDF, тартиб билан:\n"
+                         "1️⃣ ТРУДОВОЙ договор\n2️⃣ УВЕДОМЛЕНИЯ\n\n"
+                         "Кейин расмлар:\n1️⃣ Патент (олд)\n2️⃣ Патент (орқа)\n"
+                         "3️⃣ Ишчининг расми (ихтиёрий)\n\n"
+                         "1-саҳифа ППУ бўлимидаги биринчи олд бланкага босилади."),
+           photo_labels=("Патент (олд)", "Патент (орқа)", "Ишчи расми"),
+           min_photos=2, wants_pdf=2),
     Module("dover", "📜 Доверенность", _run_dover,
            photo_prompt=("Томонларнинг ҳужжат расмларини юборинг "
                          "(паспортлар, СТС ва ҳ.к.)."),
@@ -629,6 +807,7 @@ def _perevod_cert(container):
 def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     """Build every controller the modules need. Qt-free, so it works from a
     background thread (the bot poller) as well as the HTTP server."""
+    from src.config.settings_service import SettingsService
     from src.controllers.beydjik_controller import BeydjikController
     from src.controllers.chek_controller import ChekController
     from src.controllers.dms_controller import DmsController
@@ -636,6 +815,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.inn_controller import InnController
     from src.controllers.insurance_controller import InsuranceController
     from src.controllers.patent_controller import PatentController
+    from src.controllers.ppu_controller import PpuController
     from src.controllers.process_controller import ProcessController
     from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
@@ -643,7 +823,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.svera_controller import SveraController
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
-    from src.config.settings_service import SettingsService
+    from src.controllers.trud_ppu_controller import TrudPpuController
     from src.database.repositories.insurance_template_repo import (
         InsuranceTemplateRepository,
     )
@@ -651,8 +831,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         TemplateProfileRepository,
     )
     from src.ocr.service import OcrService
-    from src.services.company_service import CompanyService
     from src.services.beydjik_service import BeydjikService
+    from src.services.company_service import CompanyService
     from src.services.dms_service import DmsService
     from src.services.dover_service import DoverService
     from src.services.generation_service import GenerationService
@@ -665,12 +845,14 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
+    from src.services.ppu_service import PpuService
     from src.services.profession_service import ProfessionService
     from src.services.razreshenie_service import RazreshenieService
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
     from src.services.sertifikat_service import SertifikatService
     from src.services.svera_service import SveraService
+    from src.services.trud_ppu_service import TrudPpuService
     from src.services.trud_service import TrudFirmService, TrudService
     from src.services.umumiy_service import UmumiyService
 
@@ -682,6 +864,15 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg": RegistrationController(
             container.resolve(RegistrationAddressService), ocr,
             container.resolve(RegistrationService)),
+        # the address book itself, so a new address can be added from the phone
+        "reg_addr": container.resolve(RegistrationAddressService),
+        # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
+        # template list even though ППУ itself is not offered on the phone
+        "ppu": PpuController(
+            ocr, PpuService(container.resolve(SettingsService))),
+        "trud_ppu": TrudPpuController(
+            ocr, TrudPpuService(container.resolve(SettingsService)),
+            key_getter=key_getter),
         # HostelService is stateless and not container-registered (the desktop
         # view builds it the same way).
         "hostel": HostelController(
