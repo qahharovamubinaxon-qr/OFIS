@@ -199,6 +199,12 @@ class HostelView(QWidget):
 
         add = QPushButton("+ Yangi xostel")
         add.clicked.connect(self._add)
+        arrange = QPushButton("📐 Матнларни жойлаш")
+        arrange.setToolTip("Бланка ва унга ёзиладиган маълумотлар экранга "
+                           "чиқади — сичқонча билан суриб, катта-кичик қилиб "
+                           "жойига қўйинг. Шу бланка учун сақланиб қолади.")
+        arrange.clicked.connect(self._arrange)
+        row.addWidget(arrange)
         row.addWidget(add)
         rm = QPushButton("🗑")
         rm.setToolTip("Tanlangan xostelni ro'yxatdan o'chirish")
@@ -317,6 +323,25 @@ class HostelView(QWidget):
         self.refresh()
         QMessageBox.information(self, "Saqlandi", _spot_text(spot)
                                 + f"\n«{address.label}» uchun eslab qolindi.")
+
+
+    def _arrange(self) -> None:
+        """Drag every printed value into place on THIS blank and keep it."""
+        from src.services import hostel_service
+        from src.ui.widgets.arrange_mapping import arrange
+
+        address = self._selected()
+        if address is None:
+            QMessageBox.information(self, "Diqqat", "Аввал рўйхатдан танланг.")
+            return
+        if arrange(self, section=hostel_service.SECTION,
+                   template=address.template_path,
+                   mapping_path=hostel_service._hostel_dir() / "mapping.v1.json",
+                   title="ХОСТЕЛ"):
+            QMessageBox.information(
+                self, "OK",
+                f"«{address.label}» бланкасининг матн жойлари сақланди — "
+                "бу манзилга босиладиган ҳар бир ҳужжат шу жойларга тушади.")
 
     def _add(self) -> None:
         dialog = AddHostelDialog(self._c, self)

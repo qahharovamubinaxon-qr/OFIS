@@ -160,6 +160,12 @@ class RegistrationView(QWidget):
 
         add = QPushButton("+ Yangi manzil")
         add.clicked.connect(self._add_address)
+        arrange = QPushButton("📐 Матнларни жойлаш")
+        arrange.setToolTip("Бланка ва унга ёзиладиган маълумотлар экранга "
+                           "чиқади — сичқонча билан суриб, катта-кичик қилиб "
+                           "жойига қўйинг. Шу бланка учун сақланиб қолади.")
+        arrange.clicked.connect(self._arrange)
+        row.addWidget(arrange)
         row.addWidget(add)
         rm = QPushButton("🗑")
         rm.setToolTip("Tanlangan manzilni ro'yxatdan o'chirish")
@@ -238,6 +244,25 @@ class RegistrationView(QWidget):
         return "AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting."
 
     # ------------------------------------------------------------------
+
+    def _arrange(self) -> None:
+        """Drag every printed value into place on THIS blank and keep it."""
+        from src.services import registration_service
+        from src.ui.widgets.arrange_mapping import arrange
+
+        address = self._selected_address()
+        if address is None:
+            QMessageBox.information(self, "Diqqat", "Аввал рўйхатдан танланг.")
+            return
+        if arrange(self, section=registration_service.SECTION,
+                   template=address.template_path,
+                   mapping_path=registration_service.MAPPING_PATH,
+                   title="РЕГИСТРАЦИЯ"):
+            QMessageBox.information(
+                self, "OK",
+                f"«{address.label}» бланкасининг матн жойлари сақланди — "
+                "бу манзилга босиладиган ҳар бир ҳужжат шу жойларга тушади.")
+
     def _add_address(self) -> None:
         dialog = AddAddressDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:

@@ -78,3 +78,38 @@ class FieldMapping(BaseModel):
             raise MappingInvalidError(
                 f"Could not load mapping {path.name}", context={"error": str(exc)}
             ) from exc
+
+
+def with_layout(mapping: FieldMapping, layout: dict | None) -> FieldMapping:
+    """The same mapping, with whatever the office dragged into place.
+
+    A mapping is shared by every blank of its kind — all the office's
+    registration addresses print on the same МВД form — so a firm that scanned
+    its own copy a shade differently cannot be fixed by editing the mapping
+    without moving everybody else's. The office arranges ITS blank on screen and
+    what it moved is kept beside that blank; this lays it over the shared
+    mapping for that one blank only.
+
+    The saved numbers are FRACTIONS of the page, so a blank re-scanned at
+    another resolution still lands right. A field nobody moved is untouched.
+    """
+    moved = (layout or {}).get("fields") or {}
+    if not moved:
+        return mapping
+    width, height = mapping.page_size
+    fields = []
+    for field in mapping.fields:
+        spot = moved.get(field.id)
+        if not spot or len(spot) != 3:
+            fields.append(field)
+            continue
+        x, y, size = (float(v) for v in spot)
+        anchor = "x0" if field.type == "grid" else "x"
+        fields.append(field.model_copy(update={
+            anchor: x * width, "y": y * height, "size": size * height}))
+    return mapping.model_copy(update={"fields": fields})
+
+
+def anchor_x(field: Field_) -> float:
+    """Where this field starts, whichever kind it is."""
+    return float((field.x0 if field.type == "grid" else field.x) or 0.0)

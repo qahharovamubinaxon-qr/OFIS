@@ -29,10 +29,13 @@ from src.domain.documents import Passport, Patent
 from src.domain.registration_address import RegistrationAddress
 from src.pdf import boxes
 from src.pdf.engine import fill
-from src.pdf.mapping import FieldMapping
+from src.pdf.mapping import FieldMapping, with_layout
 from src.services.registration_values import build_registration_values
 
 log = get_logger(__name__)
+
+#: What this section is called in the arranged-layout store.
+SECTION = "hostel"
 
 #: The stay-start date, printed inside the «Отметка о подтверждении» box.
 STAY_FROM = "reg.stay_from"
@@ -191,8 +194,12 @@ class HostelService:
         # Only the date — the registration number and the electronic-signature
         # certificate are applied by МВД/Госуслуги after a real submission.
         values[STAY_FROM] = (registration_start or date.today()).isoformat()
+        from src.services import blank_layout
+
         mapping = _with_stay_from(
-            FieldMapping.load(_hostel_dir() / "mapping.v1.json"), address)
+            with_layout(FieldMapping.load(_hostel_dir() / "mapping.v1.json"),
+                        blank_layout.load(SECTION, address.template_path)),
+            address)
         out_path = self._unique_output_path(address, passport, output_dir)
         fill(address.template_path, mapping, values, out_path)
         log.info("Generated hostel %s for %s", out_path.name, address.label)

@@ -164,3 +164,66 @@ def test_what_the_editor_returns_is_what_the_renderer_reads() -> None:
     assert (fields["surname"].x, fields["surname"].baseline) == (0.40, 0.30)
     assert sex["female"].x == 0.90
     assert (jobs["uchenik"].x0, jobs["uchenik"].y) == (0.10, 0.70)
+
+
+# ------------------------------------------ Регистрация / ХОСТЕЛ mappings
+
+
+def test_a_mapping_takes_what_the_office_arranged_on_one_blank() -> None:
+    """The МВД form's mapping is shared by every address; arranging one
+    address's own scan must move that one only."""
+    from src.pdf.mapping import FieldMapping, anchor_x, with_layout
+    from src.services.registration_service import MAPPING_PATH
+
+    mapping = FieldMapping.load(MAPPING_PATH)
+    width, height = mapping.page_size
+    before = {f.id: (anchor_x(f), f.y, f.size) for f in mapping.fields}
+
+    moved = with_layout(mapping, {"fields": {"reg.surname": [0.30, 0.20, 0.014]}})
+    changed = next(f for f in moved.fields if f.id == "reg.surname")
+    assert abs(anchor_x(changed) - 0.30 * width) < 0.1
+    assert abs(changed.y - 0.20 * height) < 0.1
+    assert abs(changed.size - 0.014 * height) < 0.01
+    # every other field is exactly as it was, and the original is untouched
+    for field in moved.fields:
+        if field.id != "reg.surname":
+            assert (anchor_x(field), field.y, field.size) == before[field.id]
+    assert anchor_x(next(f for f in mapping.fields
+                         if f.id == "reg.surname")) == before["reg.surname"][0]
+
+
+def test_a_grid_field_moves_by_its_own_anchor() -> None:
+    """A grid prints one character to a box and is anchored on ``x0``; a text
+    field on ``x``. Moving the wrong one would leave the value where it was."""
+    from src.pdf.mapping import FieldMapping, with_layout
+    from src.services.registration_service import MAPPING_PATH
+
+    mapping = FieldMapping.load(MAPPING_PATH)
+    grid = next(f for f in mapping.fields if f.type == "grid")
+    moved = with_layout(mapping, {"fields": {grid.id: [0.25, 0.30, 0.013]}})
+    changed = next(f for f in moved.fields if f.id == grid.id)
+    assert abs(changed.x0 - 0.25 * mapping.page_size[0]) < 0.1
+    assert changed.x == grid.x, "the text anchor must not be invented"
+
+
+def test_nothing_arranged_leaves_the_mapping_alone() -> None:
+    from src.pdf.mapping import FieldMapping, with_layout
+    from src.services.registration_service import MAPPING_PATH
+
+    mapping = FieldMapping.load(MAPPING_PATH)
+    assert with_layout(mapping, None) is mapping
+    assert with_layout(mapping, {}) is mapping
+    assert with_layout(mapping, {"fields": {}}) is mapping
+
+
+def test_the_arranging_screen_names_and_sizes_every_field() -> None:
+    from src.pdf.mapping import FieldMapping
+    from src.services.registration_service import MAPPING_PATH
+    from src.ui.widgets.arrange_mapping import label_of, sample_of
+
+    for field in FieldMapping.load(MAPPING_PATH).fields:
+        assert label_of(field), field.id
+        sample = sample_of(field)
+        assert sample, field.id
+        if field.type == "grid":
+            assert len(sample) == int(field.max_cells or 6)

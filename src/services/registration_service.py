@@ -17,12 +17,16 @@ from src.config import paths
 from src.domain.documents import Passport, Patent
 from src.domain.registration_address import RegistrationAddress
 from src.pdf.engine import fill
-from src.pdf.mapping import FieldMapping
+from src.pdf.mapping import FieldMapping, with_layout
 from src.services.registration_values import build_registration_values
 
 log = get_logger(__name__)
 
 _MAPPING_PATH = paths.templates_dir() / "registration" / "mapping.v1.json"
+
+#: What this section is called in the arranged-layout store.
+SECTION = "registration"
+MAPPING_PATH = _MAPPING_PATH
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,13 @@ class RegistrationService:
         values = build_registration_values(
             passport, patent, registration_expiry=registration_expiry
         )
-        mapping = FieldMapping.load(_MAPPING_PATH)
+        # every address prints on the same МВД form, so the mapping is shared;
+        # whatever the office arranged on THIS address's own scan goes over it
+        from src.services import blank_layout
+
+        mapping = with_layout(
+            FieldMapping.load(_MAPPING_PATH),
+            blank_layout.load(SECTION, address.template_path))
         out_path = self._unique_output_path(address, passport, output_dir)
         fill(address.template_path, mapping, values, out_path)
         log.info("Generated registration %s for %s", out_path.name, address.label)
