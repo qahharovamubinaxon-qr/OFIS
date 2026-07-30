@@ -46,6 +46,7 @@ PAPER: dict[str, str] = {
     "nav.razreshenie": "sage",     # яшил разрешение
     "nav.ppu": "sage",             # регистрация оиласи
     "nav.snils": "house",          # оддий оқ варақ
+    "nav.mig": "sage",             # ИШЧИ КАРТАСИ — регистрация оиласи
     "nav.strahovka": "blue",       # ОСАГО полиси
     "nav.dms": "red",              # ДМС
     "nav.svera": "violet",         # свера

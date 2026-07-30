@@ -44,6 +44,11 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     # metric-compatible with Arial, so text measures the same either way.
     "OfisArial": {"nt": ("arial.ttf",), "bundled": "OfisSans-Regular.ttf"},
     "OfisArialBold": {"nt": ("arialbd.ttf",), "bundled": "OfisSans-Bold.ttf"},
+    # Courier New — the typewriter face the МИГ «ИШЧИ КАРТАСИ» is set in.
+    # Monospaced, so a value's width is its character count times one
+    # advance: that is what lets the spaced-out letters on that card line
+    # up with the boxes printed under them.
+    "OfisMono": {"nt": ("cour.ttf",), "bundled": "OfisMono-Regular.ttf"},
 }
 
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
@@ -52,6 +57,7 @@ _FONT_IDS = {
     "OfisSansRegular": "ofis_sans_r",
     "OfisArial": "ofis_arial",
     "OfisArialBold": "ofis_arial_b",
+    "OfisMono": "ofis_mono",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",

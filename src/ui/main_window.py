@@ -68,6 +68,9 @@ _NAV = [
      "Регистрациядан ППУ жуфтлиги — олд + орқа → расм", "🧾"),
     (None, "nav.snils", "СНИЛС",
      "Ишчининг СНИЛС номери варағи → PDF", "🔖"),
+    (None, "nav.mig", "МИГ",
+     "ИШЧИ КАРТАСИ — фирманинг бланкаси, печати ва паспорт → PDF",
+     "🪪"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     (None, "nav.sertifikat", "СЕРТИФИКАТ",
      "Рус тили сертификати (УЦ «СФЕРА») → PDF", "📜"),
@@ -231,6 +234,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.mig":
+            from src.controllers.mig_controller import MigController
+            from src.services.mig_service import MigService
+            from src.ui.views.mig_view import MigView
+
+            return MigView(MigController(
+                self._container.resolve(OcrService),
+                MigService(self._settings),
             ))
         if key == "nav.snils":
             from src.controllers.snils_controller import SnilsController

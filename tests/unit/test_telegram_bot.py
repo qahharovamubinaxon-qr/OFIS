@@ -149,7 +149,11 @@ _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
 _NOT_ON_THE_PHONE = {  # ППУ needs the office's own blank uploaded first
                      "nav.ppu",
                      # СНИЛС likewise
-                     "nav.snils"}
+                     "nav.snils",
+                     # МИГ needs the firm's blank AND its stamp placed with the
+                     # mouse against that blank — there is no phone screen for
+                     # dragging a stamp into position
+                     "nav.mig"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:
