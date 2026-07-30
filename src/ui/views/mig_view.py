@@ -70,6 +70,11 @@ class MigView(QWidget):
         add_blank.setToolTip("Фирманинг бўш ИШЧИ КАРТАСИ — PDF ёки расм")
         add_blank.clicked.connect(self._add_template)
         firm.addWidget(add_blank)
+        arrange = QPushButton("📐 Матнларни жойлаш")
+        arrange.setToolTip("Матнларни бу бланка устида сичқонча билан суриб, "
+                           "катта-кичик қилиб жойига қўйинг — сақланиб қолади")
+        arrange.clicked.connect(self._arrange)
+        firm.addWidget(arrange)
         drop_blank = QPushButton("✕")
         drop_blank.setFixedWidth(28)
         drop_blank.clicked.connect(self._remove_template)
@@ -246,7 +251,15 @@ class MigView(QWidget):
             return
         self._reload()
         self._template.setCurrentIndex(self._template.findData(str(dest)))
-        self._status.setText(f"✅ Бланка қўшилди: {dest.stem}")
+        self._status.setText(
+            f"✅ Бланка қўшилди: {dest.stem} — энди «📐 Матнларни жойлаш» "
+            "билан матнларни шу бланкага мослаб қўйинг.")
+        if QMessageBox.question(
+                self, "Матнларни жойлаш",
+                "Матнларни шу бланкага мослаб қўяйликми? "
+                "(сичқонча билан суриб, катта-кичик қилиб — сақланиб қолади)"
+        ) == QMessageBox.StandardButton.Yes:
+            self._arrange()
 
     def _remove_template(self) -> None:
         path = self._template.currentData()
@@ -289,6 +302,34 @@ class MigView(QWidget):
             return
         self._c.remove_stamp(stamp)
         self._reload()
+
+    def _arrange(self) -> None:
+        """Drag every value into place on THIS firm's blank and keep it."""
+        template = self._template.currentData()
+        if not template:
+            self._warn("Аввал бланкани танланг.")
+            return
+        from src.pdf.mig_renderer import MigData, as_png, effective, render
+        from src.ui.widgets.mig_layout_editor import MigLayoutEditor
+
+        template = Path(template)
+        try:
+            page = as_png(render(MigData(), template), zoom=1.5)
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        fields, sex, jobs = effective(self._c.layout(template))
+        dialog = MigLayoutEditor(page, fields, sex, jobs, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        try:
+            self._c.save_layout(template, dialog.layout_data())
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._status.setText(
+            f"✅ «{template.stem}» бланкасининг матн жойлари сақланди — "
+            "бу фирманинг ҳар бир картаси шу жойларга тушади.")
 
     def _place_stamp(self) -> None:
         """Drag the stamp onto this firm's own blank and keep where it went."""

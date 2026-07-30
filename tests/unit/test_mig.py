@@ -249,3 +249,57 @@ def test_a_card_without_a_blank_says_which_one_is_missing() -> None:
 
     with pytest.raises(ValidationError, match="бланкаси юкланмаган"):
         MigService().generate(template=None, surname="ЖАХОНГИРОВА")
+
+
+# ------------------------------- the layout the office arranges with the mouse
+
+
+def test_a_blank_arranged_with_the_mouse_keeps_its_places(tmp_path) -> None:
+    """Instead of editing numbers in a file and rebuilding the program, the
+    office drags each value into place on its own blank and saves."""
+    from src.pdf.mig_spec import FIELDS
+    from src.services.mig_service import MigService
+
+    service = MigService()
+    template = service.add_template("СФЕРА", _blank(tmp_path / "a.pdf"))
+    assert service.layout(template) == {}, "nothing arranged yet"
+
+    service.save_layout(template, {
+        "fields": {"surname": [0.40, 0.30, 0.030]},
+        "sex": {"female": [0.90, 0.42, 0.034]},
+        "jobs": {"uchenik": [0.10, 0.25, 0.70]}})
+
+    # a NEW service object, as the next run of the program would be
+    kept = MigService().layout(template)
+    assert kept["fields"]["surname"] == [0.40, 0.30, 0.030]
+
+    result = MigService().generate(template=template, surname="ЖАХОНГИРОВА",
+                                   number="1", gender="Женский",
+                                   jobs=("uchenik",))
+    page = fitz.open("pdf", result.pdf)[0]
+    span = next(s for block in page.get_text("dict")["blocks"]
+                if block["type"] == 0
+                for line in block["lines"] for s in line["spans"]
+                if "Ж" in s["text"])
+    assert abs(span["origin"][0] / page.rect.width - 0.40) < 0.005
+    assert abs(span["origin"][1] / page.rect.height - 0.30) < 0.005
+    assert span["size"] > FIELDS["surname"].size * page.rect.height, "not resized"
+    # the rule moved with it
+    drawn = page.get_drawings()[0]["rect"]
+    assert abs(drawn.y0 / page.rect.height - 0.70) < 0.01
+
+
+def test_arranging_one_firms_blank_does_not_move_anothers(tmp_path) -> None:
+    from src.services.mig_service import MigService
+
+    service = MigService()
+    one = service.add_template("СФЕРА", _blank(tmp_path / "a.pdf"))
+    two = service.add_template("ЭКСПЕРТ", _blank(tmp_path / "b.pdf"))
+    service.save_layout(one, {"fields": {"surname": [0.40, 0.30, 0.030]}})
+
+    assert service.layout(two) == {}
+    # and a layout file is never offered as a blank of its own
+    assert sorted(p.stem for p in service.templates()) == ["СФЕРА", "ЭКСПЕРТ"]
+
+    service.reset_layout(one)
+    assert service.layout(one) == {}

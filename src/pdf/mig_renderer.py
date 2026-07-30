@@ -26,6 +26,7 @@ from src.pdf.mig_spec import (
     RULE_WIDTH,
     SEX_X,
     TEXT_OPACITY,
+    Rule,
     Slot,
 )
 
@@ -180,8 +181,30 @@ def _blank_page(doc, template: Path):
     return page
 
 
-def render(data: MigData, template: Path) -> bytes:
+def effective(layout: dict | None):
+    """The slots this blank actually uses: the measured ones, plus any the
+    office moved with the mouse on its own copy of the card."""
+    fields = dict(FIELDS)
+    sex = dict(SEX_X)
+    jobs = {key: rule for key, _label, rule in JOBS}
+    moved = layout or {}
+    for key, value in (moved.get("fields") or {}).items():
+        if key in fields and len(value) == 3:
+            fields[key] = fields[key]._replace(
+                x=float(value[0]), baseline=float(value[1]), size=float(value[2]))
+    for key, value in (moved.get("sex") or {}).items():
+        if key in sex and len(value) == 3:
+            sex[key] = sex[key]._replace(
+                x=float(value[0]), baseline=float(value[1]), size=float(value[2]))
+    for key, value in (moved.get("jobs") or {}).items():
+        if key in jobs and len(value) == 3:
+            jobs[key] = Rule(float(value[0]), float(value[1]), float(value[2]))
+    return fields, sex, jobs
+
+
+def render(data: MigData, template: Path, layout: dict | None = None) -> bytes:
     """One filled ИШЧИ КАРТАСИ, as a one-page PDF."""
+    fields, sex_slots, job_rules = effective(layout)
     doc = fitz.open()
     page = _blank_page(doc, template)
     _place_stamp(page, data.stamp, data.stamp_box)
@@ -204,7 +227,7 @@ def render(data: MigData, template: Path) -> bytes:
         "issued": data.issued_on.strftime("%d %m %y") if data.issued_on else "",
     }
     for key, text in values.items():
-        slot = FIELDS[key]
+        slot = fields[key]
         if not text:
             continue
         if slot.spaced:
@@ -214,8 +237,8 @@ def render(data: MigData, template: Path) -> bytes:
 
     sex = _sex_key(data.gender)
     if sex:
-        _write(page, SEX_X[sex], "X")
-    for key, _label, rule in JOBS:
+        _write(page, sex_slots[sex], "X")
+    for key, rule in job_rules.items():
         if key in data.jobs:
             _underline(page, rule)
 

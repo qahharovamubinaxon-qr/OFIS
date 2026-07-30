@@ -93,7 +93,8 @@ class MigService:
         """The firms' blanks, newest name order. Empty until one is uploaded."""
         folder = templates_dir()
         return sorted(p for p in folder.iterdir()
-                      if p.is_file() and p.suffix.lower() in BLANK_SUFFIXES)
+                      if p.is_file() and p.suffix.lower() in BLANK_SUFFIXES
+                      and not p.name.endswith(".layout.json"))
 
     def add_template(self, name: str, source: Path) -> Path:
         source = Path(source)
@@ -107,6 +108,42 @@ class MigService:
 
     def remove_template(self, template: Path) -> None:
         Path(template).unlink(missing_ok=True)
+        self._layout_file(template).unlink(missing_ok=True)
+
+    # ------------------------------------------------------------ layout
+    @staticmethod
+    def _layout_file(template: Path) -> Path:
+        return Path(template).with_suffix(".layout.json")
+
+    def layout(self, template: Path | None) -> dict:
+        """Where this firm's blank wants its values, if it has been arranged.
+
+        Empty when it has not: the renderer then uses the measured defaults in
+        :mod:`src.pdf.mig_spec`. Kept beside the blank rather than in the
+        program, so arranging one firm's card never moves another's — and so a
+        move needs no new EXE.
+        """
+        if template is None:
+            return {}
+        path = self._layout_file(template)
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            log.warning("МИГ: %s жойлашуви ўқилмади", path.name)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def save_layout(self, template: Path, layout: dict) -> Path:
+        path = self._layout_file(template)
+        path.write_text(json.dumps(layout, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+        log.info("МИГ: %s жойлашуви сақланди", path.name)
+        return path
+
+    def reset_layout(self, template: Path) -> None:
+        self._layout_file(template).unlink(missing_ok=True)
 
     # ------------------------------------------------------------- stamps
     def _placements(self) -> dict:
@@ -203,7 +240,7 @@ class MigService:
             citizenship=citizenship, passport=passport, gender=gender,
             stamp=stamp.path.read_bytes() if stamp is not None else None,
             stamp_box=stamp.box if stamp is not None else DEFAULT_STAMP)
-        pdf = render(data, Path(template))
+        pdf = render(data, Path(template), self.layout(template))
         png = as_png(pdf)
 
         folder = paths.output_dir() / "mig"

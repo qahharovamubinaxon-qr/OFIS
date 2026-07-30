@@ -38,6 +38,15 @@ class MigController:
     def remove_template(self, template: Path) -> None:
         self._service.remove_template(template)
 
+    def layout(self, template: Path | None) -> dict:
+        return self._service.layout(template)
+
+    def save_layout(self, template: Path, layout: dict):
+        return self._service.save_layout(template, layout)
+
+    def reset_layout(self, template: Path) -> None:
+        self._service.reset_layout(template)
+
     def stamps(self) -> list[Stamp]:
         return self._service.stamps()
 
