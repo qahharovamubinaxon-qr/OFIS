@@ -14,7 +14,6 @@ from pathlib import Path
 
 import fitz
 import pytest
-
 from src.config import paths
 
 
@@ -303,3 +302,56 @@ def test_arranging_one_firms_blank_does_not_move_anothers(tmp_path) -> None:
 
     service.reset_layout(one)
     assert service.layout(one) == {}
+
+
+# ------------------------------------------- the office's own code and faces
+
+
+def test_the_code_is_printed_at_all_four_corners(tmp_path) -> None:
+    """The office writes one 3–4 digit code and it appears four times, round
+    the issue date."""
+    from src.pdf.mig_spec import CODE_SLOTS, FIELDS
+
+    page = _card(tmp_path, code="2352")
+    spans = [s for block in page.get_text("dict")["blocks"] if block["type"] == 0
+             for line in block["lines"] for s in line["spans"]
+             if _plain(s["text"]).strip() == "2352"]
+    assert len(spans) == 4, "the code must be at every corner"
+
+    # one above the date and one below it, one left and one right — a square
+    corners = {(round(s["origin"][0] / page.rect.width, 2),
+                round(s["origin"][1] / page.rect.height, 2)) for s in spans}
+    assert len({x for x, _y in corners}) == 2
+    assert len({y for _x, y in corners}) == 2
+    assert set(CODE_SLOTS) <= set(FIELDS)
+
+
+def test_a_card_without_a_code_prints_none_of_them(tmp_path) -> None:
+    page = _card(tmp_path, code="")
+    assert "2352" not in _plain(page.get_text())
+
+
+def test_only_digits_of_the_code_are_taken(tmp_path) -> None:
+    page = _card(tmp_path, code=" 23-52 ")
+    spans = [s for block in page.get_text("dict")["blocks"] if block["type"] == 0
+             for line in block["lines"] for s in line["spans"]
+             if _plain(s["text"]).strip() == "2352"]
+    assert len(spans) == 4
+
+
+def test_the_issue_date_and_the_code_are_set_in_their_own_faces() -> None:
+    """Courier for the card, Akshar for the date, Times for the code — the
+    office asked for each by name."""
+    from src.pdf.mig_spec import AKSHAR, CODE_SLOTS, FIELDS, MONO, TIMES
+
+    assert FIELDS["issued"].font == AKSHAR
+    assert all(FIELDS[key].font == TIMES for key in CODE_SLOTS)
+    assert FIELDS["surname"].font == MONO
+
+
+def test_the_type_is_thickened_by_a_share_of_its_size_not_by_points() -> None:
+    """PyMuPDF reads ``border_width`` as a share of the type size. Given points
+    it strokes each glyph so heavily the card comes out as blots."""
+    from src.pdf.mig_spec import STROKE_SHARE
+
+    assert 0.0 < STROKE_SHARE < 0.1

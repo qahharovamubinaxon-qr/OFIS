@@ -54,8 +54,8 @@ class MigView(QWidget):
         self._last: Path | None = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(10)
+        root.setContentsMargins(28, 20, 28, 20)
+        root.setSpacing(12)
 
         title = QLabel("МИГ — ИШЧИ КАРТАСИ")
         title.setObjectName("viewTitle")
@@ -107,7 +107,8 @@ class MigView(QWidget):
         root.addLayout(zones)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(14)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
         self._surname = self._line(grid, 0, 0, "ФАМИЛИЯ:")
         self._surname_lat = self._line(grid, 0, 2, "Латинча (ўзи ясалади):")
         self._name = self._line(grid, 1, 0, "ИСМИ:")
@@ -121,19 +122,24 @@ class MigView(QWidget):
         self._gender.addItem("— жинси —", "")
         self._gender.addItem("МУЖ (эркак)", "Мужской")
         self._gender.addItem("ЖЕН (аёл)", "Женский")
+        self._gender.setMinimumHeight(32)
         grid.addWidget(QLabel("Жинси:"), 3, 2)
         grid.addWidget(self._gender, 3, 3)
         root.addLayout(grid)
 
         # -- what the office types itself -------------------------------
         own = QGridLayout()
-        own.setHorizontalSpacing(14)
+        own.setHorizontalSpacing(16)
+        own.setVerticalSpacing(8)
         self._series = self._line(own, 0, 0, "КАРТА СЕРИЯ:")
         self._series.setPlaceholderText("46 26")
         self._number = self._line(own, 0, 2, "КАРТА НОМЕР:")
         self._number.setPlaceholderText("0367598")
         self._visa = self._line(own, 1, 0, "ВИЗА № (бўлмаса бўш):")
         self._visa.setPlaceholderText("АШХ23652")
+        self._code = self._line(own, 1, 2, "КОД (3–4 рақам):")
+        self._code.setPlaceholderText("2352")
+        self._code.setToolTip("Берилган сананинг ТЎРТ бурчагига ёзилади")
         own.addWidget(QLabel("Иш ўрни:"), 2, 0)
         jobs = QHBoxLayout()
         self._jobs: dict[str, QCheckBox] = {}
@@ -200,9 +206,17 @@ class MigView(QWidget):
     # ------------------------------------------------------------ helpers
     @staticmethod
     def _line(grid: QGridLayout, row: int, col: int, label: str) -> QLineEdit:
+        """One labelled box, big enough to READ what is in it.
+
+        The office said the boxes were too small to see what had been typed, so
+        every one is given room: a tall field and a wide value column.
+        """
         grid.addWidget(QLabel(label), row, col)
         edit = QLineEdit()
+        edit.setMinimumHeight(32)
+        edit.setMinimumWidth(240)
         grid.addWidget(edit, row, col + 1)
+        grid.setColumnStretch(col + 1, 1)
         return edit
 
     @staticmethod
@@ -413,6 +427,7 @@ class MigView(QWidget):
                 citizenship=self._citizenship.text(),
                 passport=self._doc.text(),
                 gender=self._gender.currentData() or "",
+                code=self._code.text(),
                 stamp=self._chosen_stamp())
         except Exception as error:                # noqa: BLE001
             self._failed(error)
@@ -458,7 +473,8 @@ class MigView(QWidget):
         self._passport.clear()
         for edit in (self._surname, self._surname_lat, self._name,
                      self._patronymic, self._birth, self._citizenship,
-                     self._doc, self._series, self._number, self._visa):
+                     self._doc, self._series, self._number, self._visa,
+                     self._code):
             edit.clear()
         self._gender.setCurrentIndex(0)
         for box in self._jobs.values():

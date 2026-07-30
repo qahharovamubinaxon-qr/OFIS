@@ -19,20 +19,25 @@ import fitz
 from src.common.logging import get_logger
 from src.pdf.engine import _font_file
 from src.pdf.mig_spec import (
+    AKSHAR,
+    CODE_SLOTS,
     DEFAULT_STAMP,
     FIELDS,
     JOBS,
     MONO,
     RULE_WIDTH,
     SEX_X,
+    STROKE_SHARE,
     TEXT_OPACITY,
+    TIMES,
     Rule,
     Slot,
 )
 
 log = get_logger(__name__)
 
-_FONT_HANDLE = "mig"
+#: One handle per face registered on the page.
+_HANDLES = {MONO: "mig", AKSHAR: "migA", TIMES: "migT"}
 
 #: How the card spells a surname in Latin, under the Cyrillic one.
 #:
@@ -76,6 +81,9 @@ class MigData:
     passport: str = ""
     #: «Мужской» / «Женский» — an X goes in that box
     gender: str = ""
+    #: the office's own 3-4 digit code, printed at all four corners round the
+    #: issue date
+    code: str = ""
     # --- the firm's stamp
     stamp: bytes | None = None
     #: (left, top, right, bottom) shares of the page
@@ -118,7 +126,8 @@ def _dmy(value: date | None) -> str:
 
 
 def _fonts(page) -> None:
-    page.insert_font(fontname=_FONT_HANDLE, fontfile=str(_font_file(MONO)))
+    for family, handle in _HANDLES.items():
+        page.insert_font(fontname=handle, fontfile=str(_font_file(family)))
 
 
 def _write(page, slot: Slot, text: str) -> None:
@@ -128,12 +137,17 @@ def _write(page, slot: Slot, text: str) -> None:
     rect = page.rect
     size = slot.size * rect.height
     limit = slot.width * rect.width
-    font = fitz.Font(fontfile=str(_font_file(MONO)))
+    family = getattr(slot, "font", MONO)
+    font = fitz.Font(fontfile=str(_font_file(family)))
     while size > 3.0 and font.text_length(text, fontsize=size) > limit:
         size -= 0.3
+    # filled AND stroked, so the type comes out a shade heavier than the plain
+    # face — the way a typewriter strikes, and what the office asked for
     page.insert_text((slot.x * rect.width, slot.baseline * rect.height), text,
-                     fontname=_FONT_HANDLE, fontsize=size, color=slot.colour,
-                     fill_opacity=TEXT_OPACITY)
+                     fontname=_HANDLES.get(family, "mig"), fontsize=size,
+                     color=slot.colour, fill=slot.colour,
+                     render_mode=2, border_width=STROKE_SHARE,
+                     fill_opacity=TEXT_OPACITY, stroke_opacity=TEXT_OPACITY)
 
 
 def _underline(page, rule) -> None:
@@ -226,6 +240,8 @@ def render(data: MigData, template: Path, layout: dict | None = None) -> bytes:
         "valid_to": _dmy(data.valid_to),
         "issued": data.issued_on.strftime("%d %m %y") if data.issued_on else "",
     }
+    code = "".join(ch for ch in (data.code or "") if ch.isdigit())
+    values.update({key: code for key in CODE_SLOTS})
     for key, text in values.items():
         slot = fields[key]
         if not text:

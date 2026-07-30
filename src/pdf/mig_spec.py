@@ -61,10 +61,24 @@ from typing import NamedTuple
 
 #: Courier New. Monospaced, so a line's width is its length times one advance.
 MONO = "OfisMono"
+#: Akshar Regular — the face the office stamps the issue date in.
+AKSHAR = "OfisAkshar"
+#: Times New Roman italic — the code the office writes round that date.
+TIMES = "OfisSerifItalic"
 
 BLACK = (0.05, 0.05, 0.05)
-#: The day the card was issued is stamped in blue on the office's own cards.
-BLUE = (0.13, 0.22, 0.85)
+#: The blue the office asked for the issue date in — #4856dd.
+BLUE = (0x48 / 255, 0x56 / 255, 0xDD / 255)
+
+#: Everything is set a shade heavier than the plain face, the way a typewriter
+#: strikes: the outline is stroked as well as filled. Not a bold face — the
+#: office asked for «бироз жирний», and Courier Bold is a different, wider
+#: design that would not line up with the boxes.
+#:
+#: PyMuPDF takes this as a SHARE OF THE TYPE SIZE, not as points. Passed in
+#: points it strokes each glyph so thickly the letters run into one another and
+#: the card comes out as blots — which is exactly what happened once.
+STROKE_SHARE = 0.030
 
 
 class Slot(NamedTuple):
@@ -78,6 +92,8 @@ class Slot(NamedTuple):
     width: float = 0.40
     #: letters set apart, «Ж А Х О Н...», the way the card is typed
     spaced: bool = False
+    #: which face to set it in — the card is Courier, its issue date Akshar
+    font: str = MONO
 
 
 #: Sizes, each solved from the office's own filled card.
@@ -89,6 +105,7 @@ _VISA = 0.0168
 _TERM = 0.0180
 _ISSUED = 0.0270
 _SEX = 0.0338
+_CODE = 0.0227
 
 FIELDS: dict[str, Slot] = {
     # the card's own series and number — the office types these
@@ -108,8 +125,18 @@ FIELDS: dict[str, Slot] = {
     "valid_to":    Slot(0.4722, 0.7634, _TERM, BLACK, width=0.24),
     #: the day the card was issued — «15 03 26», in blue. NOT letter-spaced:
     #: the office writes the pairs together.
-    "issued":      Slot(0.1938, 0.8696, _ISSUED, BLUE, width=0.34),
+    "issued":      Slot(0.1938, 0.8696, _ISSUED, BLUE, width=0.34,
+                        font=AKSHAR),
+    #: The office's own code — the same 3 or 4 digits at all FOUR corners
+    #: round the issue date, in Times New Roman italic.
+    "code_tl":     Slot(0.1390, 0.7890, _CODE, BLUE, width=0.14, font=TIMES),
+    "code_tr":     Slot(0.4940, 0.7890, _CODE, BLUE, width=0.14, font=TIMES),
+    "code_bl":     Slot(0.1390, 0.9380, _CODE, BLUE, width=0.14, font=TIMES),
+    "code_br":     Slot(0.4940, 0.9380, _CODE, BLUE, width=0.14, font=TIMES),
 }
+
+#: The four places that code is printed, in reading order.
+CODE_SLOTS = ("code_tl", "code_tr", "code_bl", "code_br")
 
 #: The «МУЖ» and «ЖЕН» boxes. One «X» goes in whichever the passport says.
 SEX_X = {

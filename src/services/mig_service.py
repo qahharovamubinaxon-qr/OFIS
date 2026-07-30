@@ -223,6 +223,7 @@ class MigService:
         citizenship: str = "",
         passport: str = "",
         gender: str = "",
+        code: str = "",
         stamp: Stamp | None = None,
     ) -> MigResult:
         if template is None:
@@ -238,6 +239,7 @@ class MigService:
             surname=surname, surname_latin=surname_latin, name=name,
             patronymic=patronymic, birth_date=birth_date,
             citizenship=citizenship, passport=passport, gender=gender,
+            code=code,
             stamp=stamp.path.read_bytes() if stamp is not None else None,
             stamp_box=stamp.box if stamp is not None else DEFAULT_STAMP)
         pdf = render(data, Path(template), self.layout(template))

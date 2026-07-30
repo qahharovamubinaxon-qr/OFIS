@@ -9,7 +9,7 @@ has on it: which values, what to call them, and a sample of each.
 from __future__ import annotations
 
 from src.pdf.mig_renderer import digits_spaced, spaced
-from src.pdf.mig_spec import BLUE, JOBS
+from src.pdf.mig_spec import BLUE, CODE_SLOTS, JOBS
 from src.ui.widgets.layout_editor import Item, LayoutEditor, RuleItem
 
 #: What each value is called on screen, and a sample, in printing order.
@@ -27,10 +27,15 @@ SAMPLES: tuple[tuple[str, str, str], ...] = (
     ("valid_from", "МУДДАТ — С", "20.07.2026"),
     ("valid_to", "МУДДАТ — ДО", "14.10.2026"),
     ("issued", "БЕРИЛГАН САНА (кўк)", "15 03 26"),
+    ("code_tl", "КОД — чап тепа", "2352"),
+    ("code_tr", "КОД — ўнг тепа", "2352"),
+    ("code_bl", "КОД — чап паст", "2352"),
+    ("code_br", "КОД — ўнг паст", "2352"),
 )
 
-#: The face the card is typed in.
+#: The face the card is typed in, and the two the office stamps in.
 SCREEN_FONT = "Courier New"
+_SCREEN_FACES = {"issued": "Akshar", **{k: "Times New Roman" for k in CODE_SLOTS}}
 
 
 def build(fields, sex, jobs) -> tuple[list[Item], list[RuleItem]]:
@@ -39,8 +44,9 @@ def build(fields, sex, jobs) -> tuple[list[Item], list[RuleItem]]:
         Item(key=key, label=label, sample=sample,
              x=fields[key].x, baseline=fields[key].baseline,
              size=fields[key].size,
-             colour=BLUE if key == "issued" else (0.08, 0.08, 0.08),
-             font_family=SCREEN_FONT)
+             colour=BLUE if key == "issued" or key in CODE_SLOTS
+             else (0.08, 0.08, 0.08),
+             font_family=_SCREEN_FACES.get(key, SCREEN_FONT))
         for key, label, sample in SAMPLES if key in fields
     ]
     items += [

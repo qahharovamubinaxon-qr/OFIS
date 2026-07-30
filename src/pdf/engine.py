@@ -49,6 +49,10 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     # advance: that is what lets the spaced-out letters on that card line
     # up with the boxes printed under them.
     "OfisMono": {"nt": ("cour.ttf",), "bundled": "OfisMono-Regular.ttf"},
+    # Akshar Regular — the face the МИГ card's issue date is stamped in.
+    # Not a Windows font: it is installed per-user, where the system
+    # lookup below cannot see it, so the bundled copy is what gets used.
+    "OfisAkshar": {"nt": (), "bundled": "OfisAkshar-Regular.ttf"},
 }
 
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
@@ -58,6 +62,7 @@ _FONT_IDS = {
     "OfisArial": "ofis_arial",
     "OfisArialBold": "ofis_arial_b",
     "OfisMono": "ofis_mono",
+    "OfisAkshar": "ofis_akshar",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",
