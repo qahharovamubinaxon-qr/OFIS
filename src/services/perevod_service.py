@@ -42,8 +42,13 @@ from src.pdf.perevod_spec import (
     BLANK_STEMS,
     LABEL_SHARE,
     LEADING,
+    MM,
+    PASSPORT_PAGE_MM,
+    PASSPORT_SPREAD_MM,
+    REAL_MM,
     SCAN_BOX,
-    SCAN_GAP,
+    SCAN_GAP_MM,
+    SPREAD_ASPECT,
     TEXT_BOX,
     TEXT_OPACITY,
     TEXT_SIZE,
@@ -171,19 +176,18 @@ def clear_blank(index: int) -> None:
 # ------------------------------------------------------------ the original
 
 
-def photocopy(image: bytes, crop: dict | None = None, *,
-              negative: bool = False) -> bytes:
+def photocopy(image: bytes, crop: dict | None = None) -> bytes:
     """The original as a clean black-and-white copy, ready to be pasted on.
+
+    Colourless — grey ink on white paper, the way a photocopier gives it. NOT a
+    negative: the office tried that and a negative turns the whole sheet black
+    and eats a printer's toner, and a passport copy is read from the black.
 
     ``crop`` are the document's bounds within the photo in 0..1 fractions (the
     AI returns them alongside the translation — it can see where the document
     is far more reliably than edge detection can on a patterned surface). The
     photo is trimmed to those bounds, its lighting evened out and lifted to
     paper-white / ink-black.
-
-    ``negative`` turns the result round — white ink on black paper. The office
-    asked for it once for a dark original; it is off by default because a
-    negative eats a printer's toner and a passport copy is read from the black.
 
     Returns the original bytes untouched if OpenCV is unavailable or the bytes
     are not a readable image — a package must still come out.
@@ -199,7 +203,7 @@ def photocopy(image: bytes, crop: dict | None = None, *,
     if arr is None:
         return image
     arr = _apply_crop(arr, crop)
-    out = _scan_look(cv2, arr, negative=negative)
+    out = _scan_look(cv2, arr)
     return out or image
 
 
@@ -225,7 +229,7 @@ def _apply_crop(arr, crop: dict | None):
     return arr[py0:py1, px0:px1]
 
 
-def _scan_look(cv2, arr, *, negative: bool = False) -> bytes | None:
+def _scan_look(cv2, arr) -> bytes | None:
     """Flatten phone lighting and lift the page to crisp black-on-white."""
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
     # divide out the illumination field, then stretch what is left
@@ -237,8 +241,6 @@ def _scan_look(cv2, arr, *, negative: bool = False) -> bytes | None:
     lo, hi = 120.0, 225.0
     stretched = cv2.convertScaleAbs(flat, alpha=255.0 / (hi - lo),
                                     beta=-lo * 255.0 / (hi - lo))
-    if negative:
-        stretched = 255 - stretched
     ok, buf = cv2.imencode(".png", stretched)
     return buf.tobytes() if ok else None
 
@@ -294,12 +296,47 @@ def _blank_page(doc, blank: Path | None):
     return page
 
 
-def _place_originals(page, shots: list[bytes]) -> None:
-    """Centre the copies of the original in sheet 1's window.
+def _aspect(shot: bytes) -> float:
+    """The photo's width over its height, 1.0 if it cannot be read."""
+    import fitz
 
-    One original fills the window; two or more share it, stacked, each centred
-    in its own slice and each keeping its proportions — a passport spread and
-    its back page must not come out different shapes.
+    try:
+        picture = fitz.Pixmap(shot)
+    except Exception:                                 # noqa: BLE001
+        return 1.0
+    return (picture.width / picture.height) if picture.height else 1.0
+
+
+def real_size_pt(doc_type: str, aspect: float) -> tuple[float, float]:
+    """How big this document is in real life, in points, for THIS photograph.
+
+    The size comes from the document, the ORIENTATION from the photograph: a
+    plastic card photographed on its side is still 85.6 × 54 mm, just turned.
+    A passport is the one that changes size rather than shape — photographed
+    open, the spread is two pages wide.
+    """
+    long_mm, short_mm = REAL_MM.get(doc_type, REAL_MM["other"])
+    if doc_type == "passport":
+        long_mm, short_mm = (PASSPORT_SPREAD_MM if aspect >= SPREAD_ASPECT
+                             else PASSPORT_PAGE_MM)
+    wide = long_mm >= short_mm
+    if (aspect >= 1.0) != wide:
+        long_mm, short_mm = short_mm, long_mm
+    return long_mm * MM, short_mm * MM
+
+
+def _place_originals(page, shots: list[bytes], doc_type: str) -> None:
+    """The copies of the original, at LIFE SIZE, centred on the sheet.
+
+    The office asked for this in as many words: a passport is not blown up to
+    fill an A4, it is printed the size a passport is and put in the middle of
+    the sheet — «ҳисоблаб ўртасига қўйилади». So each photograph is scaled to
+    the document's own real size (:func:`real_size_pt`) rather than to the
+    window, and the whole group is centred in the window both ways.
+
+    Front and back of the same card both go on this sheet, one under the other.
+    Only if the stack will not fit the window is it scaled down — evenly, so the
+    two halves of one document stay the same size as each other.
     """
     import fitz
 
@@ -310,15 +347,29 @@ def _place_originals(page, shots: list[bytes]) -> None:
     right = SCAN_BOX[2] * rect.width
     top = SCAN_BOX[1] * rect.height
     bottom = SCAN_BOX[3] * rect.height
-    gap = SCAN_GAP * (bottom - top) if len(shots) > 1 else 0.0
-    slice_height = ((bottom - top) - gap * (len(shots) - 1)) / len(shots)
-    for index, shot in enumerate(shots):
-        y0 = top + index * (slice_height + gap)
-        box = fitz.Rect(left, y0, right, y0 + slice_height)
+    room_w, room_h = right - left, bottom - top
+    gap = SCAN_GAP_MM * MM
+
+    sizes = [real_size_pt(doc_type, _aspect(shot)) for shot in shots]
+    stack_h = sum(h for _w, h in sizes) + gap * (len(sizes) - 1)
+    stack_w = max(w for w, _h in sizes)
+    # life size unless the sheet is too small for it
+    fit = min(1.0, room_w / stack_w, room_h / stack_h)
+    if fit < 1.0:
+        log.info("ПЕРЕВОД: ҳақиқий ўлчам варақга сиғмади — %.0f%% қилинди",
+                 fit * 100)
+
+    y = top + (room_h - stack_h * fit) / 2.0
+    centre_x = (left + right) / 2.0
+    for shot, (width, height) in zip(shots, sizes, strict=True):
+        width, height = width * fit, height * fit
+        box = fitz.Rect(centre_x - width / 2.0, y,
+                        centre_x + width / 2.0, y + height)
         try:
             page.insert_image(box, stream=shot, keep_proportion=True)
         except Exception as exc:                      # noqa: BLE001
             log.warning("ПЕРЕВОД: ҳужжат расми жойлашмади: %s", exc)
+        y += height + gap * fit
 
 
 def _forms() -> dict:
@@ -377,7 +428,6 @@ class PerevodService:
         *,
         doc_type: str = "auto",
         form_date: date | None = None,  # kept for API compatibility; unused
-        negative: bool = False,
         output_dir: Path | None = None,
     ) -> PerevodResult:
         if not images:
@@ -417,14 +467,14 @@ class PerevodService:
             i += 1
 
         originals = [
-            photocopy(shot, crop, negative=negative)
+            photocopy(shot, crop)
             for shot, crop in zip(images[:10],
                                   list(crops) + [None] * len(images),
                                   strict=False)
         ]
         pdf = self._to_pdf(base.with_suffix(".pdf"), title=title, lang=lang,
                            country=country, fields=fields, stamps=stamps,
-                           notes=notes, originals=originals)
+                           notes=notes, originals=originals, doc_type=kind)
         docx = self._to_docx(base.with_suffix(".docx"), title=title, lang=lang,
                              country=country, fields=fields, stamps=stamps,
                              notes=notes)
@@ -445,7 +495,7 @@ class PerevodService:
 
     def _to_pdf(self, out: Path, *, title: str, lang: str, country: str,
                 fields: list[dict], stamps: list[str], notes: list[str],
-                originals: list[bytes]) -> Path:
+                originals: list[bytes], doc_type: str = "other") -> Path:
         """The package: three sheets, one PDF, in the office's own order."""
         import fitz
 
@@ -456,7 +506,7 @@ class PerevodService:
         doc = fitz.open()
 
         # sheet 1 — the original, black-and-white, centred on the blank
-        _place_originals(_blank_page(doc, sheets[0]), originals)
+        _place_originals(_blank_page(doc, sheets[0]), originals, doc_type)
 
         # sheet 2 — the translation, set to fit the blank in ONE page
         page = _blank_page(doc, sheets[1])

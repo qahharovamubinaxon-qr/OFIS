@@ -100,6 +100,68 @@ def case_number(series: str, number: str) -> str:
     return f"{number}-{series}ПАТ" if series else f"{number}ПАТ"
 
 
+#: The legal forms a Russian employer comes in, longhand → short.
+_FORMS = (
+    ("общество с ограниченной ответственностью", "ООО"),
+    ("индивидуальный предприниматель", "ИП"),
+    ("публичное акционерное общество", "ПАО"),
+    ("закрытое акционерное общество", "ЗАО"),
+    ("открытое акционерное общество", "ОАО"),
+    ("акционерное общество", "АО"),
+    ("ооо", "ООО"), ("ип", "ИП"), ("пао", "ПАО"),
+    ("зао", "ЗАО"), ("оао", "ОАО"), ("ао", "АО"),
+)
+
+
+def short_firm(text: str) -> str:
+    """The employer as the office writes it — «ООО “СФЕРА”», «ИП МАТАКОВ А.С.».
+
+    A трудовой договор spells the employer out in full: «Общество с ограниченной
+    ответственностью "СФЕРА", в лице генерального директора …». On the sheet that
+    runs off the cell, so it is cut down to the form and the name — and for a
+    sole trader, to the surname and two initials, which is how the office writes
+    those. Anything unrecognised is passed through unchanged rather than mangled:
+    two firms in the office can differ by one word.
+    """
+    import re
+
+    text = " ".join((text or "").replace(" ", " ").split())
+    if not text:
+        return ""
+    # cut everything the contract adds after the name itself
+    for tail in (", в лице", " в лице", ", именуемое", ", именуемый",
+                 ", далее", " (далее"):
+        cut = text.lower().find(tail)
+        if cut > 0:
+            text = text[:cut]
+            break
+    lower = text.lower()
+    form = ""
+    rest = text
+    for spelling, short in _FORMS:
+        if lower.startswith(spelling) and (
+                len(lower) == len(spelling) or not lower[len(spelling)].isalpha()):
+            form, rest = short, text[len(spelling):]
+            break
+    rest = rest.strip(" .,:;«»\"'“”")
+
+    if form == "ИП":
+        # «Матаков Алишер Салимович» → «МАТАКОВ А.С.»
+        words = [w for w in re.split(r"[\s.]+", rest) if w]
+        if words:
+            initials = "".join(f"{w[0].upper()}." for w in words[1:3])
+            return f"ИП {words[0].upper()}{' ' + initials if initials else ''}"
+        return "ИП"
+
+    quoted = re.search(r"[\"'«“]([^\"'»”]+)[\"'»”]", rest)
+    name = (quoted.group(1) if quoted else rest).strip()
+    if not name:
+        return form or text
+    if not form:
+        return text                       # no form recognised — leave it alone
+    return f"{form} “{name.upper()}”"
+
+
 def _blanks(front: Path, page2: Path, page3: Path) -> tuple[Path, Path, Path]:
     sheets = (Path(front), Path(page2), Path(page3))
     for sheet in sheets:
@@ -143,17 +205,28 @@ def _fill_page2(page, data: TrudPpuData) -> None:
         "case_number": case_number(data.patent_series, data.patent_number),
         "case_date": _dmy(issued),
         "contract_date": _dmy(data.contract_date),
-        "firm": (data.firm or "").strip(),
+        "firm": short_firm(data.firm),
     }
     for key, text in values.items():
         _write(page, PAGE2[key], text, fonts, TEXT_OPACITY)
 
 
+#: A row of the notification page's OWN text that runs a good way across it —
+#: «Поделитесь впечатлениями от услуги», the blue strip under the title. Its
+#: angle is the page's angle. (top, bottom, left, right) shares of the page.
+_PAGE3_TILT_ROW = (0.425, 0.455, 0.12, 0.58)
+
+
 def _fill_page3(page, data: TrudPpuData) -> None:
+    from src.pdf.blank_fit import fit_tilt
+
     fonts = _fonts(page)
+    # The page is a photograph of a screen taken by hand and its rows lean; a
+    # value set dead flat on it is the one thing that looks crooked.
+    tilt = fit_tilt(page, _PAGE3_TILT_ROW).tilt
     number = "".join((data.uved_number or "").split())
     fio = (data.uved_fio or "").strip() or full_name(
         data.surname, data.name, data.patronymic)
     _write(page, PAGE3["uved_number"], f"№ {number}" if number else "",
-           fonts, TEXT_OPACITY)
-    _write(page, PAGE3["fio"], fio, fonts, TEXT_OPACITY)
+           fonts, TEXT_OPACITY, tilt)
+    _write(page, PAGE3["fio"], fio, fonts, TEXT_OPACITY, tilt)

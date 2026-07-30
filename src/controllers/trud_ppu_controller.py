@@ -18,6 +18,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from src.ai.text_client import ask
+from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.ocr.service import OcrService
 from src.services.trud_ppu_service import TrudPpuResult, TrudPpuService
@@ -71,6 +72,46 @@ _UVED_PROMPT = """Ты читаешь УВЕДОМЛЕНИЕ о заключен
 - если чего-то в документе нет — верни пустую строку "".
 
 {payload}"""
+
+
+_PATENT_EXTRA_PROMPT = """На фотографиях РАБОЧИЙ ПАТЕНТ иностранного гражданина \
+(российская карточка «ПАТЕНТ»), возможно с обеих сторон.
+
+Прочитай и верни СТРОГО JSON, без пояснений и без markdown:
+{{
+ "birth_date": "<дата рождения, ДД.ММ.ГГГГ>",
+ "citizenship": "<гражданство, например УЗБЕКИСТАН или ТАДЖИКИСТАН>",
+ "passport": "<серия и номер документа, удостоверяющего личность, например \
+FA7822242 или 4012345678>",
+ "gender": "<Мужской или Женский, если указан>"
+}}
+
+ПРАВИЛА:
+- любое значение — СТРОКА; ведущие нули НЕ терять;
+- поле «Документ, удостоверяющий личность» на патенте содержит серию и номер \
+паспорта, а рядом может стоять ИНН из 12 цифр — ИНН НЕ БРАТЬ;
+- если чего-то на патенте нет — верни пустую строку "".
+
+{payload}"""
+
+#: Russian and Uzbek patronymic endings. A patent does not print «Пол», and the
+#: ППУ front has a «Пол» row that has to say something — the patronymic says it.
+_MALE_ENDINGS = ("ович", "евич", "ич", "ўғли", "угли", "оглы", "уулу")
+_FEMALE_ENDINGS = ("овна", "евна", "ична", "инична", "қизи", "кизи", "кызы")
+
+
+def gender_from_patronymic(patronymic: str) -> str:
+    """«Зафаровна» → «Женский», «Абдулохонович» → «Мужской», else «»."""
+    word = " ".join((patronymic or "").split()).lower()
+    if not word:
+        return ""
+    for ending in _FEMALE_ENDINGS:
+        if word.endswith(ending):
+            return "Женский"
+    for ending in _MALE_ENDINGS:
+        if word.endswith(ending):
+            return "Мужской"
+    return ""
 
 
 def _pdf_text(data: bytes) -> str:
@@ -163,26 +204,60 @@ class TrudPpuController:
         answer = _answer(self._key_getter(), _UVED_PROMPT, pdf)
         parts = [answer.get("surname", ""), answer.get("name", ""),
                  answer.get("patronymic", "")]
+        number = _digits(answer.get("number", ""))
+        if not number:
+            number = uved_number_from_text(_pdf_text(pdf))
         return {
-            "uved_number": _digits(answer.get("number", "")),
+            "uved_number": number,
             "uved_fio": " ".join(p for p in parts if p),
         }
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> dict[str, str]:
         """The patent's series, number and issue date, off the patent itself."""
         patent = self._ocr.read_patent(front, back)
-        # the expiry is NOT taken from the patent: the office writes exactly one
-        # year on from the issue date, and the screen derives it from there. The
-        # operator can still overtype it for a patent that says otherwise.
-        return {
+        patronymic = (patent.holder_patronymic or "").strip()
+        # The ППУ front sheet also wants the date of birth, the sex and the
+        # passport, and the Patent model carries none of the three. The трудовой
+        # договор often does not either — which is why the office's first
+        # packages came out with «Дата рождения», «Пол» and «Иностранный
+        # паспорт» blank. They are all on the patent card, so they are read off
+        # it here with one free-form call.
+        extra = self._patent_extra(front, back)
+        fields = {
             "patent_series": (patent.series or "").strip(),
             "patent_number": "".join((patent.number or "").split()),
+            # the expiry is NOT taken from the patent: the office writes exactly
+            # one year on from the issue date, and the screen derives it there
             "patent_issue": _dmy(patent.issue_date or patent.valid_from),
             "surname": (patent.holder_surname or "").strip(),
             "name": (patent.holder_name or "").strip(),
-            "patronymic": (patent.holder_patronymic or "").strip(),
-            "citizenship": (patent.holder_citizenship or "").strip(),
+            "patronymic": patronymic,
+            "citizenship": ((patent.holder_citizenship or "").strip()
+                            or extra.get("citizenship", "")),
+            "birth_date": extra.get("birth_date", ""),
+            "document": _passport(extra.get("passport", "")),
         }
+        # «Пол» is not printed on a patent at all. A patronymic tells it without
+        # asking anyone: «…овна» is a woman, «…ович» and «…ўғли» a man.
+        fields["gender"] = extra.get("gender", "") or gender_from_patronymic(
+            patronymic)
+        return fields
+
+    def _patent_extra(self, front: bytes, back: bytes | None) -> dict[str, str]:
+        """The three fields the Patent model does not carry, off the same card."""
+        images = [i for i in (front, back) if i]
+        try:
+            raw = ask(self._key_getter(),
+                      _PATENT_EXTRA_PROMPT.format(payload=""),
+                      images, json_out=True)
+            parsed = json.loads(raw)
+        except (OfisError, json.JSONDecodeError, ValueError) as exc:
+            log.warning("ТРУД ППУ: патентдан қўшимча майдонлар олинмади: %s", exc)
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        return {str(k): ("" if v is None else str(v)).strip()
+                for k, v in parsed.items()}
 
     # --------------------------------------------------------- printing
     def generate(self, **kwargs) -> TrudPpuResult:
@@ -210,6 +285,64 @@ def _dmy(value: date | None) -> str:
 def _digits(text: str) -> str:
     """Only the digits, so «№ 4785796716» and «4785796716» both come out same."""
     return "".join(c for c in (text or "") if c.isdigit())
+
+
+#: Where a notification's number is written, in the words used around it.
+_UVED_LABELS = (
+    r"уведомлени[ея][^\n]{0,40}?№",
+    r"регистрационн\w+\s+номер[^\n]{0,20}?№?",
+    r"№\s*уведомлени\w+",
+)
+
+
+def uved_number_from_text(text: str) -> str:
+    """Find the notification's number in the document's own text.
+
+    The reader misses it often: on the МВД form the number is a bare run of
+    digits with nothing but a «№» beside it, and the form is full of other long
+    numbers — the ИНН (twelve digits), the patent, the ОГРН, dates. So the text
+    is searched by LABEL first, and a bare number is only accepted when it is
+    8–14 digits, is not twelve (that is an ИНН), and is bounded by non-digits so
+    two numbers running together are never read as one.
+    """
+    import re
+
+    flat = " ".join((text or "").split())
+    if not flat:
+        return ""
+    for label in _UVED_LABELS:
+        found = re.search(label + r"\s*(?<!\d)(\d{8,14})(?!\d)", flat,
+                          re.IGNORECASE)
+        if found and len(found.group(1)) != 12:
+            return found.group(1)
+    # nothing labelled — take the first plausible long number in the opening of
+    # the document, where the number is printed
+    for run in re.findall(r"(?<!\d)(\d{8,14})(?!\d)", flat[:1200]):
+        if len(run) != 12:
+            return run
+    return ""
+
+
+def _passport(text: str) -> str:
+    """«FA 7822242» / «FA7822242 / 072501692992» → «FA7822242».
+
+    The patent prints the passport and the twelve-digit ИНН on ONE line, so a
+    reader that hands both back has to be cut down to the first of them. A
+    passport is letters-then-digits or 9–10 digits alone; an ИНН is exactly 12
+    digits, and 12 digits are never a passport.
+    """
+    import re
+
+    packed = "".join((text or "").split()).upper()
+    if not packed:
+        return ""
+    match = re.search(r"[A-ZА-Я]{1,3}\d{6,9}", packed)
+    if match:
+        return match.group(0)
+    for run in re.findall(r"\d+", packed):
+        if 6 <= len(run) <= 10:
+            return run
+    return packed[:12]
 
 
 def _firm(text: str) -> str:

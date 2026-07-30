@@ -60,8 +60,11 @@ PAGE2: dict[str, Slot] = {
     "case_date":     Slot(0.5878, 0.6561, _P2, SANS, BLACK, width=0.10),
     # ⑥ «Дата приема уведомления» — the employment contract's date
     "contract_date": Slot(0.1512, 0.8694, _P2, SANS, BLACK, width=0.10),
-    # ⑦ «Источник уведомления» — the firm on the contract
-    "firm":          Slot(0.5544, 0.8667, _P2, SANS, LINK, width=0.21),
+    # ⑦ «Источник уведомления» — the firm on the contract. Two points larger
+    # than the rest of the sheet, because the office reads this one across the
+    # room to tell one worker's package from another's.
+    "firm":          Slot(0.5544, 0.8667, _P2 + 2.0 / 900.0, SANS, LINK,
+                          width=0.24),
 }
 
 #: Sheet 3 — the notification page. Read off the office's own filled copy,

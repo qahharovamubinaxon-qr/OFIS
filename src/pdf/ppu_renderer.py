@@ -203,12 +203,16 @@ def _fonts(page) -> dict[str, str]:
 
 
 def _write(page, slot: Slot, text: str, fonts: dict[str, str],
-           opacity: float | None = None) -> None:
+           opacity: float | None = None, tilt: float = 0.0) -> None:
     """Draw ``text`` at the slot's fraction of this page, shrinking to fit.
 
     ``opacity`` overrides :data:`ppu_spec.TEXT_OPACITY` for a sheet the office
     wants a shade fainter — ТРУД ППУ does. Left out, the ППУ pair's own
     strength is used, so nothing here changes for the ППУ itself.
+
+    ``tilt`` turns the line by that many degrees about where it starts. The
+    blanks are photographs of a screen and their own rows are never quite level;
+    a value set dead flat across a page that leans reads as the crooked one.
     """
     if not text:
         return
@@ -218,9 +222,15 @@ def _write(page, slot: Slot, text: str, fonts: dict[str, str],
     font = fitz.Font(fontfile=str(_font_file(slot.font)))
     while size > 4.0 and font.text_length(text, fontsize=size) > limit:
         size -= 0.4
-    page.insert_text((slot.x * rect.width, slot.baseline * rect.height), text,
+    where = fitz.Point(slot.x * rect.width, slot.baseline * rect.height)
+    morph = None
+    if abs(tilt) > 0.05:
+        # a positive tilt runs DOWN to the right, which in PDF's y-up space is a
+        # negative rotation about the point the line starts at
+        morph = (where, fitz.Matrix(-tilt))
+    page.insert_text(where, text,
                      fontname=fonts[slot.font], fontsize=size,
-                     color=slot.colour,
+                     color=slot.colour, morph=morph,
                      fill_opacity=TEXT_OPACITY if opacity is None else opacity)
 
 
@@ -274,8 +284,20 @@ def render(data: PpuData, template: Path) -> bytes:
     return out.tobytes()
 
 
-def _fill_front(page, data: PpuData) -> None:
+def _fill_front(page, data: PpuData, opacity: float | None = None) -> None:
+    """Fill the front sheet, on whatever blank the office uploaded.
+
+    The slots in :mod:`src.pdf.ppu_spec` are in one reference frame; this blank
+    is measured (:func:`src.pdf.blank_fit.fit_front`) and every slot mapped onto
+    it. A blank framed like the reference maps to itself, so nothing moves for
+    the templates that were already right.
+    """
+    from src.pdf.blank_fit import fit_front
+
     fonts = _fonts(page)
+    # measure the blank BEFORE anything is laid on it, so nothing this run adds
+    # can be mistaken for the sheet's own ink
+    fit = fit_front(page)
     _place_photo(page, data.photo)
     cyrillic = full_name(data.surname, data.name, data.patronymic)
     latin = to_latin(cyrillic)
@@ -292,7 +314,22 @@ def _fill_front(page, data: PpuData) -> None:
         "passport": passport_line(data.document),
     }
     for key, text in values.items():
-        _write(page, FRONT[key], text, fonts)
+        _write(page, _mapped(FRONT[key], fit), text, fonts, opacity)
+
+
+def _mapped(slot: Slot, fit) -> Slot:
+    """One slot, moved onto the blank that was actually uploaded.
+
+    ``x`` is SHIFTED by however far this blank's value column is from the
+    reference's, not set to it: «Иностранный паспорт» sits at its own indent and
+    has to travel with the column rather than be dragged into it.
+    """
+    from src.pdf.ppu_spec import VALUE_X
+
+    dx = 0.0 if fit.value_x is None else fit.value_x - VALUE_X
+    return slot._replace(x=slot.x + dx,
+                         baseline=fit.y(slot.baseline),
+                         size=fit.size(slot.size))
 
 
 def _fill_back(page, data: PpuData) -> None:

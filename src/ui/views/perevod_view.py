@@ -16,7 +16,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -79,11 +78,6 @@ class PerevodView(QWidget):
             self._type.addItem(label)
         row.addWidget(QLabel("Ҳужжат тури:"))
         row.addWidget(self._type, stretch=2)
-        self._negative = QCheckBox("Негатив")
-        self._negative.setToolTip(
-            "Ҳужжат нусхаси одатда оқ-қора бўлиб тушади. Негатив — ранглар "
-            "тескари (қора қоғоз, оқ ёзув); фақат жуда қора асл нусха учун.")
-        row.addWidget(self._negative)
         self._date = QDateEdit()
         self._date.setDisplayFormat("dd.MM.yyyy")
         self._date.setDate(QDate.currentDate())
@@ -113,8 +107,10 @@ class PerevodView(QWidget):
 
         self._status = QLabel(
             "Учта бланка бир марта юкланади ва сақланиб қолади. Битта PDF, уч "
-            "саҳифа: 1 — ҳужжат нусхаси оқ-қора, марказда; 2 — таржима; 3 — "
-            "бўш, нотариус ўзи тўлдиради. Таржима Word бўлиб ҳам сақланади."
+            "саҳифа: 1 — ҳужжат нусхаси, рангсиз оқ-қора, ҲАҚИҚИЙ ЎЛЧАМИДА "
+            "варақнинг марказида (паспорт 125×88 мм, пластик карта 85.6×54 мм); "
+            "олди-орқаси бир варақда, устма-уст; 2 — таржима; 3 — бўш, нотариус "
+            "ўзи тўлдиради. Таржима Word бўлиб ҳам сақланади."
         )
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
@@ -187,13 +183,12 @@ class PerevodView(QWidget):
             return
         images = [f.read_bytes() for f in self._dz.files]
         doc_type = DOC_TYPES[self._type.currentIndex()][0]
-        negative = self._negative.isChecked()
         q = self._date.date()
         form_date = date(q.year(), q.month(), q.day())
 
         def work():
             return self._svc.translate(images, doc_type=doc_type,
-                                       form_date=form_date, negative=negative)
+                                       form_date=form_date)
 
         missing = [str(i) for i, blank in enumerate(self._svc.blanks(), 1)
                    if blank is None]

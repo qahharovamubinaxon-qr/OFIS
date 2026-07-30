@@ -15,7 +15,6 @@ from pathlib import Path
 
 import fitz
 import pytest
-
 from src.config import paths
 
 #: The office's own sheets: the patent page landscape, the notice page portrait.
@@ -346,3 +345,157 @@ def test_a_broken_ai_answer_leaves_the_form_empty_not_crashed(monkeypatch):
                                        key_getter=lambda: "k")
     assert controller.read_uved(doc.tobytes()) == {"uved_number": "",
                                                    "uved_fio": ""}
+
+
+# ------------------------------------------------- the firm, cut down to size
+
+
+def test_the_firm_is_cut_down_to_how_the_office_writes_it() -> None:
+    """A контракт spells the employer out in full; the sheet has one cell."""
+    from src.pdf.trud_ppu_renderer import short_firm
+
+    assert short_firm(
+        'Общество с ограниченной ответственностью "СФЕРА", в лице директора'
+    ) == "ООО “СФЕРА”"
+    assert short_firm('ООО "ЭКСПЕРТ"') == "ООО “ЭКСПЕРТ”"
+    assert short_firm("Индивидуальный предприниматель Матаков Алишер Салимович"
+                      ) == "ИП МАТАКОВ А.С."
+    assert short_firm("ИП Матаков А.С.") == "ИП МАТАКОВ А.С."
+    assert short_firm("ЗАО «СТРОЙИНВЕСТ-ГРУПП»") == "ЗАО “СТРОЙИНВЕСТ-ГРУПП”"
+    # nothing recognised is passed through rather than mangled
+    assert short_firm("Крестьянское хозяйство Заря") == "Крестьянское хозяйство Заря"
+    assert short_firm("") == ""
+
+
+def test_the_firm_is_set_larger_than_the_rest_of_the_sheet() -> None:
+    from src.pdf.trud_ppu_spec import PAGE2
+
+    assert PAGE2["firm"].size > PAGE2["issue_date"].size
+    # two points larger on the 900pt sheet the office handed over
+    assert abs((PAGE2["firm"].size - PAGE2["issue_date"].size) * 900 - 2.0) < 0.01
+
+
+# ------------------------------------------------------ the missing three
+
+
+def test_sex_comes_off_the_patronymic_because_a_patent_never_prints_it() -> None:
+    from src.controllers.trud_ppu_controller import gender_from_patronymic
+
+    assert gender_from_patronymic("Зафаровна") == "Женский"
+    assert gender_from_patronymic("Абдулохонович") == "Мужской"
+    assert gender_from_patronymic("Хайдар қизи") == "Женский"
+    assert gender_from_patronymic("Азиз ўғли") == "Мужской"
+    assert gender_from_patronymic("") == ""
+    assert gender_from_patronymic("Смит") == ""
+
+
+def test_the_patents_twelve_digit_inn_is_never_read_as_a_passport() -> None:
+    """The patent prints «FB0717527 / 072501692992» on ONE line."""
+    from src.controllers.trud_ppu_controller import _passport
+
+    assert _passport("FB0717527 / 072501692992") == "FB0717527"
+    assert _passport("FA 7822242") == "FA7822242"
+    assert _passport("4012345678") == "4012345678"
+    assert _passport("") == ""
+
+
+def test_the_notification_number_is_found_in_the_text_when_the_ai_misses_it():
+    from src.controllers.trud_ppu_controller import uved_number_from_text
+
+    assert uved_number_from_text(
+        "Уведомление о заключении трудового договора № 4785796716 от 20.09.2024"
+    ) == "4785796716"
+    # a leading zero survives, because it is read as text and not as a number
+    assert uved_number_from_text("Регистрационный номер № 0478579671"
+                                 ) == "0478579671"
+    # a twelve-digit ИНН is not a notification number
+    assert uved_number_from_text("ИНН 072501692992 работника") == ""
+    assert uved_number_from_text("") == ""
+
+
+# -------------------------------------- the blank the office actually uploaded
+
+
+def _front_blank(path: Path, *, shift: float, scale: float) -> Path:
+    """A ППУ front blank framed the way a fresh photograph of it would be.
+
+    Draws the seven label rows the fitter anchors on, plus the two values the
+    site leaves on the sheet, at ``shift``/``scale`` away from the reference
+    frame — which is exactly how the office's three real blanks differ.
+    """
+    import fitz
+    from src.pdf.engine import _font_file
+
+    # reference cap-tops of «Физическое лицо» … «Гражданство», off the office's
+    # own blank. The fitter anchors on rows 1 and 6 of this list.
+    reference = (0.1409, 0.1868, 0.2454, 0.3425, 0.4000, 0.4554, 0.5525)
+    labels = ("Физическое лицо ААА", "ФИО ААА", "ФИО лат. ААА",
+              "Дата рождения ААА", "Пол ААА", "Место рождения ААА",
+              "Гражданство ААА")
+    doc = fitz.open()
+    page = doc.new_page(width=841.89, height=473.56)
+    # the built-in Helvetica has no Cyrillic at all and would draw nothing
+    page.insert_font(fontname="lb", fontfile=str(_font_file("OfisArialBold")))
+    height, width = page.rect.height, page.rect.width
+    size = 0.0116 * height * scale
+
+    def place(top: float) -> float:
+        """Where a reference row lands on a blank framed like this one."""
+        return (shift + (top - 0.1868) * scale) * height
+
+    for top, text in zip(reference, labels, strict=True):
+        # insert_text takes the BASELINE; the cap-top is a cap height above it
+        page.insert_text((0.178 * width, place(top) + size * 0.716), text,
+                         fontname="lb", fontsize=size)
+    for top, text in ((0.7113, "Отсутствует"), (0.8280, "Нет")):
+        page.insert_text((0.3135 * width, place(top) + size * 1.2 * 0.716), text,
+                         fontname="lb", fontsize=size * 1.2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    return path
+
+
+@pytest.mark.parametrize(("shift", "scale"), [
+    (0.1868, 1.0),        # framed exactly like the reference
+    (0.2042, 1.0246),     # the office's third blank: lower and 2.5% bigger
+    (0.1750, 0.97),       # framed higher and smaller
+])
+def test_values_land_on_their_labels_whatever_blank_was_uploaded(
+        tmp_path, shift, scale) -> None:
+    """The three real ППУ fronts in the office are framed differently. Fixed
+    fractions land above the labels on two of them — «қийшиқ» — so the blank is
+    measured and every slot mapped onto it."""
+    import fitz
+    from src.pdf.blank_fit import text_bands
+    from src.pdf.ppu_renderer import PpuData, _fill_front
+
+    blank = _front_blank(tmp_path / f"front_{shift}_{scale}.pdf",
+                         shift=shift, scale=scale)
+    doc = fitz.open(str(blank))
+    _fill_front(doc[0], PpuData(
+        surname="МУРТАЗОЕВ", name="АББОСХОН", patronymic="АБДУЛОХОНОВИЧ",
+        birth_date=date(1990, 3, 3), gender="Мужской",
+        citizenship="УЗБЕКИСТАН", document="FA 7822242"))
+
+    filled = fitz.open("pdf", doc.tobytes())[0]
+    shot = filled.get_pixmap(matrix=fitz.Matrix(4.0, 4.0))
+    import cv2
+    import numpy as np
+    arr = np.frombuffer(shot.samples, np.uint8).reshape(
+        shot.height, shot.width, shot.n)
+    grey = cv2.cvtColor(arr[:, :, :3], cv2.COLOR_RGB2GRAY)
+
+    label_tops = [t for t, _b in text_bands(grey, 0.17, 0.30)]
+    value_tops = [t for t, _b in text_bands(grey, 0.33, 0.62)]
+    assert len(label_tops) >= 7, "the synthetic blank did not draw its labels"
+    assert value_tops, "nothing was written in the value column"
+    # ФИО, ФИО лат., Дата рождения, Пол, Место рождения, Гражданство — every one
+    # of them has a value whose cap-top is level with its label's, whatever the
+    # framing. Matched by nearest rather than by index: a value row can split
+    # into two ink bands and that must not fail the check.
+    for label in (1, 2, 3, 4, 5, 6):
+        top = label_tops[label]
+        nearest = min(value_tops, key=lambda v, t=top: abs(v - t))
+        assert abs(nearest - top) < 0.005, (
+            f"row {label}: label {top:.4f}, nearest value {nearest:.4f} — "
+            "the value column does not sit on the labels")

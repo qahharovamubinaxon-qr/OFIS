@@ -26,10 +26,53 @@ A4_LONG = 842.0
 A4_SHORT = 595.0
 
 #: Sheet 1 — the window the copy of the original is centred in, as
-#: (left, top, right, bottom) shares of the page.
-SCAN_BOX = (0.08, 0.11, 0.92, 0.90)
-#: A gap between two originals stacked in that window, as a share of its height.
-SCAN_GAP = 0.02
+#: (left, top, right, bottom) shares of the page. The copy is printed at its
+#: REAL size (see :data:`REAL_MM`) and centred in here; the window is only the
+#: limit it may not grow past, not the size it is stretched to.
+#:
+#: Wide on purpose: two open passport spreads are 250 mm of paper before the gap,
+#: and on a 297 mm sheet anything tighter than this would shrink them off life
+#: size. A single document, or a card's two sides, then always comes out exact.
+SCAN_BOX = (0.07, 0.07, 0.93, 0.93)
+
+#: One millimetre in points.
+MM = 72.0 / 25.4
+
+#: A gap between two originals stacked on the sheet, in millimetres.
+SCAN_GAP_MM = 8.0
+
+#: How big each document really is, in millimetres — (long side, short side).
+#: A translation is read next to the original, so the copy has to LOOK like the
+#: document: a passport page printed the size of half an A4 reads as a forgery of
+#: something else. These are the standard sizes the documents are made in.
+#:
+#: * ID-1 (ISO/IEC 7810) — every plastic card: driving licence, patent card,
+#:   internal ID. 85.6 × 54 mm.
+#: * ID-3 — a passport booklet page, 88 × 125 mm; photographed open, the spread
+#:   is twice as wide, 176 × 125 mm. Which one it is comes from the photo's own
+#:   proportions, not from the operator.
+#: * CIS certificates (birth, marriage) are A5, diplomas and аттестаты A4.
+ID1_MM = (85.6, 54.0)
+PASSPORT_PAGE_MM = (125.0, 88.0)
+PASSPORT_SPREAD_MM = (176.0, 125.0)
+A5_MM = (210.0, 148.0)
+A4_MM = (297.0, 210.0)
+
+REAL_MM: dict[str, tuple[float, float]] = {
+    "passport": PASSPORT_PAGE_MM,
+    "driver_license": ID1_MM,
+    "migration_card": (148.0, 105.0),
+    "birth_certificate": A5_MM,
+    "marriage_certificate": A5_MM,
+    "diploma": A4_MM,
+    "attestat": A4_MM,
+    "other": A5_MM,
+}
+
+#: Above this width-to-height ratio a passport photo is an OPEN spread rather
+#: than a single page. A single ID-3 page is 0.70 wide for its height, a spread
+#: 1.41 — nothing else is near 1.05.
+SPREAD_ASPECT = 1.05
 
 #: Sheet 2 — the block the translation is set in.
 TEXT_BOX = (0.11, 0.10, 0.89, 0.93)

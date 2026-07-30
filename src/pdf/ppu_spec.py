@@ -73,10 +73,12 @@ FRONT: dict[str, Slot] = {
     "citizenship":  Slot(VALUE_X, 0.4692, 0.0187),
     "citizenship_2": Slot(VALUE_X, 0.5112, 0.0187),
     "country":      Slot(VALUE_X, 0.5663, 0.0187, SANS_BOLD, BLUE),
-    # «Иностранный паспорт» — the foot of the front sheet. Its own row, indented
-    # differently from the field rows above (it is a collapsible heading, not a
-    # label), so it keeps its own x.
-    "passport":     Slot(0.319, 0.943, 0.0197),
+    # «Иностранный паспорт» — the foot of the front sheet. Its own row: the
+    # label there is a collapsible heading, set BOLD and running further right
+    # than the field labels above, so the value has to start further right than
+    # the column. Far enough that it still clears the heading on a blank
+    # photographed a little larger, where the heading is longer.
+    "passport":     Slot(0.330, 0.943, 0.0197),
 }
 
 #: The passport is printed FIVE times across the pair: once at the foot of
