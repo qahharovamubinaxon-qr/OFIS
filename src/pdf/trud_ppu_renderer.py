@@ -25,7 +25,7 @@ import fitz
 
 from src.common.logging import get_logger
 from src.pdf.ppu_renderer import PpuData, _fill_front, _fonts, _write, full_name
-from src.pdf.trud_ppu_spec import PAGE2, PAGE3
+from src.pdf.trud_ppu_spec import PAGE2, PAGE3, TEXT_OPACITY
 
 log = get_logger(__name__)
 
@@ -146,7 +146,7 @@ def _fill_page2(page, data: TrudPpuData) -> None:
         "firm": (data.firm or "").strip(),
     }
     for key, text in values.items():
-        _write(page, PAGE2[key], text, fonts)
+        _write(page, PAGE2[key], text, fonts, TEXT_OPACITY)
 
 
 def _fill_page3(page, data: TrudPpuData) -> None:
@@ -154,5 +154,6 @@ def _fill_page3(page, data: TrudPpuData) -> None:
     number = "".join((data.uved_number or "").split())
     fio = (data.uved_fio or "").strip() or full_name(
         data.surname, data.name, data.patronymic)
-    _write(page, PAGE3["uved_number"], f"№ {number}" if number else "", fonts)
-    _write(page, PAGE3["fio"], fio, fonts)
+    _write(page, PAGE3["uved_number"], f"№ {number}" if number else "",
+           fonts, TEXT_OPACITY)
+    _write(page, PAGE3["fio"], fio, fonts, TEXT_OPACITY)

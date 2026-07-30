@@ -34,6 +34,12 @@ PAGE_FILES = ("page2.pdf", "page3.pdf")
 #: links on the site and read blue on the office's own filled sheet.
 LINK = (0.10, 0.44, 0.77)
 
+#: Sheets 2 and 3 are photographs of a screen, so their own text is never solid
+#: black. Values laid on at full strength stand out as printed-on-top; at just
+#: under nine parts in ten they sit in the picture the way the site's own text
+#: does. The office asked for 85–90%.
+TEXT_OPACITY = 0.87
+
 #: Every value on sheet 2 is the site's own UI size: 17.9 pt on the 900 pt-high
 #: sheet the office handed over.
 _P2 = 0.0199

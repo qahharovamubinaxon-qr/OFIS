@@ -382,15 +382,22 @@ class TelegramBot:
             except Exception as exc:  # noqa: BLE001
                 self._menu(chat_id, f"Рўйхат олинмади: {str(exc)[:120]}")
                 return
-            if not items:
+            if not items and module.add_key is None:
                 # Nothing to pick — stay out of the module entirely, otherwise
                 # photos get accepted and «Тайёрла» dead-ends on a null target.
                 self._menu(chat_id, "Рўйхат бўш — аввал компютерда қўшинг.")
                 return
+            rows = [[{"text": _label(t), "callback_data": f"pick:{i}"}]
+                    for i, t in enumerate(items[:30])]
+            if module.add_key is not None:
+                # the operator can add a new one right here, on the phone, rather
+                # than being sent to the computer for it
+                rows.append([{"text": module.add_prompt,
+                              "callback_data": "pick:add"}])
             state.update({"mode": module.key, "step": "pick", "targets": items})
-            self._send(chat_id, module.target_prompt, {"inline_keyboard": [
-                [{"text": _label(t), "callback_data": f"pick:{i}"}]
-                for i, t in enumerate(items[:30])]})
+            prompt = module.target_prompt if items else (
+                "Рўйхат бўш — пастдаги тугма билан янгисини қўшинг:")
+            self._send(chat_id, prompt, {"inline_keyboard": rows})
             return
 
         state["mode"] = module.key
@@ -404,7 +411,15 @@ class TelegramBot:
     def _on_pick(self, chat_id: int, data: str) -> None:
         state = self._state.setdefault(chat_id, _fresh())
         module = _BY_KEY.get(state.get("mode") or "")
-        if module is None or not data.startswith("pick:") or not state.get("targets"):
+        if module is None or not data.startswith("pick:"):
+            self._menu(chat_id, "Бўлим танланмаган.")
+            return
+        if data == "pick:add" and module.add_key:
+            adder = _BY_KEY.get(module.add_key)
+            if adder is not None:
+                self._enter(chat_id, adder)
+                return
+        if not state.get("targets"):
             self._menu(chat_id, "Бўлим танланмаган.")
             return
         try:
@@ -450,8 +465,13 @@ class TelegramBot:
             self._send(chat_id, "PDF юклаб бўлмади — қайта юборинг.")
             return
         state.setdefault("pdfs", []).append(data)
-        self._send(chat_id, f"✔ PDF қабул қилинди ({len(state['pdfs'])}). "
-                            "Энди ишчининг ҳужжат расмларини юборинг.")
+        got = len(state["pdfs"])
+        left = module.wants_pdf - got
+        # ТРУД ППУ wants two, in order — «send the photos now» after the first
+        # of them would lose the уведомление
+        self._send(chat_id, f"✔ PDF қабул қилинди ({got}/{module.wants_pdf}). "
+                            + (f"Яна {left} та PDF юборинг." if left > 0
+                               else "Энди расмларни юборинг."))
 
     def _on_answer(self, chat_id: int, state: dict, text: str) -> None:
         module = _BY_KEY.get(state.get("mode") or "")

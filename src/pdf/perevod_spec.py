@@ -41,3 +41,9 @@ TEXT_SIZE_MIN = 0.0060
 LABEL_SHARE = 0.38
 #: Line pitch, as a multiple of the type size.
 LEADING = 1.50
+
+#: Everything is laid on at just under full strength, so the type sits IN the
+#: paper rather than on top of it — a solid black overprint gives a
+#: program-filled sheet away at a glance, and the office asked for 85–90%.
+#: The ППУ pair has read this way from the start; the translation now matches.
+TEXT_OPACITY = 0.88

@@ -202,8 +202,14 @@ def _fonts(page) -> dict[str, str]:
     return {key: handle for handle, key in _FONT_KEYS.items()}
 
 
-def _write(page, slot: Slot, text: str, fonts: dict[str, str]) -> None:
-    """Draw ``text`` at the slot's fraction of this page, shrinking to fit."""
+def _write(page, slot: Slot, text: str, fonts: dict[str, str],
+           opacity: float | None = None) -> None:
+    """Draw ``text`` at the slot's fraction of this page, shrinking to fit.
+
+    ``opacity`` overrides :data:`ppu_spec.TEXT_OPACITY` for a sheet the office
+    wants a shade fainter — ТРУД ППУ does. Left out, the ППУ pair's own
+    strength is used, so nothing here changes for the ППУ itself.
+    """
     if not text:
         return
     rect = page.rect
@@ -214,7 +220,8 @@ def _write(page, slot: Slot, text: str, fonts: dict[str, str]) -> None:
         size -= 0.4
     page.insert_text((slot.x * rect.width, slot.baseline * rect.height), text,
                      fontname=fonts[slot.font], fontsize=size,
-                     color=slot.colour, fill_opacity=TEXT_OPACITY)
+                     color=slot.colour,
+                     fill_opacity=TEXT_OPACITY if opacity is None else opacity)
 
 
 def _place_photo(page, photo: bytes | None) -> None:
@@ -236,7 +243,11 @@ def _place_photo(page, photo: bytes | None) -> None:
         stream = photo
     try:
         page.insert_image(box, stream=stream, keep_proportion=False, overlay=True)
-    except (RuntimeError, ValueError) as exc:
+    except Exception as exc:                      # noqa: BLE001
+        # Anything at all: MuPDF raises its own error types for a file that is
+        # not an image, and one unreadable photograph must cost the operator the
+        # photograph, not the whole pair. It comes out without a picture and the
+        # sheet is still usable.
         log.warning("ППУ: расм жойлашмади: %s", exc)
 
 

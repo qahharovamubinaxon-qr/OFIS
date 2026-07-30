@@ -126,6 +126,20 @@ class TrudPpuView(QWidget):
             "Бўш қолдирсангиз — юқоридаги Фамилия/Имя/Отчество ёзилади.")
         root.addLayout(patent)
 
+        order = QLabel(
+            "🗂 <b>Бланкалар тартиби</b> — «➕ Шаблон қўшиш» иккита файл сўрайди, "
+            "шу тартибда:<br>"
+            "<b>1-саҳифа</b> — ҳеч нима сўралмайди: <b>ППУ бўлимидаги ОЛД "
+            "бланка</b> ишлатилади (ўнгдаги «ППУ бланкаси» рўйхати). Агар у "
+            "юкланмаган бўлса — аввал ППУ бўлимида юкла.<br>"
+            "<b>2-саҳифа</b> — биринчи сўралади: <b>патент бети</b>, кўндаланг "
+            "(«2 ТРУД ППУ ШОБЛОН ПУСТОЙ.pdf»).<br>"
+            "<b>3-саҳифа</b> — иккинчи сўралади: <b>уведомление бети</b>, тик "
+            "(«ТРУД ППУ 3 ШАБЛОН ПУСТОЙ.pdf»).")
+        order.setWordWrap(True)
+        order.setStyleSheet("color:#8a94a3;")
+        root.addWidget(order)
+
         templates = QHBoxLayout()
         templates.addWidget(QLabel("ППУ бланкаси (1-саҳифа):"))
         self._ppu_template = QComboBox()
@@ -201,13 +215,13 @@ class TrudPpuView(QWidget):
 
     def _add_template(self) -> None:
         page2, _ = QFileDialog.getOpenFileName(
-            self, "2-саҳифа бланкаси (патент бети, бўш)", str(_desktop()),
-            "PDF (*.pdf)")
+            self, "1/2 — 2-САҲИФА: патент бети, бўш (2 ТРУД ППУ ШОБЛОН ПУСТОЙ)",
+            str(_desktop()), "PDF (*.pdf)")
         if not page2:
             return
         page3, _ = QFileDialog.getOpenFileName(
-            self, "3-саҳифа бланкаси (уведомление бети, бўш)", str(_desktop()),
-            "PDF (*.pdf)")
+            self, "2/2 — 3-САҲИФА: уведомление бети, бўш (ТРУД ППУ 3 ШАБЛОН ПУСТОЙ)",
+            str(_desktop()), "PDF (*.pdf)")
         if not page3:
             return
         name, ok = QInputDialog.getText(self, "Шаблон номи", "Ном:")

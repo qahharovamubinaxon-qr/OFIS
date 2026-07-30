@@ -45,6 +45,7 @@ from src.pdf.perevod_spec import (
     SCAN_BOX,
     SCAN_GAP,
     TEXT_BOX,
+    TEXT_OPACITY,
     TEXT_SIZE,
     TEXT_SIZE_MIN,
 )
@@ -482,7 +483,7 @@ class PerevodService:
         writer = fitz.TextWriter(rect)
         for dx, dy, text, font, font_size in ops:
             writer.append((x0 + dx, top + dy), text, font=font, fontsize=font_size)
-        writer.write_text(page)
+        writer.write_text(page, opacity=TEXT_OPACITY)
 
         # sheet 3 — the notary's own certification blank. NOTHING is printed on
         # it: no names, no city, no date, no registry number. He fills it and

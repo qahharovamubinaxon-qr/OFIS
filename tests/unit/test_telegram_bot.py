@@ -19,7 +19,13 @@ CHAT = 7
 
 @pytest.fixture()
 def bot(monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", tempfile.mkdtemp())
+    # both roots: paths.data_dir() reads LOCALAPPDATA on Windows and
+    # XDG_DATA_HOME elsewhere. With only one of them set these tests read the
+    # real machine's AppData — the settings, the uploaded blanks, the address
+    # book — and then pass or fail depending on what happens to be on it.
+    sandbox = tempfile.mkdtemp()
+    monkeypatch.setenv("XDG_DATA_HOME", sandbox)
+    monkeypatch.setenv("LOCALAPPDATA", sandbox)
     paths.data_dir.cache_clear()
     from src.app import build_container
     from src.config.settings_service import SettingsService
@@ -127,6 +133,8 @@ _DESKTOP_TO_MODULE = {
     "nav.sertifikat": "sertifikat",
     "nav.dover": "dover",
     "nav.perevod": "perevod",
+    "nav.ppu": "ppu",
+    "nav.snils": "snils",
     "nav.umumiy": "umumiy",
     "nav.template": "shablon",
     "nav.photo": "photo",
@@ -142,11 +150,7 @@ _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
 #: ЧЕК stays on the computer. Its renderer makes up the payment's own proof —
 #: a random 6-digit код авторизации and a random company id on a bank-receipt
 #: background — and I will not build the machinery that mails those out.
-_NOT_ON_THE_PHONE = {"nav.chek",
-                     # ППУ needs the office's own blank uploaded first
-                     "nav.ppu",
-                     # СНИЛС likewise
-                     "nav.snils"}
+_NOT_ON_THE_PHONE = {"nav.chek"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:
@@ -756,3 +760,169 @@ def test_the_receipt_section_is_deliberately_not_on_the_phone() -> None:
     from src.controllers.ofis_modules import BY_KEY
 
     assert "chek" not in BY_KEY
+
+
+# ------------------------------------------- the blanks-on-the-office's-PC set
+# ППУ, СНИЛС and ТРУД ППУ print on blanks the office uploads on the computer.
+# The bot uses the very same AppData folder, so once a blank is there the phone
+# can run them too — which is what these check, blank and all.
+
+
+def _blank_pdf(path: Path, width: float = 842.0, height: float = 474.0) -> Path:
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page(width=width, height=height)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    return path
+
+
+@pytest.fixture()
+def desktop(monkeypatch, tmp_path):
+    """Where the picture-saving sections write, kept out of the real Desktop."""
+    folder = tmp_path / "desktop"
+    folder.mkdir()
+    monkeypatch.setattr("src.services.ppu_service.paths.desktop_dir",
+                        lambda: folder)
+    monkeypatch.setattr("src.services.trud_ppu_service.paths.desktop_dir",
+                        lambda: folder)
+    return folder
+
+
+def test_ppu_runs_on_the_phone_once_the_blank_is_uploaded(
+        ready, monkeypatch, tmp_path, desktop) -> None:
+    ppu = ready.ctl()["ppu"]
+    ppu.add_template("ОФИС", _blank_pdf(tmp_path / "f.pdf"),
+                     _blank_pdf(tmp_path / "b.pdf"))
+    monkeypatch.setattr(ppu, "read_registration", lambda image: {
+        "surname": "МУРТАЗОЕВ", "name": "АББОСХОН",
+        "patronymic": "АБДУЛОХОНОВИЧ", "birth_date": "03.03.1990",
+        "gender": "Мужской", "citizenship": "УЗБЕКИСТАН",
+        "document": "FA 7822242", "address": "Г МОСКВА, УЛ МИРА, Д 5, КВ 6",
+        "stay_to": "10.10.2026"})
+
+    _text(ready, "🧾 ППУ")
+    assert "бланка" in _last(ready).lower()
+    _pick(ready, 0)
+    _photo(ready)                       # регистрация
+    _photo(ready)                       # ишчининг расми
+    _text(ready, "✅ Тайёрла")
+    assert "БОШЛАНИШ" in _last(ready), "the start date was never asked for"
+    _text(ready, "01.08.2026")
+
+    assert "МУРТАЗОЕВ" in _all(ready)
+    assert len(ready.files) == 2, "ППУ is a PAIR — both sheets must come back"
+    assert all(f.suffix == ".png" for f in ready.files)
+    assert all(f.parent == desktop for f in ready.files)
+
+
+def test_ppu_without_a_blank_sends_the_operator_to_the_computer(ready) -> None:
+    _text(ready, "🧾 ППУ")
+    assert "бўш" in _last(ready).lower()
+    _photo(ready)
+    assert "бўлимни танланг" in _last(ready).lower()
+
+
+def test_snils_runs_on_the_phone(ready, monkeypatch, tmp_path) -> None:
+    snils = ready.ctl()["snils"]
+    snils.add_template("ОФИС", _blank_pdf(tmp_path / "s.pdf", 595.0, 842.0))
+    monkeypatch.setattr(snils, "read_passport", lambda image: {
+        "surname": "МУРТАЗОЕВ", "name": "АББОСХОН",
+        "patronymic": "АБДУЛОХОНОВИЧ", "birth_date": "03.03.1990",
+        "birth_place": "Г ТАШКЕНТ", "gender": "Мужской"})
+
+    _text(ready, "🆔 СНИЛС")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "01.08.2026")          # регистрация санаси
+    _text(ready, "12345678901")         # СНИЛС рақами
+
+    assert ready.files and ready.files[-1].suffix == ".pdf"
+
+
+def test_trud_ppu_wants_both_pdfs_in_order_then_the_patent(
+        ready, monkeypatch, tmp_path, desktop) -> None:
+    ready.ctl()["ppu"].add_template(
+        "ОФИС", _blank_pdf(tmp_path / "f.pdf"), _blank_pdf(tmp_path / "b.pdf"))
+    trud = ready.ctl()["trud_ppu"]
+    trud.add_template("ОФИС", _blank_pdf(tmp_path / "p2.pdf", 1600.0, 900.0),
+                      _blank_pdf(tmp_path / "p3.pdf", 899.0, 1599.0))
+    monkeypatch.setattr(trud, "read_contract", lambda pdf: {
+        "contract_date": "20.09.2024", "firm": "ООО “ЭКСПЕРТ”",
+        "surname": "МУРТАЗОЕВ", "name": "АББОСХОН",
+        "patronymic": "АБДУЛОХОНОВИЧ", "birth_date": "03.03.1990",
+        "gender": "Мужской", "citizenship": "УЗБЕКИСТАН",
+        "document": "FA 7822242"})
+    monkeypatch.setattr(trud, "read_uved", lambda pdf: {
+        "uved_number": "4785796716",
+        "uved_fio": "Муртазоев Аббосхон Абдулохонович"})
+    monkeypatch.setattr(trud, "read_patent", lambda front, back=None: {
+        "patent_series": "77", "patent_number": "2400328451",
+        "patent_issue": "18.07.2024"})
+
+    _text(ready, "🧷 ТРУД ППУ")
+    _pick(ready, 0)
+    _text(ready, "✅ Тайёрла")
+    assert "2 та pdf" in _last(ready).lower(), "it must not start without them"
+
+    _pdf(ready)
+    assert "1/2" in _last(ready) and "яна 1" in _last(ready).lower()
+    _pdf(ready)
+    assert "2/2" in _last(ready) and "расм" in _last(ready).lower()
+    _photo(ready)                       # патент олд
+    _photo(ready)                       # патент орқа
+    _text(ready, "✅ Тайёрла")
+
+    assert "2400328451" in _all(ready) and "ЭКСПЕРТ" in _all(ready)
+    assert len(ready.files) == 3, "ТРУД ППУ is three sheets"
+    assert all(f.suffix == ".png" and f.parent == desktop for f in ready.files)
+
+
+# ------------------------------------------- a new address, from the phone
+
+
+def test_registration_offers_adding_an_address_and_then_lists_it(
+        ready, monkeypatch) -> None:
+    """«🏠 Регистрация» used to be a dead end when the address book was empty,
+    and offered no way to add one. Now the pick list carries the button."""
+    # hide the seeded address so the book starts empty as a new office's would,
+    # but keep the list LIVE so what gets added really shows up
+    before = {a.label for a in ready.ctl()["reg_addr"].list()}
+    monkeypatch.setattr(ready.ctl()["reg"], "addresses",
+                        lambda: [a for a in ready.ctl()["reg_addr"].list()
+                                 if a.label not in before])
+
+    _text(ready, "🏠 Регистрация")
+    rows = ready.sent[-1][1]["inline_keyboard"]
+    assert rows[-1][0]["callback_data"] == "pick:add"
+    assert "янги манзил" in rows[-1][0]["text"].lower()
+
+    # tapping it walks straight into the ten questions
+    ready._handle({"update_id": 1, "callback_query": {
+        "id": "cq", "message": {"chat": {"id": CHAT}}, "data": "pick:add"}})
+    assert "номи" in _last(ready).lower()
+
+    for answer in ("ПАРКОВАЯ 55", "Г МОСКВА", "✅ Тайёрла", "МОСКВА",
+                   "5-Я ПАРКОВАЯ", "55", "✅ Тайёрла", "✅ Тайёрла", "6",
+                   "ПОПОВ ВЛАДИМИР ГЕННАДЬЕВИЧ", "02/770-1234"):
+        _text(ready, answer)
+
+    assert "манзил қўшилди" in _all(ready).lower()
+    added = [a for a in ready.ctl()["reg_addr"].list() if a.label not in before]
+    assert [a.label for a in added] == ["ПАРКОВАЯ 55"]
+    assert "5-Я ПАРКОВАЯ" in added[0].address_text
+    assert added[0].template_path.exists(), "the template was not built"
+    # and now the ordinary flow finds it
+    _text(ready, "🏠 Регистрация")
+    assert "манзилни танланг" in _last(ready).lower()
+
+
+def test_a_new_address_needs_more_than_a_name(ready) -> None:
+    before = ready.ctl()["reg_addr"].count()
+    _text(ready, "🏠➕ Янги манзил")
+    for _ in range(11):
+        _text(ready, "✅ Тайёрла")
+    assert "манзил бўш" in _all(ready).lower()
+    assert ready.ctl()["reg_addr"].count() == before, "an empty address was saved"
