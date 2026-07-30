@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import datetime
 import tempfile
-from pathlib import Path
 
 import fitz
 import pytest
-
 from src.config import paths
 
 
