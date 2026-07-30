@@ -124,3 +124,17 @@ def test_firm_crud(container, tmp_path, monkeypatch) -> None:
     assert "servis" in codes  # (СТРОЙИНВЕСТ may be bundle-seeded alongside)
     svc.archive(firm.id)
     assert "servis" not in [f.internal_code for f in svc.list()]
+
+
+def test_the_word_pair_is_never_reflowed_into_a_lookalike_pdf() -> None:
+    """A MuPDF conversion of a .docx re-flows the page: the firm's own layout,
+    fonts and spacing are gone and what comes out is a different document. The
+    office reported exactly that. Word or LibreOffice, or the .docx itself —
+    never an approximation dressed up as the contract.
+    """
+    from pathlib import Path
+
+    source = Path("src/services/docx_editor.py").read_text(encoding="utf-8")
+    assert "convert_to_pdf" not in source
+    # the .docx stays the deliverable when neither converter is available
+    assert "return None" in source
