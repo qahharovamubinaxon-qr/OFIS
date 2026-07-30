@@ -28,18 +28,36 @@ if errorlevel 1 (
 
 git pull --ff-only
 if errorlevel 1 (
+  REM  Bu nusxada kod YOZILMAYDI - u faqat olinadi va yig'iladi. Shuning
+  REM  uchun "pull" bo'lmasa, to'g'ri javob: GitHub'dagiga tenglashtirish.
+  REM  Ko'p uchragan hol: yarim qolgan konflikt - "Pulling is not possible
+  REM  because you have unmerged files".
   echo.
-  echo ============================================================
-  echo   XATO: kod tortib olinmadi.
+  echo   Ogohlantirish: oddiy yo'l bilan olinmadi - GitHub'dagiga
+  echo   tenglashtiriladi. Siz qo'shgan YANGI fayllar o'chmaydi.
   echo.
-  echo   Ko'p uchraydigan sabab: bu kompyuterda o'zgartirilgan fayl
-  echo   bor ^(masalan yangi shablon yuklagansiz^) va u yangisi bilan
-  echo   to'qnashyapti. Hech narsa o'chirilmadi - hammasi joyida.
-  echo.
-  echo   Ekrandagini menga ko'rsating, birga hal qilamiz.
-  echo ============================================================
-  pause
-  exit /b 1
+  git merge --abort >nul 2>&1
+  git rebase --abort >nul 2>&1
+  git fetch origin main
+  if errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo   XATO: GitHub'ga ulanilmadi. Internetni tekshirib
+    echo   qaytadan urinib ko'ring.
+    echo ============================================================
+    pause
+    exit /b 1
+  )
+  git reset --hard origin/main
+  if errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo   XATO: kod tortib olinmadi. Ekrandagini menga ko'rsating.
+    echo ============================================================
+    pause
+    exit /b 1
+  )
+  echo   Tenglashtirildi.
 )
 
 echo.
