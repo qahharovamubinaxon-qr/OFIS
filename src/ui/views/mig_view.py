@@ -383,7 +383,14 @@ class MigView(QWidget):
         self._preview.setPixmap(pix.scaledToHeight(
             max(220, self._preview.height()),
             Qt.TransformationMode.SmoothTransformation))
-        self._status.setText(f"✅ Сақланди: {result.saved.name}")
+
+        # the card is a PDF and the office files it per worker, so it is asked
+        # where this one goes rather than always dropped in the same folder
+        from src.ui.widgets.save_to import ask_save_dir
+
+        chosen = ask_save_dir(self, [result.saved])
+        self._status.setText(
+            f"✅ {result.saved.name}" + (f" → {chosen}" if chosen else ""))
 
     def _failed(self, error: Exception) -> None:
         self._run.setEnabled(True)

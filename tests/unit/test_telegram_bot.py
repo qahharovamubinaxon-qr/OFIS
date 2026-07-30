@@ -134,6 +134,7 @@ _DESKTOP_TO_MODULE = {
     "nav.sertifikat": "sertifikat",
     "nav.dover": "dover",
     "nav.perevod": "perevod",
+    "nav.mig": "mig",
     "nav.umumiy": "umumiy",
     "nav.template": "shablon",
     "nav.photo": "photo",
@@ -149,11 +150,7 @@ _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
 _NOT_ON_THE_PHONE = {  # ППУ needs the office's own blank uploaded first
                      "nav.ppu",
                      # СНИЛС likewise
-                     "nav.snils",
-                     # МИГ needs the firm's blank AND its stamp placed with the
-                     # mouse against that blank — there is no phone screen for
-                     # dragging a stamp into position
-                     "nav.mig"}
+                     "nav.snils"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:

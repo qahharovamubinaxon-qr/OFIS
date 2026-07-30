@@ -60,10 +60,15 @@ class Ask:
     kind: str = "date"               # date | text | choice
     default_days: int | None = None  # date default = today + N days
 
+    #: What a ``choice`` question accepts, when it is not the доверенность list.
+    choices: tuple[str, ...] = ()
+
     def options(self) -> list[str]:
         """Values a ``choice`` question accepts (empty for other kinds)."""
         if self.kind != "choice":
             return []
+        if self.choices:
+            return list(self.choices)
         from src.services.dover_service import DOVER_TYPES
 
         return list(DOVER_TYPES) if self.field == "doc_type" else []
@@ -591,6 +596,46 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_mig(ctx: RunContext, state: dict) -> list[Path]:
+    """МИГ ИШЧИ КАРТАСИ from the phone.
+
+    The blank is picked from the list; the firm's stamp is the one saved under
+    the SAME name, already placed where the office dragged it on the computer.
+    A phone cannot drag a stamp into position, so it never has to.
+    """
+    from src.pdf.mig_spec import JOBS
+
+    ctl = ctx.ctl["mig"]
+    template = Path(state["target"])
+    stamp = next((s for s in ctl.stamps() if s.name == template.stem), None)
+    fields = ctl.read_passport(state["photos"][0])
+    ctx.note(f"Паспорт ўқилди: {fields.get('surname', '')} "
+             f"{fields.get('name', '')}".strip())
+
+    answers = state["answers"]
+    wanted = str(answers.get("job") or "").strip().lower()
+    jobs = tuple(key for key, label, _rule in JOBS
+                 if wanted and wanted in label.lower())
+    result = ctl.generate(
+        template=template, stamp=stamp,
+        series=str(answers.get("series") or ""),
+        number=str(answers.get("number") or ""),
+        visa=str(answers.get("visa") or ""),
+        jobs=jobs,
+        valid_from=answers.get("valid_from"),
+        valid_to=answers.get("valid_to"),
+        issued_on=answers.get("issued_on"),
+        surname=fields.get("surname", ""), name=fields.get("name", ""),
+        patronymic=fields.get("patronymic", ""),
+        birth_date=ctl.parse_date(fields.get("birth_date", "")),
+        citizenship=fields.get("citizenship", ""),
+        passport=fields.get("passport", ""),
+        gender=fields.get("gender", ""))
+    if stamp is None:
+        ctx.note("⚠️ Бу бланка номи билан печат йўқ — карта печатсиз чиқди.")
+    return [result.saved]
+
+
 # ---------------------------------------------------------------- catalogue
 
 _TRIO_LABELS = ("Паспорт", "Патент (олд)", "Патент (орқа)")
@@ -728,6 +773,23 @@ MODULES: tuple[Module, ...] = (
            photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("mig", "🪪 МИГ — ИШЧИ КАРТАСИ", _run_mig,
+           targets=lambda c: c["mig"].templates(),
+           target_prompt="Фирманинг бланкасини танланг:",
+           photo_prompt="Ишчининг ПАСПОРТ расмини юборинг.",
+           photo_labels=("Паспорт",),
+           asks=(Ask("series", "Карта СЕРИЯ (масалан 46 26):", kind="text"),
+                 Ask("number", "Карта НОМЕР (масалан 0367598):", kind="text"),
+                 Ask("visa", "ВИЗА № (бўлмаса «Тайёрла» босинг):", kind="text"),
+                 Ask("job", "Иш ўрни — рақамини ёзинг:", kind="choice",
+                     choices=("КОМ АДМИНИСТРАТОР", "УЧЕНИК", "РАЗНОРАБОЧИЙ",
+                              "ЧАСТНЫЙ ИШЧИ.")),
+                 Ask("valid_from", "Карта амал қилиш БОШЛАНИШИ (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("valid_to", "Карта амал қилиш ТУГАШИ (КК.ОО.ЙЙЙЙ):",
+                     default_days=90),
+                 Ask("issued_on", "Карта берилган сана (кўк ёзув):",
+                     default_days=0))),
     Module("perevod", "🌐 ПЕРЕВОД", _run_perevod,
            photo_prompt=("Таржима қилинадиган ҳужжат расмларини юборинг.\n"
                          "(олди-орқаси бўлса иккисини — битта варақга "
@@ -814,6 +876,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.hostel_controller import HostelController
     from src.controllers.inn_controller import InnController
     from src.controllers.insurance_controller import InsuranceController
+    from src.controllers.mig_controller import MigController
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
     from src.controllers.process_controller import ProcessController
@@ -842,6 +905,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         InsuranceService,
         InsuranceTemplateService,
     )
+    from src.services.mig_service import MigService
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
@@ -868,6 +932,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg_addr": container.resolve(RegistrationAddressService),
         # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
         # template list even though ППУ itself is not offered on the phone
+        "mig": MigController(
+            ocr, MigService(container.resolve(SettingsService))),
         "ppu": PpuController(
             ocr, PpuService(container.resolve(SettingsService))),
         "trud_ppu": TrudPpuController(

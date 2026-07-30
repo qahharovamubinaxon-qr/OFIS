@@ -8,10 +8,12 @@ Fractions rather than points, because each firm hands over its own scan of the
 blank and no two are exactly the same size. A fraction lands correctly on
 whatever comes in.
 
-These were read off the office's own filled card against the empty one. They
-are close, and they are meant to be corrected ONCE: print a card, lay it over
-the office's sample, and move the numbers that are out. Nothing else in the
-section depends on them, so a correction here is a correction everywhere.
+MEASURED, not judged. The office handed over its own card twice — empty and
+filled — framed identically, so subtracting one from the other left exactly the
+ink of each value. Every size below was then solved numerically: the text the
+program prints was rendered at a trial size, its ink box measured the same way,
+and the size adjusted until the two matched. The four name rows all came out at
+the same size on their own, which is the check that the method worked.
 """
 
 from __future__ import annotations
@@ -39,38 +41,41 @@ class Slot(NamedTuple):
     spaced: bool = False
 
 
-#: Two sizes carry the whole card: the big one for the card's own number and
-#: the body one for everything read off the passport.
-_BIG = 0.0353
-_BODY = 0.0269
-_SMALL = 0.0195
-_DATE = 0.0215
+#: Sizes, each solved from the office's own filled card.
+_CARD_NO = 0.0362      # СЕРИЯ and НОМЕР — the big line
+_BODY = 0.0226         # the four name rows
+_BIRTH = 0.0246
+_PASSPORT = 0.0172
+_VISA = 0.0168
+_TERM = 0.0180
+_ISSUED = 0.0270
+_SEX = 0.0338
 
 FIELDS: dict[str, Slot] = {
     # the card's own series and number — the office types these
-    "series":      Slot(0.489, 0.173, _BIG, BLACK, width=0.28),
-    "number":      Slot(0.503, 0.218, _BIG, BLACK, width=0.36),
-    # off the passport, letters set apart
-    "surname":     Slot(0.313, 0.263, _BODY, BLACK, width=0.62, spaced=True),
-    "surname_lat": Slot(0.313, 0.297, _BODY, BLACK, width=0.62, spaced=True),
-    "name":        Slot(0.313, 0.330, _BODY, BLACK, width=0.62, spaced=True),
-    "patronymic":  Slot(0.313, 0.359, _BODY, BLACK, width=0.62, spaced=True),
-    "birth_date":  Slot(0.063, 0.484, _BODY, BLACK, width=0.38, spaced=True),
-    "citizenship": Slot(0.647, 0.484, _BODY, BLACK, width=0.33, spaced=True),
-    "passport":    Slot(0.063, 0.574, _BODY, BLACK, width=0.40, spaced=True),
+    "series":      Slot(0.4922, 0.1712, _CARD_NO, BLACK, width=0.30),
+    "number":      Slot(0.4922, 0.2187, _CARD_NO, BLACK, width=0.36),
+    # off the passport, every letter standing apart
+    "surname":     Slot(0.3141, 0.2601, _BODY, BLACK, width=0.66, spaced=True),
+    "surname_lat": Slot(0.3140, 0.2913, _BODY, BLACK, width=0.66, spaced=True),
+    "name":        Slot(0.3136, 0.3224, _BODY, BLACK, width=0.68, spaced=True),
+    "patronymic":  Slot(0.3136, 0.3535, _BODY, BLACK, width=0.68, spaced=True),
+    "birth_date":  Slot(0.0674, 0.4774, _BIRTH, BLACK, width=0.40, spaced=True),
+    "citizenship": Slot(0.4720, 0.4774, _BIRTH, BLACK, width=0.52, spaced=True),
+    "passport":    Slot(0.0611, 0.5655, _PASSPORT, BLACK, width=0.42, spaced=True),
     # the office types these
-    "visa":        Slot(0.499, 0.556, _SMALL, BLACK, width=0.28),
-    "valid_from":  Slot(0.173, 0.776, _DATE, BLACK, width=0.22),
-    "valid_to":    Slot(0.456, 0.776, _DATE, BLACK, width=0.22),
+    "visa":        Slot(0.4877, 0.5490, _VISA, BLACK, width=0.30),
+    "valid_from":  Slot(0.1751, 0.7634, _TERM, BLACK, width=0.24),
+    "valid_to":    Slot(0.4722, 0.7634, _TERM, BLACK, width=0.24),
     #: the day the card was issued — «15 03 26», in blue. NOT letter-spaced:
-    #: the office writes the pairs together, «15» and not «1 5».
-    "issued":      Slot(0.110, 0.867, 0.0300, BLUE, width=0.34),
+    #: the office writes the pairs together.
+    "issued":      Slot(0.1938, 0.8696, _ISSUED, BLUE, width=0.34),
 }
 
 #: The «МУЖ» and «ЖЕН» boxes. One «X» goes in whichever the passport says.
 SEX_X = {
-    "male":   Slot(0.638, 0.418, _BODY),
-    "female": Slot(0.896, 0.418, _BODY),
+    "male":   Slot(0.6204, 0.4143, _SEX),
+    "female": Slot(0.8800, 0.4131, _SEX),
 }
 
 
@@ -85,14 +90,14 @@ class Rule(NamedTuple):
 #: The four places a worker can hold, in the order they are printed on the card.
 #: Ticking one draws a line under that word — that is how the office marks it.
 JOBS: tuple[tuple[str, str, Rule], ...] = (
-    ("kom", "КОМ АДМИНИСТРАТОР", Rule(0.055, 0.297, 0.658)),
-    ("uchenik", "УЧЕНИК", Rule(0.055, 0.148, 0.678)),
-    ("raznorabochiy", "РАЗНОРАБОЧИЙ", Rule(0.226, 0.412, 0.678)),
-    ("chastniy", "ЧАСТНЫЙ", Rule(0.055, 0.212, 0.699)),
+    ("kom", "КОМ АДМИНИСТРАТОР", Rule(0.0551, 0.2746, 0.6524)),
+    ("uchenik", "УЧЕНИК", Rule(0.0543, 0.1560, 0.6720)),
+    ("raznorabochiy", "РАЗНОРАБОЧИЙ", Rule(0.2260, 0.4032, 0.6720)),
+    ("chastniy", "ЧАСТНЫЙ ИШЧИ.", Rule(0.0559, 0.2070, 0.6952)),
 )
 
 #: How thick that line is, as a share of the page height.
-RULE_WIDTH = 0.0011
+RULE_WIDTH = 0.0014
 
 #: Laid on just under full strength, so the type sits IN the paper rather than
 #: on top of it — the rest of the program prints this way and a solid black
