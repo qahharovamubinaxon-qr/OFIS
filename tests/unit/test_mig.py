@@ -97,7 +97,7 @@ def _card(tmp_path, **over):
         "citizenship": "УЗБЕКИСТАН", "passport": "FB2376204",
         "gender": "Женский", "visa": "АШХ23652",
         "valid_from": date(2026, 7, 20), "valid_to": date(2026, 10, 14),
-        "issued_on": date(2026, 3, 15),
+        "issued": "15 03 26",
     }
     fields.update(over)
     pdf = render(MigData(**fields), _blank(tmp_path / "blank.pdf"))
@@ -355,3 +355,37 @@ def test_the_type_is_thickened_by_a_share_of_its_size_not_by_points() -> None:
     from src.pdf.mig_spec import STROKE_SHARE
 
     assert 0.0 < STROKE_SHARE < 0.1
+
+
+def test_the_issue_date_is_printed_exactly_as_it_was_typed(tmp_path) -> None:
+    """Not a date — free text. The office opens the gaps by hand so the digits
+    land in the blank's own boxes, and every space it types must survive."""
+    page = _card(tmp_path, issued="15   03   26")
+    assert "15   03   26" in _plain(page.get_text())
+
+    tight = _card(tmp_path, issued="150326")
+    assert "150326" in _plain(tight.get_text())
+
+    assert "15" not in _plain(_card(tmp_path, issued="").get_text())
+
+
+def test_sex_is_read_off_the_passport_not_picked_by_hand() -> None:
+    """The reader says «male»; the card says «Мужской». Without translating,
+    the screen matched nothing and the operator picked it every time."""
+    from src.controllers.mig_controller import card_gender
+    from src.domain.documents import Passport
+    from src.domain.enums import Gender
+
+    man = Passport(surname="МУРТАЗОЕВ", name="АББОСХОН", number="FA7822242",
+                   gender=Gender.MALE)
+    assert card_gender(man) == "Мужской"
+    woman = Passport(surname="ХОЛМУРОДОВА", name="ФАРАНГИЗ", number="FA1",
+                     gender=Gender.FEMALE)
+    assert card_gender(woman) == "Женский"
+
+    # a passport photographed badly loses it — the patronymic still says it
+    unread = Passport(surname="ХОЛМУРОДОВА", name="ФАРАНГИЗ",
+                      patronymic="ЗАФАРОВНА", number="FA1")
+    assert card_gender(unread) == "Женский"
+    unknown = Passport(surname="SMITH", name="JOHN", number="FA1")
+    assert card_gender(unknown) == ""

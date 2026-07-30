@@ -161,8 +161,16 @@ class MigView(QWidget):
         self._to = self._date_edit(QDate.currentDate().addDays(90))
         dates.addWidget(self._to)
         dates.addWidget(QLabel("Берилган сана (кўк):"))
-        self._issued = self._date_edit(QDate.currentDate())
-        self._issued.setToolTip("Картанинг пастида, М.П. устида — кўк рангда")
+        # typed, not picked: the office opens the gaps by hand so the digits
+        # land in the blank's own boxes, and every space it types is printed
+        self._issued = QLineEdit()
+        self._issued.setMinimumHeight(32)
+        self._issued.setMinimumWidth(180)
+        self._issued.setPlaceholderText("15  03  26")
+        self._issued.setToolTip(
+            "Картанинг пастида, М.П. устида — кўк рангда. "
+            "Нуқтасиз ёзинг; оралиқни ўзингиз очасиз — қанча бўшлиқ қўйсангиз "
+            "шунча тушади.")
         dates.addWidget(self._issued)
         dates.addStretch(1)
         root.addLayout(dates)
@@ -419,7 +427,7 @@ class MigView(QWidget):
                 visa=self._visa.text(), jobs=chosen,
                 valid_from=self._from.date().toPython(),
                 valid_to=self._to.date().toPython(),
-                issued_on=self._issued.date().toPython(),
+                issued=self._issued.text(),
                 surname=self._surname.text(),
                 surname_latin=self._surname_lat.text(),
                 name=self._name.text(), patronymic=self._patronymic.text(),
@@ -474,7 +482,7 @@ class MigView(QWidget):
         for edit in (self._surname, self._surname_lat, self._name,
                      self._patronymic, self._birth, self._citizenship,
                      self._doc, self._series, self._number, self._visa,
-                     self._code):
+                     self._code, self._issued):
             edit.clear()
         self._gender.setCurrentIndex(0)
         for box in self._jobs.values():

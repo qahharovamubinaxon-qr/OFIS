@@ -12,6 +12,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from src.common.logging import get_logger
+from src.controllers.trud_ppu_controller import gender_from_patronymic
 from src.domain.documents import Passport
 from src.domain.passport_rules import series_in_latin
 from src.ocr.service import OcrService
@@ -70,7 +71,7 @@ class MigController:
             "birth_date": (passport.birth_date.strftime("%d.%m.%Y")
                            if passport.birth_date else ""),
             "citizenship": (passport.nationality or "").strip(),
-            "gender": (passport.gender.value if passport.gender else ""),
+            "gender": card_gender(passport),
             "passport": passport_line(passport),
         }
 
@@ -104,3 +105,22 @@ def passport_line(passport: Passport) -> str:
     series = series_in_latin(passport.series or "")
     number = "".join((passport.number or "").split())
     return f"{series}{number}".strip()
+
+
+#: The card says «Мужской» / «Женский»; the reader says «male» / «female».
+_GENDER_WORD = {"male": "Мужской", "female": "Женский"}
+
+
+def card_gender(passport: Passport) -> str:
+    """Which box the X goes in, as the card spells it.
+
+    The reader hands sex back as :class:`Gender` — «male» / «female» — and the
+    card's own words are «Мужской» / «Женский»; without translating, the screen
+    matched nothing and the operator had to pick it by hand every time.
+
+    A passport photographed badly often loses it altogether. The patronymic then
+    says it without asking anyone: «…овна» is a woman, «…ович» and «…ўғли» a man.
+    """
+    word = _GENDER_WORD.get(
+        str(passport.gender.value).lower() if passport.gender else "", "")
+    return word or gender_from_patronymic(passport.patronymic or "")

@@ -214,7 +214,7 @@ class MigService:
         jobs: tuple[str, ...] = (),
         valid_from: date | None = None,
         valid_to: date | None = None,
-        issued_on: date | None = None,
+        issued: str = "",
         surname: str = "",
         surname_latin: str = "",
         name: str = "",
@@ -235,7 +235,7 @@ class MigService:
 
         data = MigData(
             series=series, number=number, visa=visa, jobs=tuple(jobs),
-            valid_from=valid_from, valid_to=valid_to, issued_on=issued_on,
+            valid_from=valid_from, valid_to=valid_to, issued=issued,
             surname=surname, surname_latin=surname_latin, name=name,
             patronymic=patronymic, birth_date=birth_date,
             citizenship=citizenship, passport=passport, gender=gender,

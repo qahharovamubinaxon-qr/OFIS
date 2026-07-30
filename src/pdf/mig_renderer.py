@@ -69,7 +69,10 @@ class MigData:
     jobs: tuple[str, ...] = ()
     valid_from: date | None = None
     valid_to: date | None = None
-    issued_on: date | None = None
+    #: the day the card was issued, TYPED — «15  03  26». Free text, not a
+    #: date: the office opens the gaps by hand to match the blank's own boxes,
+    #: and every space it types is printed.
+    issued: str = ""
     # --- read off the passport
     surname: str = ""
     #: the surname in Latin; derived from the Cyrillic one when not given
@@ -238,7 +241,7 @@ def render(data: MigData, template: Path, layout: dict | None = None) -> bytes:
         "visa": "".join((data.visa or "").split()).upper(),
         "valid_from": _dmy(data.valid_from),
         "valid_to": _dmy(data.valid_to),
-        "issued": data.issued_on.strftime("%d %m %y") if data.issued_on else "",
+        "issued": (data.issued or "").strip(),
     }
     code = "".join(ch for ch in (data.code or "") if ch.isdigit())
     values.update({key: code for key in CODE_SLOTS})
