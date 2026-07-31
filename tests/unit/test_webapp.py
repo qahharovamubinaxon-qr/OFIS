@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import shutil
+import subprocess
 import tempfile
 import urllib.parse
 from datetime import date
@@ -255,3 +257,96 @@ def test_an_unusable_port_falls_back_to_the_default(server) -> None:
 
     server._settings.set(KEY_PORT, "8870")
     assert server.port() == 8870
+
+
+# --------------------------------------------- the page must always finish
+
+
+def test_the_telegram_sdk_never_blocks_the_page() -> None:
+    """Loaded the blocking way it sat in front of every line under it.
+
+    Inside the bot that showed as «OFIS · Юкланмоқда…» and nothing else, for
+    minutes: telegram.org had not answered, so the inline script — including
+    the call that fetches the sections — had not run yet.
+    """
+    from src.controllers.telegram_webapp import PAGE
+
+    tag = PAGE[PAGE.index("telegram-web-app.js") - 120:
+               PAGE.index("telegram-web-app.js")]
+    assert "async" in tag or "defer" in tag, "the SDK still blocks the page"
+
+
+def test_the_page_finds_the_telegram_signature_without_the_sdk() -> None:
+    """Telegram puts it in the address it opens with — ``#tgWebAppData=…``.
+
+    Reading it there is what makes the page work with the SDK missing, slow or
+    blocked, which is the whole point of not blocking on it.
+    """
+    from src.controllers.telegram_webapp import PAGE
+
+    assert "tgWebAppData" in PAGE
+    assert "location.hash" in PAGE
+
+
+def test_the_first_request_cannot_hang_forever() -> None:
+    """Whatever happens, the operator ends up with a sentence, not a spinner."""
+    from src.controllers.telegram_webapp import PAGE
+
+    assert "AbortController" in PAGE
+    assert "AbortError" in PAGE
+
+
+def _inline_js() -> str:
+    """The page's own script — everything between the inline script tags."""
+    from src.controllers.telegram_webapp import PAGE
+
+    start = PAGE.index("<script>") + len("<script>")
+    return PAGE[start:PAGE.index("</script>", start)]
+
+
+def test_every_javascript_string_closes_on_its_own_line() -> None:
+    """One stray apostrophe kills the WHOLE inline script, silently.
+
+    That is what «OFIS · Юкланмоқда…» was: a message written as
+    ``'… Sozlamalar'га киритинг.'`` ended at the apostrophe, the parser threw,
+    and not one line of the page's script ran — so the sections were never
+    fetched and nothing was ever said. The browser reports it only in a console
+    the operator cannot open.
+
+    A ``'`` or ``"`` string cannot span lines in JavaScript, so an unclosed one
+    at the end of a line is always a bug.
+    """
+    js = _inline_js()
+    assert js.strip(), "the page has no script at all"
+
+    for number, line in enumerate(js.splitlines(), 1):
+        quote, escaped = "", False
+        for index, char in enumerate(line):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+            elif quote:
+                if char == quote:
+                    quote = ""
+            elif char in "\"'":
+                quote = char
+            elif char == "/" and line[index + 1:index + 2] in ("/", "*"):
+                break                      # a comment — the rest is not code
+        assert not quote, (
+            f"line {number} opens a {quote} string and never closes it — the "
+            f"whole script dies here:\n    {line.strip()}")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_page_javascript_actually_parses() -> None:
+    """The real check, when a JavaScript engine is on hand to do it."""
+    with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8",
+                                     delete=False) as handle:
+        handle.write(_inline_js())
+        script = handle.name
+    done = subprocess.run([shutil.which("node"), "--check", script],  # noqa: S603
+                          capture_output=True, text=True, check=False)
+    Path(script).unlink(missing_ok=True)
+    assert done.returncode == 0, done.stderr

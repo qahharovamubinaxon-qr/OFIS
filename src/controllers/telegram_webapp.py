@@ -371,7 +371,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>OFIS</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script async src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--line:#262b36;--fg:#eef1f6;--dim:#9aa4b8;
       --accent:#2f81f7;--ok:#2ea043;--err:#f85149;--r:14px}
@@ -417,20 +417,50 @@ button:disabled{opacity:.5}
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 const KEY = new URLSearchParams(location.search).get('k') || '';
-const HEAD = {'Content-Type':'application/json','X-Ofis-Key':KEY,
-              'X-Telegram-Init': (tg && tg.initData) || ''};
+
+// Telegram's own SDK is loaded async and is NOT depended on. Loaded the
+// blocking way it sat in front of every line below it, so whenever
+// telegram.org was slow or blocked the page stopped at «Юкланмоқда…» and
+// stayed there — which is what the operator saw inside the bot.
+//
+// The signature the server checks does not need the SDK at all: Telegram puts
+// it in the address it opens the Mini App with, as #tgWebAppData=…
+function initData(){
+  const live = window.Telegram && window.Telegram.WebApp;
+  if (live && live.initData) return live.initData;
+  try{ return new URLSearchParams(location.hash.slice(1)).get('tgWebAppData') || ''; }
+  catch(e){ return ''; }
+}
+// built per request, because the SDK may arrive after the first one
+const head = () => ({'Content-Type':'application/json','X-Ofis-Key':KEY,
+                     'X-Telegram-Init': initData()});
 let MODULES = [], picked = null, images = [], pdfs = [];
 
 const el = (id) => document.getElementById(id);
 
 async function load(){
+  // never sit on «Юкланмоқда…» with nothing said: a request that hangs must
+  // end in a sentence the operator can act on
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 20000);
   try{
-    const r = await fetch('/api/modules?k='+encodeURIComponent(KEY), {headers:HEAD});
-    if(!r.ok){ el('sub').textContent = 'Парол хато — ҳаволани қайта олинг.'; return; }
+    const r = await fetch('/api/modules?k='+encodeURIComponent(KEY),
+                          {headers:head(), signal:stop.signal});
+    if(r.status === 403){
+      el('sub').textContent = initData()
+        ? 'Telegram имзоси тан олинмади — Sozlamalar’даги бот токени ното‘г‘ри.'
+        : 'Парол хато — ҳаволани қайта олинг.';
+      return;
+    }
+    if(!r.ok){ el('sub').textContent = 'Компьютер жавоб берди: '+r.status; return; }
     MODULES = await r.json();
     el('sub').textContent = 'Бўлимни танланг';
     home();
-  }catch(e){ el('sub').textContent = 'Компьютерга уланмади: '+e; }
+  }catch(e){
+    el('sub').textContent = (e && e.name === 'AbortError')
+      ? 'Компьютер жавоб бермади. OFIS очиқми? Кейин қайта уриниб кўринг.'
+      : 'Компьютерга уланмади: '+e;
+  }finally{ clearTimeout(timer); }
 }
 
 function home(){
@@ -446,7 +476,7 @@ function home(){
 
 function open_(i){
   const m = MODULES[i];
-  if(!m.ready){ alert(m.blocked||'AI калити йўқ — Sozlamalar'га киритинг.'); return; }
+  if(!m.ready){ alert(m.blocked || "AI калити йўқ — Sozlamalar'га киритинг."); return; }
   picked = m; images = []; pdfs = [];
   el('home').style.display='none'; el('form').style.display='block';
   el('sub').textContent = m.icon+' '+m.title;
@@ -516,7 +546,7 @@ async function run(){
                 answers};
   try{
     const r = await fetch('/api/run?k='+encodeURIComponent(KEY),
-                          {method:'POST', headers:HEAD, body:JSON.stringify(body)});
+                          {method:'POST', headers:head(), body:JSON.stringify(body)});
     const j = await r.json();
     if(!j.ok){ show('err', j.error || 'Хато'); }
     else {
