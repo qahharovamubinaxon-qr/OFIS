@@ -27,6 +27,14 @@ TEMPLATES_DIR = Path("templates") / "chek"
 #: random on every receipt, which made the printed id belong to nobody.
 KEY_COMPANY_ID = "chek.company_id"
 
+#: The blank the office actually prints on, remembered from the desktop.
+#:
+#: The phone has no template picker — and it must not need one: the office
+#: prints ЧЕК on one blank, arranges its values once, and expects that
+#: everywhere. Without this the bot passed no template at all, so no arranged
+#: layout was ever found and the receipt came back in the untouched positions.
+KEY_TEMPLATE = "chek.template"
+
 _CHEK_PROMPT = (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
@@ -73,6 +81,25 @@ class ChekController:
     def templates(self) -> list[Path]:
         TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
         return sorted(TEMPLATES_DIR.glob("*.pdf"))
+
+    def default_template(self) -> Path | None:
+        """The blank to print on when the caller does not name one.
+
+        The one last used on the desktop, while it is still there; otherwise
+        the first blank the office has. ``None`` only when there are none, and
+        then the renderer falls back to the built-in background.
+        """
+        if self._settings is not None:
+            remembered = str(self._settings.get(KEY_TEMPLATE, "") or "").strip()
+            if remembered and Path(remembered).exists():
+                return Path(remembered)
+        found = self.templates()
+        return found[0] if found else None
+
+    def set_default_template(self, template: Path | None) -> None:
+        """Remember what the desktop just printed on, for the phone to follow."""
+        if self._settings is not None:
+            self._settings.set(KEY_TEMPLATE, str(template) if template else "")
 
     def add_template(self, source: Path) -> Path:
         """Copy an operator-supplied blank into templates/chek/ (never move)."""
@@ -129,6 +156,10 @@ class ChekController:
         data = ChekData(fam=fam, ism=ism, otch=otch, inn=inn,
                         card4=card4, when=when, rub=rub, kop=kop,
                         avtoriz=avtoriz, idci=self.company_id())
+        # a caller that names no blank gets the office's own, layout and all —
+        # never the untouched default while the desktop prints something else
+        if template is None:
+            template = self.default_template()
         return render_chek(data, str(template) if template else None,
                            layout=self.layout(template))
 

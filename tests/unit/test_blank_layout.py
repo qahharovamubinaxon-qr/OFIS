@@ -227,3 +227,78 @@ def test_the_arranging_screen_names_and_sizes_every_field() -> None:
         assert sample, field.id
         if field.type == "grid":
             assert len(sample) == int(field.max_cells or 6)
+
+
+# ------------------------------------------- the phone prints the same sheet
+
+
+def _controller():
+    """A ЧЕК controller on an isolated settings table."""
+    from src.app import build_container
+    from src.config.settings_service import SettingsService
+    from src.controllers.chek_controller import ChekController
+    from src.ocr.service import OcrService
+
+    container = build_container()
+    controller = ChekController(container.resolve(OcrService),
+                                container.resolve(SettingsService))
+    controller.set_company_id("123456789012ABCD")
+    return controller
+
+
+_RECEIPT = dict(fam="ИСАКОВ", ism="ШАХБОЗ", otch="БАХТИЁРОВИЧ",
+                inn="123456789012", card4="1234", rub=15000, kop=50,
+                avtoriz="123456",
+                when=datetime.datetime(2026, 7, 20, 10, 11, 12))
+
+
+def _surname_spots(pdf: bytes) -> list[tuple[float, float, float]]:
+    """Where the surname landed, and how tall it came out."""
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        return [(round(r.x0, 1), round(r.y0, 1), round(r.height, 1))
+                for r in doc[0].search_for("ИСАКОВ")]
+
+
+def test_the_phone_prints_on_the_blank_the_office_arranged() -> None:
+    """The bot names no blank — it must still get the arranged one.
+
+    Naming none used to mean ``layout(None)`` → ``{}``: the receipt came back
+    in the untouched, measured positions while the desktop printed the arranged
+    ones. On the phone that reads as «the program is right, the bot gives me
+    the old one».
+    """
+    controller = _controller()
+    template = controller.templates()[0]
+
+    plain = _surname_spots(controller.generate(**_RECEIPT)[0])
+
+    from src.pdf.chek_spec import FIELDS
+
+    with fitz.open(str(template)) as doc:
+        width, height = doc[0].rect.width, doc[0].rect.height
+    x0, _, _, y1 = FIELDS["fam"]["rect"]
+    controller.save_layout(template, {"fields": {
+        "fam": [(x0 + 60) / width, y1 / height,
+                (FIELDS["fam"]["size"] * 1.6) / height]}})
+
+    from_phone = _surname_spots(controller.generate(**_RECEIPT)[0])
+    from_desk = _surname_spots(
+        controller.generate(**_RECEIPT, template=template)[0])
+
+    assert from_phone == from_desk, "the phone still prints the old positions"
+    assert from_phone != plain, "the arrangement was not applied at all"
+
+
+def test_the_blank_the_desktop_used_is_the_one_the_phone_follows() -> None:
+    """There is no picker on the phone, so the desktop's choice is the answer."""
+    controller = _controller()
+    template = controller.templates()[0]
+
+    assert controller.default_template() == template     # the only one there is
+
+    controller.set_default_template(template)
+    assert controller.default_template() == template
+
+    # a blank that has been deleted since must not take the receipt down
+    controller.set_default_template(template.parent / "yo'q-bo'lgan.pdf")
+    assert controller.default_template() == template

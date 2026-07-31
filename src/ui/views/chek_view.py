@@ -225,6 +225,8 @@ class ChekView(QWidget):
         q, t = self._date.date(), self._time.time()
         when = datetime(q.year(), q.month(), q.day(), t.hour(), t.minute(), t.second())
         tpl = self._tpl.currentData()
+        # the phone has no picker: it prints on whatever the desktop last used
+        self._c.set_default_template(Path(tpl) if tpl else None)
         try:
             pdf, name = self._c.generate(fam=fam, ism=ism, otch=otch, inn=inn,
                                          card4=card4, when=when, rub=rub, kop=kop,
@@ -295,6 +297,8 @@ class ChekView(QWidget):
             self._status.setText("⚠️ Аввал шаблонни танланг.")
             return
         template = Path(tpl)
+        # arranging a blank is a statement that this is the office's blank
+        self._c.set_default_template(template)
         try:
             with fitz.open(str(template)) as doc:
                 page = doc[0]
