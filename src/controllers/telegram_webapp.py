@@ -166,12 +166,28 @@ class WebAppServer:
                 "needsTarget": m.targets is not None, "targets": targets,
                 "textOnly": m.text_only, "minPhotos": m.min_photos,
                 "photoLabels": list(m.photo_labels), "wantsPdf": m.wants_pdf,
-                "ready": (ai or not m.needs_ai),
+                "ready": (ai or not m.needs_ai) and not self._blocked(m, ctl),
+                "blocked": self._blocked(m, ctl),
                 "asks": [{"field": a.field, "prompt": a.prompt, "kind": a.kind,
                           "options": a.options()}
                          for a in m.asks],
             })
         return out
+
+    @staticmethod
+    def _blocked(module, ctl) -> str:
+        """Why the section cannot run yet — before anything is uploaded.
+
+        ЧЕК needs its company id typed on the computer once; without this the
+        operator fills the whole card in and the refusal only arrives at the
+        end.
+        """
+        if module.ready is None:
+            return ""
+        try:
+            return module.ready(ctl) or ""
+        except Exception as exc:  # noqa: BLE001
+            return f"Тайёр эмас: {str(exc)[:120]}"
 
     def run_module(self, key: str, target_index: int | None,
                    images: list[bytes], answers: dict[str, str],
@@ -182,6 +198,9 @@ class WebAppServer:
         ctl = self.ctl()
         if module.needs_ai and not ctl["ocr"].available():
             raise OfisError("AI калити йўқ — Sozlamalar'га киритинг.")
+        blocked = self._blocked(module, ctl)
+        if blocked:
+            raise OfisError(blocked)
 
         state = new_state()
         state["mode"] = key
@@ -412,13 +431,13 @@ function home(){
   el('home').innerHTML = MODULES.map((m,i)=>`
     <div class="tile ${m.ready?'':'off'}" onclick="open_(${i})">
       <div class="ic">${m.icon}</div><div class="nm">${m.title}</div>
-      <div class="st">${m.ready?(m.needsTarget?m.targets.length+' та':'тайёр'):'AI калити йўқ'}</div>
+      <div class="st">${m.ready?(m.needsTarget?m.targets.length+' та':'тайёр'):(m.blocked||'AI калити йўқ')}</div>
     </div>`).join('');
 }
 
 function open_(i){
   const m = MODULES[i];
-  if(!m.ready){ return; }
+  if(!m.ready){ alert(m.blocked||'AI калити йўқ — Sozlamalar'га киритинг.'); return; }
   picked = m; images = []; pdfs = [];
   el('home').style.display='none'; el('form').style.display='block';
   el('sub').textContent = m.icon+' '+m.title;

@@ -376,6 +376,17 @@ class TelegramBot:
             self._menu(chat_id, "AI калити йўқ — компютерда Sozlamalar'га киритинг.")
             return
 
+        # anything the section needs set up first is said NOW, before the
+        # operator answers five questions for nothing
+        if module.ready is not None:
+            try:
+                blocked = module.ready(self.ctl())
+            except Exception as exc:  # noqa: BLE001
+                blocked = f"Тайёр эмас: {str(exc)[:120]}"
+            if blocked:
+                self._menu(chat_id, f"⚠️ {blocked}")
+                return
+
         if module.targets is not None:
             try:
                 items = list(module.targets(self.ctl()))

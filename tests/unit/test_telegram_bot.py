@@ -799,14 +799,42 @@ def test_chek_flow_passes_the_typed_authorisation_code_through(
     assert ready.files
 
 
-def test_chek_refuses_to_run_without_the_company_id(ready, monkeypatch) -> None:
+def test_chek_says_the_company_id_is_missing_before_asking_anything(
+        ready, monkeypatch) -> None:
+    """The refusal comes on the way IN, not after five answered questions.
+
+    It used to be raised inside the runner, so the operator was asked the sum,
+    the card, the authorisation code, the day and the hour — and only then told
+    the company id was missing, in one line that immediately scrolled away
+    behind the section menu. On the phone that reads as «ЧЕК asks for the
+    documents and never sends the PDF».
+    """
     _chek_ready(ready, monkeypatch, company="")
+
+    _text(ready, "🧾 ЧЕК")
+
+    assert "компания коди" in _last(ready).lower()
+    # «сумма» alone is no proof — СУММА-ДАТА is a section in the printed menu.
+    assert "сумма (₽)" not in _all(ready).lower(), "a question was still asked"
+    _photo(ready)
+    assert not ready.files, "a receipt printed with no company id"
+
+
+def test_chek_really_produces_the_pdf(ready, monkeypatch) -> None:
+    """End to end with the real renderer — the section the operator reported.
+
+    Everything above stubs ``generate``; this one does not, so a break anywhere
+    between the answers and the finished file is caught here.
+    """
+    _chek_ready(ready, monkeypatch)
     _text(ready, "🧾 ЧЕК")
     _photo(ready)
     _text(ready, "✅ Тайёрла")
     _chek_answers(ready)
-    assert "компания коди" in _all(ready).lower()
-    assert not ready.files, "a receipt printed with no company id"
+
+    assert len(ready.files) == 1, _all(ready)[-400:]
+    assert ready.files[0].suffix.lower() == ".pdf"
+    assert ready.files[0].read_bytes()[:5] == b"%PDF-"
 
 
 def test_chek_refuses_a_missing_authorisation_code(ready, monkeypatch) -> None:

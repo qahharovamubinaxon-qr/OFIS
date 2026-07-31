@@ -96,6 +96,12 @@ class Module:
     #: can be added on the phone instead of only on the computer.
     add_key: str | None = None
     add_prompt: str = "➕ Янги қўшиш"
+    #: Checked the moment the section is opened: returns why it cannot run yet,
+    #: or "" when it can. Without this a module that needs something set up on
+    #: the computer asks every question first and only then refuses — and the
+    #: refusal scrolls away behind the menu, so it reads as «it just does
+    #: nothing». ЧЕК needs the company id.
+    ready: Callable[[dict], str] | None = None
 
     @property
     def title(self) -> str:
@@ -806,6 +812,10 @@ MODULES: tuple[Module, ...] = (
            asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("profession", "Профессия (ихтиёрий):", kind="text"))),
     Module("chek", "🧾 ЧЕК", _run_chek,
+           ready=lambda c: "" if c["chek"].company_id() else (
+               "ЧЕК учун компания коди керак — у ҳар сафар ўйлаб "
+               "топилмайди. Компютерда ЧЕК бўлимига кириб бир марта "
+               "ёзиб қўйинг, кейин ботдан ишлатаверасиз."),
            photo_prompt="Ишчининг ПАТЕНТИ расмини юборинг.",
            photo_labels=("Патент",),
            asks=(Ask("summa", "Сумма (₽) — масалан 15000,50:", kind="text"),
