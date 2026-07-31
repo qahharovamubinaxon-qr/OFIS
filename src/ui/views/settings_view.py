@@ -220,12 +220,7 @@ class SettingsView(QWidget):
 
         # -- mini app -------------------------------------------------------
         from src.controllers.telegram_bot import KEY_WEBAPP
-        from src.controllers.telegram_webapp import (
-            DEFAULT_PORT,
-            KEY_ENABLED,
-            KEY_PORT,
-            lan_ip,
-        )
+        from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_ENABLED, KEY_PORT
 
         port_now = self._settings.get(KEY_PORT, DEFAULT_PORT)
         wa = Card("🌐", "Mini App",
@@ -237,8 +232,23 @@ class SettingsView(QWidget):
         self._wa_port = QLineEdit(str(port_now))
         self._wa_url = QLineEdit(str(self._settings.get(KEY_WEBAPP, "") or ""))
         self._wa_url.setPlaceholderText("https://…  (Telegram Mini App uchun)")
+
+        from src.services.tunnel_service import KEY_TUNNEL, cloudflared
+
+        self._wa_tunnel = QCheckBox(
+            "Telegram ichida «Mini App» tugmasi chiqsin (bepul)")
+        self._wa_tunnel.setChecked(
+            str(self._settings.get(KEY_TUNNEL, "0")) in ("1", "true", "True"))
+        self._wa_tunnel.setEnabled(bool(cloudflared()))
+        # the address is issued fresh on every start, so it is filled in by the
+        # program; typing over it would only be overwritten
+        self._wa_tunnel.toggled.connect(
+            lambda on: self._wa_url.setEnabled(not on))
+        self._wa_url.setEnabled(not self._wa_tunnel.isChecked())
+
         wf.addRow("", self._wa_on)
         wf.addRow("Port:", self._wa_port)
+        wf.addRow("", self._wa_tunnel)
         wf.addRow("Public https URL:", self._wa_url)
         save_wa = QPushButton("Saqlash")
         save_wa.setObjectName("primaryButton")
@@ -246,10 +256,14 @@ class SettingsView(QWidget):
         wa.add(_right(save_wa))
         self._wa_state = wa.note("")
         wa.note(
-            f"Telefon va kompyuter bitta Wi-Fi'da bo'lsa, telefon brauzerida oching:\n"
-            f"http://{lan_ip()}:{port_now}/?k=PAROL   (PAROL — yuqoridagi bot paroli)\n"
-            "Telegram ichida «Mini App» tugmasi chiqishi uchun public https manzil "
-            "kerak (Cloudflare Tunnel / ngrok) — uni yuqoridagi maydonga yozing."
+            "Telefon va kompyuter bitta Wi-Fi'da bo'lsa — yuqoridagi manzilni "
+            "telefon brauzerida oching. Hech narsa kerak emas.\n\n"
+            "Telegram ichida tugma chiqishi uchun Telegram https manzil talab "
+            "qiladi. Yuqoridagi katakcha yoqilsa, dastur uni Cloudflare orqali "
+            "o'zi oladi — bepul, ro'yxatdan o'tish va karta kerak emas. "
+            + ("" if cloudflared() else
+               "Buning uchun cloudflared o'rnatilgan bo'lishi kerak — hozir "
+               "topilmadi, shuning uchun katakcha o'chirilgan.")
         )
         root.addWidget(wa)
         root.addStretch(1)
@@ -520,9 +534,18 @@ class SettingsView(QWidget):
             if not (port.isdigit() and 1 <= int(port) <= 65535):
                 port = str(DEFAULT_PORT)
             parol = str(self._settings.get(KEY_PASSWORD, "") or "").strip()
-            self._wa_state.setText(
-                f"✅  Telefon brauzerida oching (bir xil Wi-Fi):\n"
-                f"http://{lan_ip()}:{port}/?k={parol}")
+            lines = ["✅  Telefon brauzerida oching (bir xil Wi-Fi):",
+                     f"http://{lan_ip()}:{port}/?k={parol}"]
+
+            from src.controllers.telegram_bot import KEY_WEBAPP
+            from src.services.tunnel_service import KEY_TUNNEL
+
+            if str(self._settings.get(KEY_TUNNEL, "0")) in ("1", "true", "True"):
+                public = str(self._settings.get(KEY_WEBAPP, "") or "").strip()
+                lines.append("")
+                lines.append(f"🌐  Telegram tugmasi:  {public}" if public else
+                             "🌐  Telegram manzili olinmoqda… (bir daqiqagacha)")
+            self._wa_state.setText("\n".join(lines))
 
         from src.services.dms_service import DmsService
 
@@ -870,6 +893,20 @@ class SettingsView(QWidget):
         if not ok:
             self._wa_port.setText(str(DEFAULT_PORT))
         self._settings.set(KEY_ENABLED, "1" if self._wa_on.isChecked() else "0")
+
+        from src.services.tunnel_service import KEY_TUNNEL
+
+        tunnel_on = self._wa_tunnel.isChecked()
+        self._settings.set(KEY_TUNNEL, "1" if tunnel_on else "0")
+        if tunnel_on:
+            # the tunnel writes the address itself on every start; saving the
+            # box's stale contents over it would break the button
+            self._refresh_states()
+            QMessageBox.information(
+                self, "OK",
+                "Mini App sozlamalari saqlandi.\nDasturni yopib qayta oching — "
+                "manzil o'zi olinadi va Telegram'da tugma chiqadi.")
+            return
 
         # Telegram opens a Mini App button only over https. An http address
         # here is silently dropped by Telegram, so it is refused right away

@@ -299,6 +299,25 @@ def main() -> int:
         log.error("Mini App failed to start: %s", exc)
     window._webapp = webapp
 
+    # A free public https address for it, so Telegram can open the Mini App
+    # button. Off unless switched on in Sozlamalar; the address is new every
+    # time, so it is written into settings here rather than copied by hand —
+    # the bot reads that setting on every menu, so the button follows along.
+    from src.controllers.telegram_bot import KEY_WEBAPP
+    from src.services.tunnel_service import TunnelService
+
+    tunnel = TunnelService(settings)
+    try:
+        if url:
+            tunnel.start(webapp.port(),
+                         lambda public: settings.set(KEY_WEBAPP, public))
+    except Exception as exc:  # noqa: BLE001 - must never block the UI
+        log.error("Tunnel failed to start: %s", exc)
+    window._tunnel = tunnel
+    # cloudflared is a separate process, not a daemon thread — without this it
+    # would outlive the window and leave the door open with nothing behind it.
+    app.aboutToQuit.connect(tunnel.stop)
+
     # Warm up the background-removal model: first install downloads it here,
     # in the background, so the first photo never waits for the network.
     import threading as _threading
