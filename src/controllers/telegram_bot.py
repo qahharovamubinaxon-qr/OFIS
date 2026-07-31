@@ -134,6 +134,44 @@ _MENU_TEXT = _menu_text()
 _RUN_KB = {"keyboard": [[_BTN_RUN], [_BTN_MENU, _BTN_CANCEL]], "resize_keyboard": True}
 
 
+# ------------------------------------------------------------ sending files
+
+
+def send_document(token: str, chat_id: int, path: Path, caption: str = "") -> bool:
+    """Upload one file into a chat. Used by the bot AND by the Mini App.
+
+    The Mini App needs it because a phone inside Telegram has nowhere useful to
+    put a download — the operator taps «⬇», and the file goes wherever the
+    in-app browser keeps things. A document that lands in the chat is already
+    where every other paper of the day is.
+    """
+    if not token or not chat_id:
+        return False
+    boundary = uuid.uuid4().hex
+    mime = ("application/pdf" if path.suffix.lower() == ".pdf"
+            else "application/octet-stream")
+    crlf = "\r\n"
+    parts = []
+    for name, value in (("chat_id", str(chat_id)), ("caption", caption)):
+        parts.append((f"--{boundary}{crlf}Content-Disposition: form-data; "
+                      f'name="{name}"{crlf}{crlf}{value}{crlf}').encode())
+    parts.append((f"--{boundary}{crlf}Content-Disposition: form-data; "
+                  f'name="document"; filename="{path.name}"{crlf}'
+                  f"Content-Type: {mime}{crlf}{crlf}").encode())
+    body = (b"".join(parts) + path.read_bytes()
+            + f"{crlf}--{boundary}--{crlf}".encode())
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendDocument", data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(request, timeout=180) as resp:
+            resp.read()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("sendDocument failed: %s", exc)
+        return False
+
+
 # ---------------------------------------------------------------- the bot
 
 
@@ -214,28 +252,8 @@ class TelegramBot:
         self._send(chat_id, text)
 
     def _send_file(self, chat_id: int, path: Path, caption: str = "") -> None:
-        boundary = uuid.uuid4().hex
-        data = path.read_bytes()
-        mime = "application/pdf" if path.suffix.lower() == ".pdf" else \
-            "application/octet-stream"
-        parts = []
-        for name, value in (("chat_id", str(chat_id)), ("caption", caption)):
-            parts.append(
-                f"--{boundary}\r\nContent-Disposition: form-data; "
-                f'name="{name}"\r\n\r\n{value}\r\n'.encode())
-        parts.append(
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; "
-            f'filename="{path.name}"\r\nContent-Type: {mime}\r\n\r\n'.encode())
-        body = b"".join(parts) + data + f"\r\n--{boundary}--\r\n".encode()
-        url = f"https://api.telegram.org/bot{self._token()}/sendDocument"
-        req = urllib.request.Request(url, data=body, headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}"})
-        try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                resp.read()
-        except Exception as exc:  # noqa: BLE001
-            log.warning("tg sendDocument failed: %s", exc)
-            self._send(chat_id, f"Файл юборилмади: {str(exc)[:120]}")
+        if not send_document(self._token(), chat_id, path, caption):
+            self._send(chat_id, f"«{path.name}» юборилмади — қайта уриниб кўринг.")
 
     def _download(self, file_id: str) -> bytes | None:
         try:

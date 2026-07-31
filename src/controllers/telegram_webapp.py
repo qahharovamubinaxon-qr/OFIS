@@ -251,6 +251,35 @@ class WebAppServer:
     def result_path(self, token: str) -> Path | None:
         return self._results.get(token)
 
+    def deliver_to_chat(self, result: dict, init_data: str) -> int:
+        """Post the finished files into the operator's own Telegram chat.
+
+        Opened inside Telegram, a «⬇» download lands wherever the in-app
+        browser keeps things, which on a phone is nowhere the operator can find
+        it. The chat is where every other paper of the day already is, so the
+        files go there too — the link stays as well, for the Wi-Fi browser.
+
+        Returns how many were posted; 0 whenever this is not Telegram.
+        """
+        from src.controllers.telegram_bot import send_document
+
+        token = self._bot_token()
+        if not token or not check_init_data(init_data, token):
+            return 0
+        raw = dict(urllib.parse.parse_qsl(init_data)).get("user", "")
+        try:
+            chat_id = int(json.loads(raw).get("id", 0))
+        except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+            return 0
+
+        sent = 0
+        for item in result.get("files") or []:
+            path = self.result_path(str(item.get("token", "")))
+            if path is not None and path.exists() and send_document(
+                    token, chat_id, path, "OFIS Mini App"):
+                sent += 1
+        return sent
+
     # -- handler --------------------------------------------------------
     def _make_handler(self):
         server = self
@@ -285,14 +314,24 @@ class WebAppServer:
                 if parsed.path in ("/", "/index.html"):
                     self._page()
                     return
+                # A finished file is fetched by the browser following a link,
+                # and a link carries no headers. Opened from inside Telegram
+                # there is no ?k= either, so this used to answer «Парол хато»
+                # to the operator's own «⬇». The token IS the permission: 32
+                # random hex, handed out only to a caller that was already
+                # authorised, and good for exactly one file.
+                if parsed.path == "/api/file":
+                    token = query.get("t", [""])[0]
+                    if server.result_path(token) is None and not self._auth(query):
+                        self._deny()
+                        return
+                    self._file(token)
+                    return
                 if not self._auth(query):
                     self._deny()
                     return
                 if parsed.path == "/api/modules":
                     self._json(server.modules_payload())
-                    return
-                if parsed.path == "/api/file":
-                    self._file(query.get("t", [""])[0])
                     return
                 self._json({"ok": False, "error": "not found"}, 404)
 
@@ -338,6 +377,10 @@ class WebAppServer:
                     log.exception("webapp run failed")
                     self._json({"ok": False, "error": str(exc)[:200]})
                 else:
+                    sent = server.deliver_to_chat(
+                        result, self.headers.get("X-Telegram-Init", ""))
+                    if sent:
+                        result = {**result, "sentToChat": sent}
                     self._json(result)
 
             def _file(self, token: str) -> None:
@@ -552,7 +595,11 @@ async function run(){
     else {
       const links = (j.files||[]).map(f=>
         `<a href="/api/file?t=${f.token}&k=${encodeURIComponent(KEY)}">⬇ ${f.name}</a>`).join('');
-      show('ok', (j.notes||[]).join('\\n') || '✅ Тайёр!', links);
+      // inside Telegram the files are already in the chat — say so, because a
+      // «⬇» on a phone lands somewhere the operator will never find again
+      const posted = j.sentToChat ? `📨 ${j.sentToChat} та файл бот чатига юборилди.` : '';
+      show('ok', [(j.notes||[]).join('\\n'), posted].filter(Boolean).join('\\n')
+                 || '✅ Тайёр!', links);
     }
   }catch(e){ show('err', String(e)); }
   btn.disabled = false; btn.textContent = '✅ Тайёрла';

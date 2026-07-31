@@ -350,3 +350,65 @@ def test_the_page_javascript_actually_parses() -> None:
                           capture_output=True, text=True, check=False)
     Path(script).unlink(missing_ok=True)
     assert done.returncode == 0, done.stderr
+
+
+# ------------------------------------------------ getting the finished file
+
+
+def test_a_result_token_is_enough_to_download_its_own_file(server, tmp_path) -> None:
+    """A link carries no headers, and inside Telegram there is no ``?k=``.
+
+    So «⬇» used to answer ``{"ok": false, "error": "Парол хато"}`` — the
+    operator's own finished document, refused. The token is the permission: 32
+    random hex, handed out only to a caller that was already authorised, good
+    for exactly one file.
+    """
+    import http.client
+
+    ready = tmp_path / "TAYYOR.pdf"
+    ready.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    token = "b" * 32
+    server._results[token] = ready
+
+    port = 8791
+    server._settings.set("tg.webapp_port", str(port))
+    server._settings.set("tg.webapp_enabled", "1")
+    assert server.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("GET", f"/api/file?t={token}")      # no password at all
+        got = conn.getresponse()
+        body = got.read()
+        assert got.status == 200, body[:120]
+        assert body == ready.read_bytes()
+
+        conn.request("GET", "/api/file?t=" + "c" * 32)   # a token nobody issued
+        assert conn.getresponse().status == 403
+    finally:
+        server.stop()
+
+
+def test_the_finished_files_are_posted_into_the_telegram_chat(server, monkeypatch,
+                                                              tmp_path) -> None:
+    """On a phone a download is lost; the chat is where the papers already are."""
+    sent: list[tuple[int, str]] = []
+    monkeypatch.setattr("src.controllers.telegram_bot.send_document",
+                        lambda tok, chat, path, caption="": (
+                            sent.append((chat, Path(path).name)) or True))
+
+    ready = tmp_path / "ISAKOV_SHAHBOZ.pdf"
+    ready.write_bytes(b"%PDF-1.4\n")
+    token = "d" * 32
+    server._results[token] = ready
+    result = {"ok": True, "files": [{"name": ready.name, "token": token}]}
+
+    signed = _signed_init_data(TOKEN, 'auth_date=1&user=%7B%22id%22%3A4242%7D')
+    assert server.deliver_to_chat(result, signed) == 1
+    assert sent == [(4242, "ISAKOV_SHAHBOZ.pdf")]
+
+    # not Telegram at all — the Wi-Fi browser keeps its download link, nothing
+    # is posted anywhere
+    sent.clear()
+    assert server.deliver_to_chat(result, "") == 0
+    assert server.deliver_to_chat(result, "auth_date=1&hash=deadbeef") == 0
+    assert not sent

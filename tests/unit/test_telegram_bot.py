@@ -1129,3 +1129,47 @@ def test_snils_flow_keeps_the_last_number_when_left_blank(
     assert seen["template"] == blank
     assert "123-456-789 01" in _all(ready)
     assert ready.files and ready.files[-1].name == "Сейтимов СНИЛС.pdf"
+
+
+# --------------------------------------------------------------------- МИГ
+
+
+def test_mig_asks_for_the_code_and_passes_it_on(ready, monkeypatch) -> None:
+    """The КОД is printed at the four corners of the issue date.
+
+    The phone never asked for it, and the runner never passed it, so every card
+    made from the bot came back with those four corners empty while the same
+    card made on the computer had them.
+    """
+    from src.controllers.ofis_modules import BY_KEY
+
+    prompts = [a.prompt for a in BY_KEY["mig"].asks]
+    assert any("КОД" in p for p in prompts), f"the bot never asks: {prompts}"
+
+    seen = {}
+    ctl = ready.ctl()["mig"]
+    monkeypatch.setattr(ctl, "templates", lambda: [Path("СФЕРА.pdf")])
+    monkeypatch.setattr(ctl, "stamps", lambda: [])
+    monkeypatch.setattr(ctl, "read_passport", lambda image: {
+        "surname": "ИСАКОВ", "name": "ШАХБОЗ", "patronymic": "",
+        "birth_date": "01.01.1990", "citizenship": "УЗБЕКИСТАН",
+        "passport": "AA1234567", "gender": "male"})
+
+    class _Made:
+        saved = Path("card.pdf")
+
+    monkeypatch.setattr(ctl, "generate",
+                        lambda **kw: seen.update(kw) or _Made())
+    monkeypatch.setattr(ready, "_send_file", lambda cid, p, caption="": None)
+
+    _text(ready, "🪪 МИГ — ИШЧИ КАРТАСИ")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    for answer in ("46 26", "0367598", "✅ Тайёрла", "РАЗНОРАБОЧИЙ",
+                   "01.08.2026", "01.11.2026", "15  03  26", "4821"):
+        _text(ready, answer)
+
+    assert seen.get("code") == "4821", f"the code never reached the card: {seen}"
+    assert seen.get("issued") == "15  03  26"
+    assert seen.get("series") == "46 26"

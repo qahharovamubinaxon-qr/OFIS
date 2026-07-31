@@ -706,6 +706,7 @@ def _run_mig(ctx: RunContext, state: dict) -> list[Path]:
         valid_from=answers.get("valid_from"),
         valid_to=answers.get("valid_to"),
         issued=str(answers.get("issued") or ""),
+        code=str(answers.get("code") or ""),
         surname=fields.get("surname", ""), name=fields.get("name", ""),
         patronymic=fields.get("patronymic", ""),
         birth_date=ctl.parse_date(fields.get("birth_date", "")),
@@ -893,7 +894,9 @@ MODULES: tuple[Module, ...] = (
                  Ask("valid_to", "Карта амал қилиш ТУГАШИ (КК.ОО.ЙЙЙЙ):",
                      default_days=90),
                  Ask("issued", "Карта берилган сана — нуқтасиз, «15  03  26»:",
-                     kind="text"))),
+                     kind="text"),
+                 Ask("code", "КОД — сананинг 4 бурчагига ёзиладиган 3–4 хонали "
+                     "рақам (бўлмаса «Тайёрла»):", kind="text"))),
     Module("perevod", "🌐 ПЕРЕВОД", _run_perevod,
            photo_prompt=("Таржима қилинадиган ҳужжат расмларини юборинг.\n"
                          "(олди-орқаси бўлса иккисини — битта варақга "
