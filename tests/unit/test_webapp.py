@@ -238,3 +238,20 @@ def test_inn_is_offered_with_its_questions(server) -> None:
     assert "inn" in by_key, "ИНН missing from the remote front ends"
     assert [a["field"] for a in by_key["inn"]["asks"]] == ["inn", "form_date"]
     assert by_key["inn"]["minPhotos"] == 1
+
+
+def test_an_unusable_port_falls_back_to_the_default(server) -> None:
+    """0 is a number, and the socket reads it as «any free port».
+
+    Saved as the Mini App port it made the OS hand out a RANDOM one, so the
+    address printed on the Settings screen — the one typed into the phone —
+    pointed at nothing. The Mini App then simply «did not open».
+    """
+    from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_PORT
+
+    for bad in ("0", "", "  ", "-1", "99999", "abc"):
+        server._settings.set(KEY_PORT, bad)
+        assert server.port() == DEFAULT_PORT, f"{bad!r} was accepted as a port"
+
+    server._settings.set(KEY_PORT, "8870")
+    assert server.port() == 8870

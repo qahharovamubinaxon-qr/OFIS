@@ -115,10 +115,19 @@ class WebAppServer:
             self._httpd = None
 
     def port(self) -> int:
+        """The configured port, or the default when it is not a usable one.
+
+        ``0`` is refused on purpose. It is a number, so it used to be saved and
+        handed straight to the socket — and the OS then picks a RANDOM free
+        port. The address printed on the Settings screen (``…:0/?k=…``) was
+        never the one actually listening, so the phone could not reach it and
+        the Mini App simply «did not work».
+        """
         try:
-            return int(self._settings.get(KEY_PORT, DEFAULT_PORT))
+            port = int(self._settings.get(KEY_PORT, DEFAULT_PORT))
         except (TypeError, ValueError):
             return DEFAULT_PORT
+        return port if 1 <= port <= 65535 else DEFAULT_PORT
 
     def _enabled(self) -> bool:
         return str(self._settings.get(KEY_ENABLED, "0")) in ("1", "true", "True")

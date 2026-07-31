@@ -513,8 +513,16 @@ class SettingsView(QWidget):
         elif not str(self._settings.get(KEY_PASSWORD, "") or "").strip():
             self._wa_state.setText("⚠️  Parol yo'q — Mini App ishga tushmaydi.")
         else:
-            port = self._settings.get(KEY_PORT, DEFAULT_PORT)
-            self._wa_state.setText(f"✅  Yoqilgan:  http://{lan_ip()}:{port}/?k=PAROL")
+            # the address is written out in full, password and all: it has to
+            # be typed on the phone, and «?k=PAROL» left the operator guessing
+            # which parol and where it goes.
+            port = str(self._settings.get(KEY_PORT, DEFAULT_PORT))
+            if not (port.isdigit() and 1 <= int(port) <= 65535):
+                port = str(DEFAULT_PORT)
+            parol = str(self._settings.get(KEY_PASSWORD, "") or "").strip()
+            self._wa_state.setText(
+                f"✅  Telefon brauzerida oching (bir xil Wi-Fi):\n"
+                f"http://{lan_ip()}:{port}/?k={parol}")
 
         from src.services.dms_service import DmsService
 
@@ -854,10 +862,28 @@ class SettingsView(QWidget):
         from src.controllers.telegram_bot import KEY_WEBAPP
         from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_ENABLED, KEY_PORT
 
+        # 0 is a number too, and the socket takes it as «any free port» — the
+        # address on this screen then points at a port nothing listens on.
         port = self._wa_port.text().strip()
-        self._settings.set(KEY_PORT, port if port.isdigit() else str(DEFAULT_PORT))
+        ok = port.isdigit() and 1 <= int(port) <= 65535
+        self._settings.set(KEY_PORT, port if ok else str(DEFAULT_PORT))
+        if not ok:
+            self._wa_port.setText(str(DEFAULT_PORT))
         self._settings.set(KEY_ENABLED, "1" if self._wa_on.isChecked() else "0")
-        self._settings.set(KEY_WEBAPP, self._wa_url.text().strip())
+
+        # Telegram opens a Mini App button only over https. An http address
+        # here is silently dropped by Telegram, so it is refused right away
+        # instead of leaving a button that never opens.
+        url = self._wa_url.text().strip()
+        if url and not url.lower().startswith("https://"):
+            QMessageBox.warning(
+                self, "Mini App",
+                "Telegram «Mini App» tugmasi faqat https manzil bilan ishlaydi.\n"
+                "Bu maydon bo'shatildi — telefon brauzerida quyidagi "
+                "http manzildan foydalaning.")
+            url = ""
+            self._wa_url.setText("")
+        self._settings.set(KEY_WEBAPP, url)
         self._refresh_states()
         QMessageBox.information(
             self, "OK",
