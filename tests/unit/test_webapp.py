@@ -319,8 +319,12 @@ def test_every_javascript_string_closes_on_its_own_line() -> None:
     js = _inline_js()
     assert js.strip(), "the page has no script at all"
 
+    # a backtick template IS allowed to run over several lines, and it may hold
+    # a bare apostrophe, so its state is carried across; ' and " may not, and
+    # one left open at the end of a line is always the bug above.
+    open_template = False
     for number, line in enumerate(js.splitlines(), 1):
-        quote, escaped = "", False
+        quote, escaped = ("`" if open_template else ""), False
         for index, char in enumerate(line):
             if escaped:
                 escaped = False
@@ -330,13 +334,15 @@ def test_every_javascript_string_closes_on_its_own_line() -> None:
             elif quote:
                 if char == quote:
                     quote = ""
-            elif char in "\"'":
+            elif char in "\"'`":
                 quote = char
             elif char == "/" and line[index + 1:index + 2] in ("/", "*"):
                 break                      # a comment — the rest is not code
-        assert not quote, (
+        open_template = quote == "`"
+        assert quote in ("", "`"), (
             f"line {number} opens a {quote} string and never closes it — the "
             f"whole script dies here:\n    {line.strip()}")
+    assert not open_template, "a template literal is left open at the end"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -368,13 +374,12 @@ def test_a_result_token_is_enough_to_download_its_own_file(server, tmp_path) -> 
     ready = tmp_path / "TAYYOR.pdf"
     ready.write_bytes(b"%PDF-1.4\n%%EOF\n")
     token = "b" * 32
-    server._results[token] = ready
+    server._results[token] = (ready, 0.0)   # 0 = no expiry
 
-    port = 8791
-    server._settings.set("tg.webapp_port", str(port))
     server._settings.set("tg.webapp_enabled", "1")
     assert server.start()
     try:
+        port = server._httpd.server_address[1]
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         conn.request("GET", f"/api/file?t={token}")      # no password at all
         got = conn.getresponse()
@@ -399,7 +404,7 @@ def test_the_finished_files_are_posted_into_the_telegram_chat(server, monkeypatc
     ready = tmp_path / "ISAKOV_SHAHBOZ.pdf"
     ready.write_bytes(b"%PDF-1.4\n")
     token = "d" * 32
-    server._results[token] = ready
+    server._results[token] = (ready, 0.0)   # 0 = no expiry
     result = {"ok": True, "files": [{"name": ready.name, "token": token}]}
 
     signed = _signed_init_data(TOKEN, 'auth_date=1&user=%7B%22id%22%3A4242%7D')
@@ -412,3 +417,23 @@ def test_the_finished_files_are_posted_into_the_telegram_chat(server, monkeypatc
     assert server.deliver_to_chat(result, "") == 0
     assert server.deliver_to_chat(result, "auth_date=1&hash=deadbeef") == 0
     assert not sent
+
+
+def test_stopping_gives_the_port_back(server) -> None:
+    """``shutdown()`` alone leaves the socket bound.
+
+    Switching the Mini App off and on then hit «port busy» and it quietly did
+    not come up again — with nothing on screen to say why.
+    """
+    import socket
+
+    server._settings.set("tg.webapp_enabled", "1")
+    assert server.start()
+    port = server._httpd.server_address[1]
+    server.stop()
+
+    probe = socket.socket()
+    try:
+        probe.bind(("0.0.0.0", port))      # raises if the port is still held
+    finally:
+        probe.close()

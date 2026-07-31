@@ -24,6 +24,7 @@ import json
 import mimetypes
 import socket
 import threading
+import time
 import urllib.parse
 import uuid
 from datetime import date
@@ -41,6 +42,7 @@ from src.controllers.ofis_modules import (
     new_state,
     parse_date,
 )
+from src.services.whatsapp_service import LINK_HOURS
 
 log = get_logger(__name__)
 
@@ -84,7 +86,10 @@ class WebAppServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._controllers = None
-        self._results: dict[str, Path] = {}
+        #: token → (file, when it stops working). A finished document is a
+        #: migrant's own paperwork; once it has been shared it must not stay
+        #: reachable on the internet for ever.
+        self._results: dict[str, tuple[Path, float]] = {}
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> str | None:
@@ -110,9 +115,20 @@ class WebAppServer:
         return url
 
     def stop(self) -> None:
-        if self._httpd is not None:
-            self._httpd.shutdown()
-            self._httpd = None
+        """Stop serving AND give the port back.
+
+        ``shutdown()`` alone only ends the serve loop — the socket stays bound.
+        Switching the Mini App off and on again then failed with «port busy»,
+        and the Mini App quietly did not come up.
+        """
+        httpd, self._httpd = self._httpd, None
+        if httpd is None:
+            return
+        httpd.shutdown()
+        httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
 
     def port(self) -> int:
         """The configured port, or the default when it is not a usable one.
@@ -244,12 +260,51 @@ class WebAppServer:
         files = []
         for path in outputs:
             token = uuid.uuid4().hex
-            self._results[token] = Path(path)
+            self._results[token] = (Path(path), time.time() + LINK_HOURS * 3600)
             files.append({"name": Path(path).name, "token": token})
         return {"ok": True, "notes": notes, "files": files}
 
     def result_path(self, token: str) -> Path | None:
-        return self._results.get(token)
+        """The file behind a token, while the token is still good."""
+        found = self._results.get(token)
+        if found is None:
+            return None
+        path, expires = found
+        if expires and time.time() > expires:
+            self._results.pop(token, None)
+            return None
+        return path
+
+    def publish(self, path: Path, hours: float = LINK_HOURS) -> str:
+        """A link to this file that works from outside, for a while.
+
+        Used to hand a document to a worker over WhatsApp. Prefers the public
+        https address the tunnel issued — a LAN address is no use to somebody
+        who is not in the office — and falls back to it only when there is no
+        tunnel, so the office at least gets something that works indoors.
+        """
+        from src.controllers.telegram_bot import KEY_WEBAPP
+
+        token = uuid.uuid4().hex
+        self._results[token] = (Path(path), time.time() + hours * 3600)
+        base = str(self._settings.get(KEY_WEBAPP, "") or "").strip().rstrip("/")
+        if not base:
+            base = f"http://{lan_ip()}:{self.port()}"
+        return f"{base}/api/file?t={token}"
+
+    def whatsapp_link(self, phone: str, name: str, tokens: list[str]) -> str:
+        """«Open WhatsApp with this worker, his documents written out.»
+
+        Takes the tokens the run already handed back rather than file paths:
+        the page never learns where anything lives on the office computer.
+        """
+        from src.services.whatsapp_service import message, wa_link
+
+        links = [self.publish(path) for path in
+                 (self.result_path(t) for t in tokens) if path is not None]
+        if not links:
+            return ""
+        return wa_link(phone, message(name, links))
 
     def deliver_to_chat(self, result: dict, init_data: str) -> int:
         """Post the finished files into the operator's own Telegram chat.
@@ -341,6 +396,9 @@ class WebAppServer:
                 if not self._auth(query):
                     self._deny()
                     return
+                if parsed.path == "/api/whatsapp":
+                    self._whatsapp()
+                    return
                 if parsed.path != "/api/run":
                     self._json({"ok": False, "error": "not found"}, 404)
                     return
@@ -382,6 +440,23 @@ class WebAppServer:
                     if sent:
                         result = {**result, "sentToChat": sent}
                     self._json(result)
+
+            def _whatsapp(self) -> None:
+                """Hand back a wa.me link for the documents just made."""
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                try:
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    self._json({"ok": False, "error": "bad request"}, 400)
+                    return
+                link = server.whatsapp_link(
+                    str(body.get("phone") or ""), str(body.get("name") or ""),
+                    [str(t) for t in (body.get("tokens") or [])])
+                if not link:
+                    self._json({"ok": False,
+                                "error": "Рақам нотўғри ёки файл эскирган."})
+                    return
+                self._json({"ok": True, "link": link})
 
             def _file(self, token: str) -> None:
                 path = server.result_path(token)
@@ -448,6 +523,7 @@ button:disabled{opacity:.5}
 .msg.ok{background:rgba(46,160,67,.14);border:1px solid var(--ok)}
 .msg.err{background:rgba(248,81,73,.14);border:1px solid var(--err)}
 .files a{display:block;margin-top:8px;color:var(--accent);font-weight:600;text-decoration:none}
+.files .wa{margin-top:12px;width:100%;background:#25D366;color:#053b16;font-weight:700}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid #fff6;border-top-color:#fff;
       border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -478,6 +554,24 @@ function initData(){
 const head = () => ({'Content-Type':'application/json','X-Ofis-Key':KEY,
                      'X-Telegram-Init': initData()});
 let MODULES = [], picked = null, images = [], pdfs = [];
+// the documents just made, so «WhatsApp'га юбор» knows what to hand over
+let TOKENS = [];
+
+async function toWhatsApp(){
+  const phone = prompt("Ишчининг телефон рақами (масалан +998 90 123 45 67):");
+  if(!phone) return;
+  try{
+    const r = await fetch('/api/whatsapp?k='+encodeURIComponent(KEY),
+      {method:'POST', headers:head(),
+       body: JSON.stringify({phone: phone, name: '', tokens: TOKENS})});
+    const j = await r.json();
+    if(!j.ok){ alert(j.error || 'Ҳавола тайёрланмади.'); return; }
+    // WhatsApp opens on that number with the message already written; the
+    // operator presses send. Nothing goes out on anybody's behalf.
+    if (tg && tg.openLink) { tg.openLink(j.link); }
+    else { window.open(j.link, '_blank'); }
+  }catch(e){ alert('Компьютерга уланмади: '+e); }
+}
 
 const el = (id) => document.getElementById(id);
 
@@ -598,8 +692,12 @@ async function run(){
       // inside Telegram the files are already in the chat — say so, because a
       // «⬇» on a phone lands somewhere the operator will never find again
       const posted = j.sentToChat ? `📨 ${j.sentToChat} та файл бот чатига юборилди.` : '';
+      TOKENS = (j.files||[]).map(f=>f.token);
+      const wa = TOKENS.length
+        ? `<button type="button" class="wa" onclick="toWhatsApp()">📲 WhatsApp'га юбор</button>`
+        : '';
       show('ok', [(j.notes||[]).join('\\n'), posted].filter(Boolean).join('\\n')
-                 || '✅ Тайёр!', links);
+                 || '✅ Тайёр!', links + wa);
     }
   }catch(e){ show('err', String(e)); }
   btn.disabled = false; btn.textContent = '✅ Тайёрла';
