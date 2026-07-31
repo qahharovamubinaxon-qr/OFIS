@@ -130,6 +130,10 @@ class WebAppServer:
             self._thread.join(timeout=5)
             self._thread = None
 
+    def running(self) -> bool:
+        """Whether the page and its file links are actually being served."""
+        return self._httpd is not None
+
     def port(self) -> int:
         """The configured port, or the default when it is not a usable one.
 

@@ -7,6 +7,7 @@ every test exercises the real state machine and only stubs the wire.
 from __future__ import annotations
 
 import tempfile
+import urllib.parse
 from datetime import date, datetime
 from pathlib import Path
 
@@ -57,6 +58,11 @@ def _text(bot, text: str, chat_id: int = CHAT) -> None:
 def _photo(bot, chat_id: int = CHAT) -> None:
     bot._handle({"update_id": 1, "message": {
         "chat": {"id": chat_id}, "photo": [{"file_id": "s"}, {"file_id": "b"}]}})
+
+
+def _pick_wa(bot, chat_id: int = CHAT) -> None:
+    bot._handle({"update_id": 1, "callback_query": {
+        "id": "cq2", "message": {"chat": {"id": chat_id}}, "data": "wa"}})
 
 
 def _pick(bot, index: int, chat_id: int = CHAT) -> None:
@@ -1173,3 +1179,92 @@ def test_mig_asks_for_the_code_and_passes_it_on(ready, monkeypatch) -> None:
     assert seen.get("code") == "4821", f"the code never reached the card: {seen}"
     assert seen.get("issued") == "15  03  26"
     assert seen.get("series") == "46 26"
+
+
+# ---------------------------------------------------------------- WhatsApp
+
+
+class _FakeWebApp:
+    """Stands in for the Mini App server: it is what serves the worker's link."""
+
+    def __init__(self, up: bool = True) -> None:
+        self._up = up
+        self.published: list[Path] = []
+
+    def running(self) -> bool:
+        return self._up
+
+    def publish(self, path, hours=24):
+        self.published.append(Path(path))
+        return f"https://x.trycloudflare.com/api/file?t={len(self.published):032d}"
+
+
+def _made_a_file(bot, monkeypatch, tmp_path):
+    """Run РЕГИСТРАЦИЯ to completion so there is something to hand over."""
+    ready = tmp_path / "ISAKOV_SHAHBOZ.pdf"
+    ready.write_bytes(b"%PDF-1.4\n")
+
+    class R:
+        pdf_path = ready
+
+    monkeypatch.setattr(bot.ctl()["reg"], "generate_from_images",
+                        lambda *a, **k: R())
+    _text(bot, "🏠 Регистрация")
+    _pick(bot, 0)
+    _photo(bot)
+    _text(bot, "✅ Тайёрла")
+    _text(bot, "15.10.2026")
+    return ready
+
+
+def test_the_bot_offers_to_send_the_papers_to_the_worker(ready, monkeypatch,
+                                                         tmp_path) -> None:
+    ready.webapp = _FakeWebApp()
+    made = _made_a_file(ready, monkeypatch, tmp_path)
+    assert ready.files, "no document was produced"
+
+    offer = next((kb for _t, kb in ready.sent
+                  if kb and "inline_keyboard" in kb
+                  and kb["inline_keyboard"][0][0].get("callback_data") == "wa"), None)
+    assert offer is not None, "the WhatsApp offer was never shown"
+
+    _pick_wa(ready)
+    assert "телефон" in _last(ready).lower()
+
+    ready.sent.clear()
+    _text(ready, "+998 90 123 45 67")
+
+    button = next(kb["inline_keyboard"][0][0] for _t, kb in ready.sent
+                  if kb and "inline_keyboard" in kb)
+    assert button["url"].startswith("https://wa.me/998901234567?text=")
+    assert "trycloudflare.com/api/file" in urllib.parse.unquote(button["url"])
+    assert ready.webapp.published == [made]
+
+
+def test_a_wrong_number_is_re_asked_not_swallowed(ready, monkeypatch,
+                                                  tmp_path) -> None:
+    """«8 903…» must never be read as «section 8», and a typo must not lose
+    the document that was just made."""
+    ready.webapp = _FakeWebApp()
+    _made_a_file(ready, monkeypatch, tmp_path)
+    _pick_wa(ready)
+
+    _text(ready, "телефони йўқ")
+    assert "нотўғри" in _last(ready).lower()
+
+    ready.sent.clear()
+    _text(ready, "8 903 123 45 67")            # a section number it is not
+    button = next(kb["inline_keyboard"][0][0] for _t, kb in ready.sent
+                  if kb and "inline_keyboard" in kb)
+    assert button["url"].startswith("https://wa.me/79031234567?text=")
+
+
+def test_nothing_is_offered_when_the_mini_app_is_off(ready, monkeypatch,
+                                                     tmp_path) -> None:
+    """The link is served by the Mini App — a button that cannot work is worse
+    than no button."""
+    ready.webapp = _FakeWebApp(up=False)
+    _made_a_file(ready, monkeypatch, tmp_path)
+    assert not any(kb and "inline_keyboard" in kb
+                   and kb["inline_keyboard"][0][0].get("callback_data") == "wa"
+                   for _t, kb in ready.sent)

@@ -185,6 +185,12 @@ class TelegramBot:
         self._stop = threading.Event()
         self._state: dict[int, dict] = {}
         self._controllers = None
+        #: The Mini App server, set by the app. It is what turns a file on this
+        #: computer into an address a worker's phone can open, so «WhatsApp'га
+        #: юбор» is offered only when it is running.
+        self.webapp = None
+        #: chat → the documents that chat last made, for that button.
+        self._last_files: dict[int, list[Path]] = {}
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> bool:
@@ -336,6 +342,13 @@ class TelegramBot:
         # how it has always worked. A typed name or a number only counts at the
         # menu: mid-flow they belong to the question being answered, and «3»
         # must not throw away three photographs already uploaded.
+        # the worker's phone number is being typed — it is digits and plus
+        # signs, so it can never be a section, and checking it first keeps a
+        # number like «8 903…» from being read as «section 8»
+        if state.get("step") == "wa_phone" and text and text != _BTN_CANCEL:
+            self._whatsapp_for(chat_id, text)
+            return
+
         busy = bool(state.get("step"))
         chosen = _BY_BUTTON.get(text) if busy else _module_for(text)
         if chosen is not None:
@@ -437,8 +450,67 @@ class TelegramBot:
         state["step"] = "collect"
         self._send(chat_id, module.photo_prompt, _RUN_KB)
 
+    # -- handing the papers on to the worker ---------------------------
+    def _offer_whatsapp(self, chat_id: int, outputs: list[Path]) -> None:
+        """«Send this straight to the worker?» — offered right after the files.
+
+        Only when the Mini App server is up, because the link the worker opens
+        is served by it. Without that there is nothing to put in the message,
+        and a button that cannot work is worse than no button.
+        """
+        files = [p for p in outputs if p and Path(p).exists()]
+        if not files or self.webapp is None or not self.webapp.running():
+            return
+        self._last_files[chat_id] = files
+        self._send(chat_id, "Ишчининг ўзига юборасизми?", {
+            "inline_keyboard": [[{"text": "📲 WhatsApp'га юбор",
+                                  "callback_data": "wa"}]]})
+
+    def _ask_whatsapp_number(self, chat_id: int) -> None:
+        if not self._last_files.get(chat_id):
+            self._menu(chat_id, "Юборадиган ҳужжат йўқ — аввал тайёрланг.")
+            return
+        self._state.setdefault(chat_id, _fresh())["step"] = "wa_phone"
+        self._send(chat_id, "Ишчининг телефон рақамини ёзинг:\n"
+                            "масалан +998 90 123 45 67 ёки 8 903 123 45 67")
+
+    def _whatsapp_for(self, chat_id: int, phone: str) -> None:
+        """Reply with a link that opens WhatsApp on that worker, text ready.
+
+        Nothing is sent on anybody's behalf — WhatsApp has no API for that.
+        The operator taps the button, WhatsApp opens with the message written,
+        and presses send.
+        """
+        from src.services.whatsapp_service import LINK_HOURS, message, wa_link
+
+        files = self._last_files.get(chat_id) or []
+        self._state[chat_id] = _fresh()
+        if not files or self.webapp is None:
+            self._menu(chat_id, "Юборадиган ҳужжат йўқ — аввал тайёрланг.")
+            return
+        try:
+            links = [self.webapp.publish(path) for path in files]
+        except Exception as exc:  # noqa: BLE001
+            log.warning("publish failed: %s", exc)
+            self._menu(chat_id, "Ҳавола тайёрланмади — Mini App ёқилганми?")
+            return
+        link = wa_link(phone, message("", links))
+        if not link:
+            self._send(chat_id, "Рақам нотўғри. Яна бир бор ёзинг:")
+            self._state.setdefault(chat_id, _fresh())["step"] = "wa_phone"
+            return
+        self._last_files.pop(chat_id, None)
+        self._send(chat_id, f"Тугмани босинг — WhatsApp очилади, хабар тайёр "
+                            f"туради, «юбор»ни босасиз.\n"
+                            f"Ҳавола {LINK_HOURS} соат ишлайди.", {
+            "inline_keyboard": [[{"text": "📲 WhatsApp'да очиш", "url": link}]]})
+        self._menu(chat_id, "")
+
     def _on_pick(self, chat_id: int, data: str) -> None:
         state = self._state.setdefault(chat_id, _fresh())
+        if data == "wa":
+            self._ask_whatsapp_number(chat_id)
+            return
         module = _BY_KEY.get(state.get("mode") or "")
         if module is None or not data.startswith("pick:"):
             self._menu(chat_id, "Бўлим танланмаган.")
@@ -595,4 +667,5 @@ class TelegramBot:
             for path in outputs:
                 self._send_file(chat_id, Path(path))
             self._menu(chat_id, "✅ Тайёр!")
+            self._offer_whatsapp(chat_id, [Path(p) for p in outputs])
         self._state[chat_id] = _fresh()

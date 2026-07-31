@@ -298,6 +298,9 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - must never block the UI
         log.error("Mini App failed to start: %s", exc)
     window._webapp = webapp
+    # the bot hands finished papers on to the worker over WhatsApp, and the
+    # link the worker opens is served by the Mini App
+    bot.webapp = webapp
 
     # A free public https address for it, so Telegram can open the Mini App
     # button. Off unless switched on in Sozlamalar; the address is new every
