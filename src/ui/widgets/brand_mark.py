@@ -73,30 +73,40 @@ class BrandMark(QWidget):
         painter.end()
 
     def _sheet(self, painter: QPainter, box: QRectF) -> None:
-        """A sheet of paper with a stamp struck across its lower corner."""
+        """A sheet of paper with a stamp struck across its lower corner.
+
+        Same proportions as the app icon (``scripts/make_icon.py``) so the mark
+        on the taskbar and the mark in the sidebar are one thing. The icon is
+        filled; this one is a line drawing, because at 26 px beside body text a
+        solid shape would shout. The icon's inner ring is dropped for the same
+        reason — at this size it would close up into a blob.
+        """
         pen = QPen(self._ink, 1.4)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
 
-        page = QRectF(box.left(), box.top(), box.width() * 0.74, box.height())
-        painter.drawRoundedRect(page, 3.0, 3.0)
+        page = QRectF(box.left(), box.top(),
+                      box.width() * 0.70, box.height() * 0.90)
+        painter.drawRoundedRect(page, 2.6, 2.6)
 
         rule = QPen(self._ink, 1.0)
         rule.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(rule)
-        for i in (0.30, 0.46):
-            y = page.top() + page.height() * i
-            painter.drawLine(QPointF(page.left() + 4.0, y),
-                             QPointF(page.right() - 4.0, y))
+        inset = page.width() * 0.17
+        for share, length in ((0.20, 0.66), (0.36, 0.66), (0.52, 0.40)):
+            y = page.top() + page.height() * share
+            painter.drawLine(QPointF(page.left() + inset, y),
+                             QPointF(page.left() + inset + page.width() * length, y))
 
-        stamp = QRectF(box.right() - box.width() * 0.52,
-                       box.bottom() - box.height() * 0.52,
-                       box.width() * 0.52, box.height() * 0.52)
+        size = box.width() * 0.58
+        centre = QPointF(box.left() + box.width() * 0.64, box.bottom() - size / 2.0)
+        stamp = QRectF(centre.x() - size / 2.0, centre.y() - size / 2.0, size, size)
         painter.setPen(QPen(self._accent, 1.6))
         painter.drawEllipse(stamp)
+
+        # the stamp's face is a clock — the «24/7» beside it, drawn
         painter.setPen(QPen(self._accent, 1.3, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
-        centre = stamp.center()
-        painter.drawLine(centre, QPointF(centre.x(), centre.y() - stamp.height() * 0.27))
-        painter.drawLine(centre, QPointF(centre.x() + stamp.width() * 0.20, centre.y()))
+        painter.drawLine(centre, QPointF(centre.x(), centre.y() - size * 0.28))
+        painter.drawLine(centre, QPointF(centre.x() + size * 0.21, centre.y()))
