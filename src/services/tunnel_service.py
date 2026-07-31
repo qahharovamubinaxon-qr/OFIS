@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from collections.abc import Callable
 
@@ -102,6 +103,12 @@ class TunnelService:
                  f"http://localhost:{port}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace",
+                # NOT the program's own folder. A child inherits the parent's
+                # working directory, and Windows will not let anybody delete a
+                # directory that is some process's current one — so a
+                # cloudflared left behind after a hard kill made the next
+                # `update.bat` fail with «dist\\OFIS занят другим процессом».
+                cwd=tempfile.gettempdir(),
                 creationflags=flags)
         except OSError as exc:
             log.warning("Tunnel failed to start: %s", exc)

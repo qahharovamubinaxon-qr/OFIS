@@ -143,3 +143,35 @@ def test_waiting_for_the_address_means_waiting_for_it_to_be_saved(settings) -> N
     assert order == ["saved"]
     assert service._found.is_set()
     assert service.wait(0) == service.url()
+
+
+def test_the_tunnel_never_stands_in_the_program_folder(settings, monkeypatch) -> None:
+    """A child inherits the parent's working directory.
+
+    cloudflared started from ``dist\OFIS`` keeps that folder as its own
+    current directory, and Windows refuses to delete a directory any process is
+    standing in. Killed hard, OFIS never stops the tunnel — and the next
+    ``update.bat`` died at COLLECT with «dist\OFIS занят другим процессом»,
+    leaving the operator on the previous EXE with no idea why.
+    """
+    import tempfile as tmp
+
+    seen = {}
+    monkeypatch.setattr("src.services.tunnel_service.cloudflared", lambda: "cf.exe")
+    monkeypatch.setattr("subprocess.Popen",
+                        lambda cmd, **kw: seen.update(kw) or _FakeProc())
+    settings.set(KEY_TUNNEL, "1")
+
+    assert TunnelService(settings).start(8770) is True
+    assert seen.get("cwd") == tmp.gettempdir(), (
+        "the tunnel would hold whatever folder OFIS was started from")
+
+
+def test_the_build_script_clears_a_leftover_tunnel() -> None:
+    """Belt and braces: an old tunnel from before this fix is still out there."""
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "build_exe.bat"
+    text = script.read_bytes()
+    assert b"taskkill /F /IM cloudflared.exe" in text
+    assert b"\n" not in text.replace(b"\r\n", b""), ".bat must stay CRLF"

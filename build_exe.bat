@@ -11,6 +11,15 @@ if not errorlevel 1 (
   REM let Windows release the DLL handles before we delete the folder
   ping -n 3 127.0.0.1 >nul
 )
+REM cloudflared is OFIS's own Mini App tunnel. Killed hard, OFIS never gets to
+REM stop it, and it keeps dist\OFIS as its working directory - Windows then
+REM refuses to delete that folder and the build dies at COLLECT with
+REM "занят другим процессом". A tunnel with no OFIS behind it is dead weight.
+taskkill /F /IM cloudflared.exe >nul 2>&1
+if not errorlevel 1 (
+  echo   cloudflared yopildi ^(OFIS tunneli^).
+  ping -n 2 127.0.0.1 >nul
+)
 
 echo === Installing build tools ===
 pip install -r requirements.txt
