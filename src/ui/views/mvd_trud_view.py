@@ -206,7 +206,11 @@ class MvdTrudView(QWidget):
                 continue
             shown = sample.get(key) or key
             if slot.pitch > 0:
-                shown = " ".join(shown[:14])      # cells read better spaced
+                # cells read better spaced — and the sample must show the
+                # WHOLE first row, or a long value looks cut short when it is
+                # really wrapping onto the form's continuation row below
+                room = slot.per_row or 14
+                shown = " ".join(shown[:min(room, 30)])
             items_by_page.setdefault(slot.page, []).append(
                 Item(key=key, label=key, sample=shown, x=slot.x,
                      baseline=slot.baseline, size=slot.size,

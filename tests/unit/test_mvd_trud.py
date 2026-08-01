@@ -198,3 +198,40 @@ def test_the_bot_asks_the_date_and_the_dolzhnost() -> None:
     assert module.photo_labels == ("Паспорт", "Патент олди", "Патент орқаси")
     fields = [a.field for a in module.asks]
     assert "deal_date" in fields and "profession" in fields
+
+
+def test_the_packet_is_set_in_bold_times() -> None:
+    """The owner asked for the values to stand off the form — жирний."""
+    from src.pdf.mvd_trud_spec import FONT
+
+    assert FONT == "OfisSerifBold"
+
+
+def test_the_fio_comes_off_the_patent_not_the_passport(monkeypatch) -> None:
+    """The patent prints the ФИО in Russian, ready for the packet; the
+    passport keeps supplying its own numbers, dates and орган."""
+    from src.controllers.mvd_trud_controller import MvdTrudController
+    from src.domain.documents import Passport, Patent
+    from src.ocr.service import OcrService
+    from src.services.mvd_trud_service import MvdTrudService
+
+    controller = MvdTrudController.__new__(MvdTrudController)
+    controller._ocr = OcrService.__new__(OcrService)
+    controller._service = MvdTrudService()
+
+    monkeypatch.setattr(
+        OcrService, "read_passport",
+        lambda self, image: Passport(surname="АКДО", name="ДЖОСЕЛИН",
+                                     patronymic="ДЖЕЛИН", number="P9314956C",
+                                     issue_date=date(2025, 3, 27)))
+    monkeypatch.setattr(
+        OcrService, "read_patent",
+        lambda self, front, back=None: Patent(
+            series="77", number="2600184371", profession="ПОДСОБНЫЙ РАБОЧИЙ",
+            holder_surname="АНДО", holder_name="ДЖОСЕЛИН"))
+
+    passport, patent = controller.read_documents(b"pass", b"front", None)
+    assert passport.surname == "АНДО", "the patent's Russian ФИО must win"
+    assert passport.patronymic is None
+    assert passport.number == "P9314956C", "the passport keeps its own numbers"
+    assert patent.number == "2600184371"

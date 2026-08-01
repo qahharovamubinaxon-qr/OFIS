@@ -50,9 +50,15 @@ class MvdTrudController:
     # ------------------------------------------------------------ reading
     def read_documents(self, passport_image: bytes, patent_front: bytes,
                        patent_back: bytes | None) -> tuple[Passport, Patent]:
-        passport = self._ocr.read_passport(passport_image)
-        patent = self._ocr.read_patent(patent_front, patent_back)
-        return passport, patent
+        """Passport + patent, merged the way the office wants them.
+
+        Through :meth:`OcrService.read_documents`, so the ФИО comes off the
+        PATENT — it prints the name in Russian, ready for the packet — while
+        the passport keeps supplying its own series, number, dates and орган.
+        """
+        passport, patent = self._ocr.read_documents(
+            passport_image, patent_front, patent_back)
+        return passport, patent or Patent(number="", profession="")
 
     @staticmethod
     def parse_date(text: str) -> date | None:

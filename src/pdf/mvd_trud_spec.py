@@ -27,8 +27,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: The office prints the packet in Times — OfisSerif is the bundled match.
-FONT = "OfisSerif"
+#: The office prints the packet in Times, BOLD — the owner asked for the
+#: values to stand off the form («ТЕКСТЛАРНИ ЖИРНИЙ КИЛ»).
+FONT = "OfisSerifBold"
 
 #: One text size for the whole packet, as the owner asked («РАЗМЕРЛАРИНИ
 #: БИРХИЛ КИЛ»): ~10pt on A4. Cells take CELL_SIZE so a character fills its
