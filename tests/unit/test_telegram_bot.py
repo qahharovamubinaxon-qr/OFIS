@@ -143,6 +143,7 @@ _DESKTOP_TO_MODULE = {
     "nav.dover": "dover",
     "nav.perevod": "perevod",
     "nav.mig": "mig",
+    "nav.rusreg": "rusreg",
     "nav.umumiy": "umumiy",
     "nav.template": "shablon",
     "nav.photo": "photo",

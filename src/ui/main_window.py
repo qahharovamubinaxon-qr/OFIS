@@ -71,6 +71,9 @@ _NAV = [
     (None, "nav.mig", "МИГ",
      "ИШЧИ КАРТАСИ — фирманинг бланкаси, печати ва паспорт → PDF",
      "🪪"),
+    (None, "nav.rusreg", "РУС РЕГ",
+     "Россия фуқароси ишчининг регистрацияси — паспорт РФ ёки метрка → PDF",
+     "🇷🇺"),
     (None, "nav.svera", "СФЕРА", "Удостоверение + Протокол обучения → PDF", "🎓"),
     (None, "nav.sertifikat", "СЕРТИФИКАТ",
      "Рус тили сертификати (УЦ «СФЕРА») → PDF", "📜"),
@@ -234,6 +237,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.rusreg":
+            from src.controllers.rusreg_controller import RusRegController
+            from src.services.rusreg_service import RusRegService
+            from src.ui.views.rusreg_view import RusRegView
+
+            return RusRegView(RusRegController(
+                self._container.resolve(OcrService),
+                RusRegService(self._settings),
             ))
         if key == "nav.mig":
             from src.controllers.mig_controller import MigController

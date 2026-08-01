@@ -197,6 +197,29 @@ def _translate(f) -> dict[str, str]:
 
 _SERIES = re.compile(r"^([A-Z]{1,3})(\d{5,9})$")
 
+
+def strip_document_check_digit(document: str) -> str:
+    """«FB22548766» → «FB2254876» — the MRZ check digit taken back off.
+
+    A vision model shown a passport often reads the number off the machine
+    zone, where the document field is nine characters **followed by its check
+    digit** — and hands back both, one digit too many. The extra digit is only
+    removed when the arithmetic PROVES it: the candidate must be a
+    letters-then-digits document of ten characters whose last digit is the
+    ICAO check digit of the first nine.
+
+    Digits-only documents are left alone on purpose. A Russian internal
+    passport is 4+6 = ten digits with no letters, so a ten-digit number here is
+    as likely to be a whole Russian passport as a Tajik one with a check digit
+    — and one chance in ten the arithmetic would "prove" the wrong thing.
+    """
+    packed = "".join((document or "").split()).upper()
+    if (len(packed) == 10 and packed[0].isalpha() and packed[-1].isdigit()
+            and re.fullmatch(r"[A-Z]{1,3}\d{7,9}", packed)
+            and check_digit(packed[:9]) == packed[9]):
+        return packed[:9]
+    return packed
+
 #: The citizenships this office actually sees, as the МВД forms spell them.
 _COUNTRIES = {
     "UZB": "УЗБЕКИСТАН", "TJK": "ТАДЖИКИСТАН", "KGZ": "КИРГИЗИЯ",

@@ -203,3 +203,56 @@ def test_no_api_and_no_key_is_involved() -> None:
     source = inspect.getsource(mrz_reader)
     for forbidden in ("requests", "urllib", "http", "api_key"):
         assert forbidden not in source, forbidden
+
+
+# ----------------------------------------- the check digit taken back off
+
+
+class TestStripDocumentCheckDigit:
+    """«FB22548766» → «FB2254876».
+
+    The vision model reads the passport number off the machine zone, where the
+    nine document characters are followed by their check digit — and hands
+    both back. That extra digit went straight onto registrations: the office
+    filed «FB22548766» for a passport that is really «FB2254876».
+    """
+
+    def test_the_owners_own_case(self) -> None:
+        from src.ocr.mrz_reader import strip_document_check_digit
+
+        assert strip_document_check_digit("FB22548766") == "FB2254876"
+        assert strip_document_check_digit("fb 2254876 6") == "FB2254876"
+
+    def test_a_correct_reading_is_left_alone(self) -> None:
+        from src.ocr.mrz_reader import strip_document_check_digit
+
+        assert strip_document_check_digit("FB2254876") == "FB2254876"
+        assert strip_document_check_digit("AA1234567") == "AA1234567"
+
+    def test_an_unproven_tenth_digit_is_kept(self) -> None:
+        """Only arithmetic removes a digit — never the length alone."""
+        from src.ocr.mrz_reader import strip_document_check_digit
+
+        assert strip_document_check_digit("FB22548767") == "FB22548767"
+
+    def test_digits_only_documents_are_never_touched(self) -> None:
+        """A Russian internal passport is 4+6 = ten digits with no letters;
+        one time in ten the arithmetic would «prove» the wrong thing."""
+        from src.ocr.mrz_reader import check_digit, strip_document_check_digit
+
+        for base in ("452510523", "401234567"):
+            whole = base + check_digit(base)      # last digit DOES add up
+            assert strip_document_check_digit(whole) == whole
+
+    def test_the_service_splits_the_cleaned_document_back(self) -> None:
+        from src.ocr.service import _clean_document
+
+        assert _clean_document("FB", "22548766") == ("FB", "2254876")
+        assert _clean_document("", "FB22548766") == ("FB", "2254876")
+        assert _clean_document("45 25", "105235") == ("45 25", "105235")
+
+    def test_the_trud_ppu_reader_strips_it_too(self) -> None:
+        from src.controllers.trud_ppu_controller import _passport
+
+        assert _passport("FB22548766 / 072501692992") == "FB2254876"
+        assert _passport("FB 2254876") == "FB2254876"

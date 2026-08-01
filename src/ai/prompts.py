@@ -23,6 +23,14 @@ _COMMON = (
 )
 
 _PASSPORT = _COMMON + (
+    'IMPORTANT — read the WHOLE data page, not only the machine-readable zone '
+    'at the bottom. The MRZ often has NO patronymic (a Tajik passport never '
+    'prints it there), while the printed fields above DO — «Номи падар / '
+    "Father's name» on a Tajik passport, «Otasining ismi» on an Uzbek one. "
+    'Whatever the MRZ lacks must be taken from the printed part of the page: '
+    'patronymic, issue date, issuing authority, birth place all live there. '
+    'Never leave "patronymic" empty when a father\'s name is printed anywhere '
+    'on the page. '
     'Also read gender ("male" or "female"), the passport expiry date and the '
     'birth place. IMPORTANT: "birth_place" must be the COUNTRY the birth place '
     'is in, never a city/region (ФЕРГАНСКАЯ ОБЛАСТЬ→УЗБЕКИСТАН, ДУШАНБЕ→'

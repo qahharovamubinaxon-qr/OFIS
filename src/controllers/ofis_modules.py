@@ -677,6 +677,41 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_rusreg(ctx: RunContext, state: dict) -> list[Path]:
+    """РУС РЕГ from the phone.
+
+    One photograph — a Russian internal passport or a birth certificate; the
+    first question says which, and the sheet's «вид» line follows it. The
+    address, the firm and the running number fall back to what the office
+    last used on the computer, so on the phone they can simply be skipped.
+    """
+    ctl = ctx.ctl["rusreg"]
+    answers = state["answers"]
+    is_passport = "МЕТРКА" not in str(answers.get("doc_kind") or "").upper()
+
+    fields = ctl.read_document(state["photos"][0], is_passport=is_passport)
+    ctx.note(f"Ҳужжат ўқилди: {fields.get('surname', '')} "
+             f"{fields.get('name', '')}".strip())
+
+    kept = ctl.remembered()
+    result = ctl.generate(
+        template=Path(state["target"]),
+        reg_number=str(answers.get("reg_number") or "").strip() or kept["reg_number"],
+        surname=fields.get("surname", ""), name=fields.get("name", ""),
+        patronymic=fields.get("patronymic", ""),
+        birth_date=ctl.parse_date(fields.get("birth_date", "")),
+        birth_place=fields.get("birth_place", ""),
+        address=str(answers.get("address") or "").strip() or kept["address"],
+        valid_from=answers.get("valid_from"), valid_to=answers.get("valid_to"),
+        is_passport=is_passport,
+        doc_series=fields.get("series", ""), doc_number=fields.get("number", ""),
+        doc_issued=ctl.parse_date(fields.get("issue_date", "")),
+        doc_issued_by=fields.get("issued_by", ""),
+        firm=str(answers.get("firm") or "").strip() or kept["firm"],
+        signer=kept["signer"])
+    return [result.saved]
+
+
 def _run_mig(ctx: RunContext, state: dict) -> list[Path]:
     """МИГ ИШЧИ КАРТАСИ from the phone.
 
@@ -878,6 +913,21 @@ MODULES: tuple[Module, ...] = (
            photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("rusreg", "🇷🇺 РУС РЕГ", _run_rusreg,
+           targets=lambda c: c["rusreg"].templates(),
+           target_prompt="Фирманинг бланкасини танланг:",
+           photo_prompt="Паспорт РФ ёки метрка (свидетельство о рождении) "
+                        "расмини юборинг.",
+           photo_labels=("Ҳужжат",),
+           asks=(Ask("doc_kind", "Ҳужжат тури:", kind="choice",
+                     choices=("ПАСПОРТ РФ", "МЕТРКА")),
+                 Ask("valid_from", "Срок БОШЛАНИШИ (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("valid_to", "Срок ТУГАШИ (КК.ОО.ЙЙЙЙ):", default_days=90),
+                 Ask("reg_number", "Регистрация № (бўш — охиргиси):",
+                     kind="text"),
+                 Ask("address", "Адрес (бўш — охиргиси):", kind="text"),
+                 Ask("firm", "Фирма (бўш — охиргиси):", kind="text"))),
     Module("mig", "🪪 МИГ — ИШЧИ КАРТАСИ", _run_mig,
            targets=lambda c: c["mig"].templates(),
            target_prompt="Фирманинг бланкасини танланг:",
@@ -989,6 +1039,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.process_controller import ProcessController
     from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
+    from src.controllers.rusreg_controller import RusRegController
     from src.controllers.sertifikat_controller import SertifikatController
     from src.controllers.snils_controller import SnilsController
     from src.controllers.svera_controller import SveraController
@@ -1022,6 +1073,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.razreshenie_service import RazreshenieService
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
+    from src.services.rusreg_service import RusRegService
     from src.services.sertifikat_service import SertifikatService
     from src.services.snils_service import SnilsService
     from src.services.svera_service import SveraService
@@ -1041,6 +1093,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg_addr": container.resolve(RegistrationAddressService),
         # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
         # template list even though ППУ itself is not offered on the phone
+        "rusreg": RusRegController(
+            ocr, RusRegService(container.resolve(SettingsService))),
         "mig": MigController(
             ocr, MigService(container.resolve(SettingsService))),
         "ppu": PpuController(

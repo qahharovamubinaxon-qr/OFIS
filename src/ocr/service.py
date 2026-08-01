@@ -91,16 +91,36 @@ def twelve_digit_inn(text: str) -> str:
     return ""
 
 
+def _clean_document(series: str, number: str) -> tuple[str, str]:
+    """Series and number with the MRZ check digit taken back off.
+
+    The model very often reads them off the machine zone, where the nine
+    document characters are followed by their check digit — «FB2254876» comes
+    back as «FB22548766», one digit too many, and that wrong number then goes
+    onto a registration. Removed only when the check-digit arithmetic proves
+    it (:func:`mrz_reader.strip_document_check_digit`).
+    """
+    packed = "".join((series or "").split()) + "".join((number or "").split())
+    cleaned = mrz_reader.strip_document_check_digit(packed)
+    if cleaned == packed.upper():
+        return series, number          # nothing proven — leave as printed
+    match = re.fullmatch(r"([A-Z]{1,3})(\d+)", cleaned)
+    if match:
+        return match.group(1), match.group(2)
+    return "", cleaned
+
+
 def _passport_from(f: dict[str, str]) -> Passport:
     """What the vision model said, before the MRZ gets a chance to correct it."""
+    series, number = _clean_document(f.get("series", ""), f.get("number", ""))
     return Passport(
         surname=to_cyrillic(f.get("surname", "")),
         name=to_cyrillic(f.get("name", "")),
         patronymic=to_cyrillic(f.get("patronymic", "")) or None,
         nationality=to_cyrillic(f.get("nationality", "")) or None,
         gender=_parse_gender(f.get("gender", "")),
-        series=f.get("series") or None,  # series/number stay as printed
-        number=f.get("number", ""),
+        series=series or None,  # series/number stay as printed otherwise
+        number=number,
         birth_date=_parse_date(f.get("birth_date", "")),
         birth_place=to_cyrillic(f.get("birth_place", "")) or None,
         issue_date=_parse_date(f.get("issue_date", "")),
