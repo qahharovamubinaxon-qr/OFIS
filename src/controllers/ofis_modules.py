@@ -677,6 +677,25 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_mvd_trud(ctx: RunContext, state: dict) -> list[Path]:
+    """МВД ТРУДАВОЙ from the phone: three photographs, a date, a должность."""
+    ctl = ctx.ctl["mvd_trud"]
+    photos = state["photos"]
+    passport, patent = ctl.read_documents(
+        photos[0], photos[1], photos[2] if len(photos) > 2 else None)
+    ctx.note(f"Ҳужжатлар ўқилди: {passport.surname or ''} "
+             f"{passport.name or ''}".strip())
+    answers = state["answers"]
+    result = ctl.generate(
+        template=Path(state["target"]), passport=passport, patent=patent,
+        profession=str(answers.get("profession") or "").strip()
+        or (patent.profession or ""),
+        deal_date=answers.get("deal_date") or date.today(),
+        uved_no=str(answers.get("uved_no") or "").strip(),
+        spravka_no=str(answers.get("spravka_no") or "").strip())
+    return [result.saved]
+
+
 def _run_rusreg(ctx: RunContext, state: dict) -> list[Path]:
     """РУС РЕГ from the phone.
 
@@ -913,6 +932,19 @@ MODULES: tuple[Module, ...] = (
            photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("mvd_trud", "📮 МВД ТРУДАВОЙ", _run_mvd_trud,
+           targets=lambda c: c["mvd_trud"].templates(),
+           target_prompt="Фирманинг бланкасини танланг:",
+           photo_prompt="Учта расм: паспорт, патент олди, патент орқаси.",
+           photo_labels=("Паспорт", "Патент олди", "Патент орқаси"),
+           min_photos=2,
+           asks=(Ask("deal_date", "Сана (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("profession", "Должность (бўш — патентдагиси):",
+                     kind="text"),
+                 Ask("uved_no", "Уведомление № (бўлмаса «Тайёрла»):",
+                     kind="text"),
+                 Ask("spravka_no", "Справка № (бўлмаса «Тайёрла»):",
+                     kind="text"))),
     Module("rusreg", "🇷🇺 РУС РЕГ", _run_rusreg,
            targets=lambda c: c["rusreg"].templates(),
            target_prompt="Фирманинг бланкасини танланг:",
@@ -1034,6 +1066,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.inn_controller import InnController
     from src.controllers.insurance_controller import InsuranceController
     from src.controllers.mig_controller import MigController
+    from src.controllers.mvd_trud_controller import MvdTrudController
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
     from src.controllers.process_controller import ProcessController
@@ -1065,6 +1098,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         InsuranceTemplateService,
     )
     from src.services.mig_service import MigService
+    from src.services.mvd_trud_service import MvdTrudService
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
@@ -1093,6 +1127,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg_addr": container.resolve(RegistrationAddressService),
         # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
         # template list even though ППУ itself is not offered on the phone
+        "mvd_trud": MvdTrudController(
+            ocr, MvdTrudService(container.resolve(SettingsService))),
         "rusreg": RusRegController(
             ocr, RusRegService(container.resolve(SettingsService))),
         "mig": MigController(

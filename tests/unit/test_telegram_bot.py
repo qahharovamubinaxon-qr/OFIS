@@ -144,6 +144,7 @@ _DESKTOP_TO_MODULE = {
     "nav.perevod": "perevod",
     "nav.mig": "mig",
     "nav.rusreg": "rusreg",
+    "nav.mvdtrud": "mvd_trud",
     "nav.umumiy": "umumiy",
     "nav.template": "shablon",
     "nav.photo": "photo",
