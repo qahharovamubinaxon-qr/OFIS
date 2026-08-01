@@ -110,13 +110,35 @@ def _clean_document(series: str, number: str) -> tuple[str, str]:
     return "", cleaned
 
 
+def _mangled_name(patronymic: str, name: str) -> bool:
+    """An «отчество» that is really the given name, misread.
+
+    The Philippine passport gave «ДЖЕЛИН» as the patronymic of «ДЖОСЕЛИН» —
+    the model had mangled the given name into a second field, and the invented
+    отчество went onto a registration. A real patronymic comes from the
+    FATHER's name and never resembles the worker's own; near-duplicates are
+    dropped.
+    """
+    a = "".join((patronymic or "").upper().split())
+    b = "".join((name or "").upper().split())
+    if not a or not b:
+        return False
+    from difflib import SequenceMatcher
+
+    return SequenceMatcher(None, a, b).ratio() >= 0.7
+
+
 def _passport_from(f: dict[str, str]) -> Passport:
     """What the vision model said, before the MRZ gets a chance to correct it."""
     series, number = _clean_document(f.get("series", ""), f.get("number", ""))
+    patronymic = to_cyrillic(f.get("patronymic", ""))
+    if _mangled_name(patronymic, to_cyrillic(f.get("name", ""))):
+        log.info("отчество «%s» исмнинг ўзи — ташлаб юборилди", patronymic)
+        patronymic = ""
     return Passport(
         surname=to_cyrillic(f.get("surname", "")),
         name=to_cyrillic(f.get("name", "")),
-        patronymic=to_cyrillic(f.get("patronymic", "")) or None,
+        patronymic=patronymic or None,
         nationality=to_cyrillic(f.get("nationality", "")) or None,
         gender=_parse_gender(f.get("gender", "")),
         series=series or None,  # series/number stay as printed otherwise
@@ -341,7 +363,13 @@ class OcrService:
                 update={
                     "surname": patent.holder_surname,
                     "name": patent.holder_name or passport.name,
-                    "patronymic": patent.holder_patronymic or passport.patronymic,
+                    # taken AS the patent says, absence included: the patent
+                    # prints the full ФИО in Russian, so a patent with no
+                    # patronymic means the worker HAS none — while the
+                    # passport's value may be an invented one (a Philippine
+                    # «middle name» is not an отчество, but models return it
+                    # as one). Falling back re-introduced exactly that.
+                    "patronymic": patent.holder_patronymic or None,
                     "nationality": patent.holder_citizenship or passport.nationality,
                 }
             )

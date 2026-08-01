@@ -125,10 +125,18 @@ class RusRegController:
 
     # ------------------------------------------------------------ reading
     def read_document(self, image: bytes, *, is_passport: bool) -> dict[str, str]:
-        """The sheet's fields off a paszport РФ or a birth certificate."""
+        """The sheet's fields off a паспорт РФ or a birth certificate.
+
+        Read through :data:`DocType.UNKNOWN` on purpose. The PASSPORT schema
+        judges the answer against the foreign-passport shape and insists its
+        dates parse as ISO — while these prompts ask for ДД.ММ.ГГГГ, so every
+        answer died with «birth_date санаси ўқилмади» and the operator got an
+        error instead of the fields. UNKNOWN takes the flat strings as they
+        are; whatever cannot be read stays empty and is typed by hand.
+        """
         prompt = _PASSPORT_PROMPT if is_passport else _BIRTH_PROMPT
         answer = self._ocr.ai.extract(prepare_image(image),
-                                      DocType.PASSPORT, prompt)
+                                      DocType.UNKNOWN, prompt)
         fields = dict(answer.fields) if answer.fields else {}
         if not fields.get("surname"):
             fields.update(_fields_from(answer.text))

@@ -249,3 +249,92 @@ def test_a_valid_mrz_without_a_patronymic_keeps_the_models_one(monkeypatch) -> N
     assert after.patronymic == "РУЗИМУРАТОВИЧ", (
         "the patronymic read off the printed page was thrown away")
     assert after.mrz_checked
+
+
+# ------------------------------------------- the two reported read failures
+
+
+def test_rusreg_reads_through_the_schemaless_door(monkeypatch) -> None:
+    """The PASSPORT schema insists on ISO dates; these prompts ask ДД.ММ.ГГГГ.
+
+    Read through it, every answer died with «birth_date санаси ўқилмади» and
+    the operator saw an error instead of fields — for the паспорт РФ and the
+    birth certificate alike. The reader must go through UNKNOWN, which takes
+    flat strings as they are.
+    """
+    from src.app import build_container
+    from src.config.settings_service import SettingsService
+    from src.controllers.rusreg_controller import RusRegController
+    from src.domain.enums import DocType
+    from src.ocr.service import OcrService
+    from src.services.rusreg_service import RusRegService
+
+    container = build_container()
+    controller = RusRegController(container.resolve(OcrService),
+                                  RusRegService(container.resolve(SettingsService)))
+    seen = {}
+
+    class _Answer:
+        text = ""
+        fields = {"surname": "КИРИЕНКО", "name": "ЛУИЗА",
+                  "patronymic": "ИЛЬИНИЧНА", "birth_date": "25.05.1990",
+                  "series": "46 15", "number": "974527"}
+
+    def fake_extract(image, doc_type, prompt):
+        seen["doc_type"] = doc_type
+        return _Answer()
+
+    monkeypatch.setattr(controller._ocr.ai, "extract", fake_extract)
+    monkeypatch.setattr("src.controllers.rusreg_controller.prepare_image",
+                        lambda image: image)
+
+    fields = controller.read_document(b"img", is_passport=True)
+    assert seen["doc_type"] == DocType.UNKNOWN, (
+        "the schema door died on ДД.ММ.ГГГГ dates")
+    assert fields["surname"] == "КИРИЕНКО"
+    assert fields["birth_date"] == "25.05.1990"
+
+
+def test_an_invented_patronymic_that_is_the_name_is_dropped() -> None:
+    """The Philippine passport: name ДЖОСЕЛИН, «patronymic» ДЖЕЛИН.
+
+    The model had mangled the given name into the отчество field, and the
+    invented отчество went onto a registration. A real patronymic comes from
+    the father's name and never resembles the worker's own.
+    """
+    from src.ocr.service import _mangled_name, _passport_from
+
+    assert _mangled_name("ДЖЕЛИН", "ДЖОСЕЛИН")
+    read = _passport_from({"surname": "АНДО", "name": "ДЖОСЕЛИН",
+                           "patronymic": "ДЖЕЛИН", "number": "P9314956C"})
+    assert read.patronymic is None
+
+    # real patronymics survive — including one derived from a first name
+    for patronymic, name in (("РУЗИМУРАТОВИЧ", "ФАРХОД"),
+                             ("ИЛЬИНИЧНА", "ЛУИЗА"),
+                             ("ИВАНОВИЧ", "ИВАН")):
+        assert not _mangled_name(patronymic, name)
+
+
+def test_the_patent_name_wins_including_its_missing_patronymic(monkeypatch) -> None:
+    """The patent prints the full ФИО in Russian — a patent with no отчество
+    means the worker HAS none, and the passport's invented one must not
+    slip back in through the fallback."""
+    from src.domain.documents import Passport, Patent
+    from src.ocr.service import OcrService
+
+    service = OcrService.__new__(OcrService)
+    monkeypatch.setattr(
+        OcrService, "read_passport",
+        lambda self, image: Passport(surname="АКДО", name="ДЖОСЕЛИН",
+                                     patronymic="ДЖЕЛИН", number="P9314956C"))
+    monkeypatch.setattr(
+        OcrService, "read_patent",
+        lambda self, front, back=None: Patent(
+            number="2600184371", profession="ПОДСОБНЫЙ РАБОЧИЙ",
+            holder_surname="АНДО", holder_name="ДЖОСЕЛИН"))
+
+    passport, _patent = service.read_documents(b"pass", b"front", None)
+    assert passport.surname == "АНДО", "the patent's Russian ФИО must win"
+    assert passport.patronymic is None, (
+        "the passport's invented отчество slipped back through the fallback")
