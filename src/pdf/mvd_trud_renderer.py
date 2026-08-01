@@ -196,7 +196,14 @@ def _pass_line(data: MvdTrudData) -> str:
 
 
 def placed(layout: dict | None = None) -> dict[str, Slot]:
-    """The measured slots, with anything the office dragged put on top."""
+    """The measured slots, with anything the office dragged put on top.
+
+    EVERYTHING but the three dragged numbers is carried over from the measured
+    slot. Rebuilding without the wrap geometry once dropped it to defaults —
+    and merely SAVING the layout dialog rebuilds every slot, so after one save
+    «Кем выдан»'s continuation forgot the margin row and printed «БЛАСТИ»
+    under the boxes instead of in them.
+    """
     out = dict(SLOTS)
     for key, moved in ((layout or {}).get("fields") or {}).items():
         if key not in out or len(moved) != 3:
@@ -207,7 +214,12 @@ def placed(layout: dict | None = None) -> dict[str, Slot]:
         scale = size / slot.size if slot.size else 1.0
         out[key] = Slot(slot.page, x, baseline, size,
                         pitch=slot.pitch * scale,
-                        per_row=slot.per_row, rows=slot.rows)
+                        per_row=slot.per_row, rows=slot.rows,
+                        wrap_x=slot.wrap_x,
+                        wrap_per_row=slot.wrap_per_row,
+                        wrap_pitch=(slot.wrap_pitch * scale
+                                    if slot.wrap_pitch > 0 else slot.wrap_pitch),
+                        row_step=slot.row_step)
     return out
 
 

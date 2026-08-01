@@ -235,3 +235,28 @@ def test_the_fio_comes_off_the_patent_not_the_passport(monkeypatch) -> None:
     assert passport.patronymic is None
     assert passport.number == "P9314956C", "the passport keeps its own numbers"
     assert patent.number == "2600184371"
+
+
+def test_a_saved_layout_keeps_the_continuation_row(tmp_path) -> None:
+    """Saving the layout dialog rebuilds every slot — and the rebuild used to
+    lose the wrap geometry. After one save «Кем выдан»'s continuation forgot
+    the margin row and printed «БЛАСТИ» UNDER the boxes instead of in them.
+    """
+    base = SLOTS["p9_pat_issuer"]
+    moved = placed({"fields": {"p9_pat_issuer": [base.x, base.baseline,
+                                                 base.size]}})["p9_pat_issuer"]
+    assert moved.wrap_x == base.wrap_x, "the margin row was forgotten"
+    assert moved.wrap_per_row == base.wrap_per_row
+    assert moved.wrap_pitch == base.wrap_pitch
+    assert moved.row_step == base.row_step
+
+    # and through a real render: the issuer's tail sits ON the margin row
+    data = MvdTrudData(**_WORKER, layout={
+        "fields": {"p9_pat_issuer": [base.x, base.baseline, base.size]}})
+    pdf = render(data, _blank(tmp_path))
+    with fitz.open("pdf", pdf) as doc:
+        tail = [(x, y) for t, x, y in _ink(doc[8]) if t.strip() == "И"]
+        row2 = [x for x, y in tail
+                if abs(y - (base.baseline + base.row_step)) < 0.004]
+        assert row2, "the continuation row lost its place after a save"
+        assert min(row2) < 0.12, "the continuation no longer starts at the margin"
