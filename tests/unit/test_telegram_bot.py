@@ -147,6 +147,8 @@ _DESKTOP_TO_MODULE = {
     "nav.mvdtrud": "mvd_trud",
     "nav.spr3": "spr3",
     "nav.qrreg": "qrreg",
+    "nav.alpinist": "alpinist",
+    "nav.imgbb": "imgbb",
     "nav.umumiy": "umumiy",
     "nav.template": "shablon",
     "nav.photo": "photo",
@@ -159,9 +161,9 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-#: АЛПИНИСТ stays off the phone on purpose: the worker signs the card with
-#: the MOUSE before printing, and that pad only exists in the program.
-_NOT_ON_THE_PHONE: set[str] = {"nav.alpinist"}
+#: Nothing is left off any more — АЛПИНИСТ signs off a photographed sheet
+#: of paper on the phone instead of the program's mouse pad.
+_NOT_ON_THE_PHONE: set[str] = set()
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:

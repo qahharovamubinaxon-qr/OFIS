@@ -76,39 +76,60 @@ def _face_box(img: np.ndarray) -> tuple[int, int, int, int] | None:
     return int(x), int(y), int(w), int(h)
 
 
-def _crop_box(img: np.ndarray, subject: np.ndarray,
-              ratio: float) -> tuple[int, int, int, int]:
-    """x, y, w, h of the cut — face-led when a face is found."""
-    ih, iw = img.shape[:2]
+#: A studio's 3×4: the head takes 46% of the picture, 9% of air above it,
+#: neck and chest fill the rest.
+_HEAD_SHARE = 0.46
+_AIR_SHARE = 0.09
+
+
+def _head_geometry(img: np.ndarray,
+                   subject: np.ndarray) -> tuple[int, int, int] | None:
+    """(centre x, top y, height) of the HEAD, in source pixels."""
     face = _face_box(img)
     if face is not None:
-        # the face takes about a third of a document photo — the rest is
-        # air above and the shoulders below
+        # Haar's box runs brow to chin — about 60% of the hair-to-chin head
         fx, fy, fw, fh = face
-        ch = int(fh * 3.1)
-        cw = int(ch * ratio)
-        cx = fx + fw // 2
-        top = int(fy - 0.55 * fh)
-        return cx - cw // 2, top, cw, ch
+        return fx + fw // 2, int(fy - 0.45 * fh), int(fh * 1.55)
     ys, xs = np.nonzero(subject > 128)
-    if len(xs):
-        # the head leads: its width is read off the mask's top band, so the
-        # cut keeps head AND shoulders whether GrabCut caught the whole
-        # person or only the head
-        x0, x1 = int(xs.min()), int(xs.max())
-        y0 = int(ys.min())
-        band = subject[y0:y0 + max(8, (x1 - x0) // 2)] > 128
-        widths = band.sum(axis=1)
-        head_w = int(widths.max()) if widths.size else (x1 - x0)
-        head_cols = np.nonzero(band.any(axis=0))[0]
-        cx = int(head_cols.mean()) if len(head_cols) else (x0 + x1) // 2
-        cw = int(max(head_w * 2.3, (x1 - x0) * 1.08))
-        ch = int(cw / ratio)
-        top = int(y0 - 0.08 * ch)
-        return cx - cw // 2, top, cw, ch
-    ch = ih
+    if len(xs) == 0:
+        return None
+    x0, x1, y0 = int(xs.min()), int(xs.max()), int(ys.min())
+    widths = (subject > 128).sum(axis=1)
+    # walk down from the crown. A head is always WIDER than the depth at
+    # which it is widest, so once we are deeper than the width seen so far
+    # the head cannot widen any more — whatever widens there is shoulders.
+    # The head ends at the neck pinch, or where the shoulders jump out.
+    peak = 0
+    neck = None
+    for y in range(y0, min(subject.shape[0], y0 + int(2.2 * (x1 - x0)))):
+        w = int(widths[y])
+        growing = (y - y0) <= max(40, 1.05 * peak)
+        if growing:
+            peak = max(peak, w)
+        if peak > 20 and (w < 0.72 * peak
+                          or (not growing and w > 1.15 * peak)):
+            neck = y
+            break
+    head_h = (neck - y0) if neck else int(1.45 * peak)
+    band = subject[y0:y0 + max(head_h, 8)] > 128
+    cols = np.nonzero(band.any(axis=0))[0]
+    cx = int(cols.mean()) if len(cols) else (x0 + x1) // 2
+    return cx, y0, max(head_h, 8)
+
+
+def _crop_box(img: np.ndarray, subject: np.ndarray,
+              ratio: float) -> tuple[int, int, int, int]:
+    """x, y, w, h of the cut — the studio composition around the head."""
+    ih, iw = img.shape[:2]
+    head = _head_geometry(img, subject)
+    if head is None:
+        ch = ih
+        cw = int(ch * ratio)
+        return (iw - cw) // 2, 0, cw, ch
+    cx, top, head_h = head
+    ch = int(head_h / _HEAD_SHARE)
     cw = int(ch * ratio)
-    return (iw - cw) // 2, 0, cw, ch
+    return cx - cw // 2, int(top - _AIR_SHARE * ch), cw, ch
 
 
 def clean_portrait(data: bytes, ratio: float = 0.73) -> bytes:

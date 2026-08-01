@@ -729,6 +729,47 @@ def _run_spr3(ctx: RunContext, state: dict) -> list[Path]:
     return [result.saved]
 
 
+def _run_alpinist(ctx: RunContext, state: dict) -> list[Path]:
+    """АЛПИНИСТ from the phone.
+
+    The mouse pad only exists in the program, so on the phone the worker
+    signs on a white sheet of paper and photographs it — the paper is made
+    transparent the same way the печать's is, and only the ink lands on
+    the card. The blank number counts itself up, as on the computer.
+    """
+    ctl = ctx.ctl["alpinist"]
+    photos = state["photos"]
+    if len(photos) < 3:
+        raise OfisError("Учта расм керак: паспорт, ишчи расми, имзо.")
+    worker = ctl.read_documents(photos[0],
+                                photos[3] if len(photos) > 3 else None)
+    ctx.note(f"Ҳужжатлар ўқилди: {worker.surname or ''} "
+             f"{worker.name or ''}".strip())
+    from src.services.alpinist_service import ink_only
+
+    answers = state["answers"]
+    result = ctl.generate(
+        template=Path(state["target"]), passport=worker,
+        issue_date=answers.get("issue_date") or date.today(),
+        ud_number=str(answers.get("ud_number") or "").strip(),
+        blank_number=str(ctl.next_number()),
+        photo=photos[1], signature=ink_only(photos[2]))
+    return [result.saved]
+
+
+def _run_imgbb(ctx: RunContext, state: dict) -> list[Path]:
+    """IMGBB from the phone: the picture up, the direct link and its QR back."""
+    from src.config import paths
+
+    ctl = ctx.ctl["imgbb"]
+    link = ctl.upload(state["photos"][0], name="imgbb")
+    ctx.note(f"🔗 {link}")
+    out = paths.output_dir() / "imgbb" / f"qr_{uuid.uuid4().hex[:8]}.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(ctl.qr(link))
+    return [out]
+
+
 def _run_mvd_trud(ctx: RunContext, state: dict) -> list[Path]:
     """МВД ТРУДАВОЙ from the phone: three photographs, a date, a должность."""
     ctl = ctx.ctl["mvd_trud"]
@@ -993,6 +1034,26 @@ MODULES: tuple[Module, ...] = (
                      default_days=0),
                  Ask("valid_to", "Тугаш санаси (КК.ОО.ЙЙЙЙ):",
                      default_days=90))),
+    Module("alpinist", "🧗 АЛПИНИСТ", _run_alpinist,
+           targets=lambda c: c["alpinist"].templates(),
+           target_prompt="Бланкани танланг:",
+           photo_prompt="Расмлар: 1️⃣ Паспорт  2️⃣ Ишчи расми  3️⃣ Имзо (оқ "
+                        "қоғозга қўйилиб, расмга олинган)  4️⃣ Патент "
+                        "(ихтиёрий, русча ФИО учун)",
+           photo_labels=("Паспорт", "Ишчи расми", "Имзо", "Патент"),
+           min_photos=3,
+           asks=(Ask("issue_date", "Берилган сана (КК.ОО.ЙЙЙЙ) — тугаши "
+                     "ўзи +3 йил:", default_days=0),
+                 Ask("ud_number", "УДОСТОВЕРЕНИЕ № (1-саҳифа):",
+                     kind="text"))),
+    Module("imgbb", "🖼 IMGBB", _run_imgbb,
+           photo_prompt="Расмни юборинг — прямой ҳавола ва QR қайтади.",
+           photo_labels=("Расм",),
+           needs_ai=False,
+           ready=lambda c: (
+               "" if c["imgbb"].key()
+               else "imgbb API калити йўқ — компютерда Sozlamalar'даги "
+                    "«🔳 КРКОД РЕГ — imgbb» картасига киритинг.")),
     Module("spr3", "📄 3-СПРАВКА", _run_spr3,
            targets=lambda c: c["spr3"].templates(),
            target_prompt="Фирманинг бланкасини танланг:",
@@ -1139,10 +1200,12 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     """Build every controller the modules need. Qt-free, so it works from a
     background thread (the bot poller) as well as the HTTP server."""
     from src.config.settings_service import SettingsService
+    from src.controllers.alpinist_controller import AlpinistController
     from src.controllers.beydjik_controller import BeydjikController
     from src.controllers.chek_controller import ChekController
     from src.controllers.dms_controller import DmsController
     from src.controllers.hostel_controller import HostelController
+    from src.controllers.imgbb_controller import ImgbbController
     from src.controllers.inn_controller import InnController
     from src.controllers.insurance_controller import InsuranceController
     from src.controllers.mig_controller import MigController
@@ -1168,6 +1231,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         TemplateProfileRepository,
     )
     from src.ocr.service import OcrService
+    from src.services.alpinist_service import AlpinistService
     from src.services.beydjik_service import BeydjikService
     from src.services.company_service import CompanyService
     from src.services.dms_service import DmsService
@@ -1213,6 +1277,9 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         # template list even though ППУ itself is not offered on the phone
         "qrreg": QrRegController(
             ocr, QrRegService(container.resolve(SettingsService))),
+        "alpinist": AlpinistController(
+            ocr, AlpinistService(container.resolve(SettingsService))),
+        "imgbb": ImgbbController(container.resolve(SettingsService)),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(

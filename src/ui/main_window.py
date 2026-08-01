@@ -75,6 +75,8 @@ _NAV = [
      "QR кодли регистрация — подтверждение imgbb'га, QR орқасига", "🔳"),
     (None, "nav.alpinist", "АЛПИНИСТ",
      "Промышленный альпинист удостоверенияси — расм, имзо, печать", "🧗"),
+    (None, "nav.imgbb", "IMGBB",
+     "Расм → i.ibb.co прямой ҳавола ва QR код", "🖼"),
     (None, "nav.spr3", "3-СПРАВКА",
      "6 варақли гувоҳнома — паспорт + русча ФИО ҳужжати → PDF", "📄"),
     (None, "nav.mvdtrud", "МВД ТРУДАВОЙ",
@@ -264,6 +266,11 @@ class MainWindow(QMainWindow):
                 self._container.resolve(OcrService),
                 AlpinistService(self._settings),
             ))
+        if key == "nav.imgbb":
+            from src.controllers.imgbb_controller import ImgbbController
+            from src.ui.views.imgbb_view import ImgbbView
+
+            return ImgbbView(ImgbbController(self._settings))
         if key == "nav.spr3":
             from src.controllers.spr3_controller import Spr3Controller
             from src.services.spr3_service import Spr3Service

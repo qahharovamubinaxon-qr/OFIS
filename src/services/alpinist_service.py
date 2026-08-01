@@ -37,6 +37,24 @@ class AlpinistResult:
     surname: str
 
 
+def ink_only(data: bytes) -> bytes:
+    """The picture with its white paper made transparent, as PNG bytes.
+
+    Serves the печать AND a photographed signature: whatever is drawn in
+    ink stays, the sheet behind it goes — so on the card only the ink
+    lands over the print, the way a real stamp or signature would."""
+    import numpy as np
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(data)).convert("RGBA")
+    pixels = np.array(image)
+    paper = pixels[:, :, :3].astype(int).sum(axis=2) > 690
+    pixels[paper, 3] = 0
+    out = io.BytesIO()
+    Image.fromarray(pixels).save(out, "PNG")
+    return out.getvalue()
+
+
 def templates_dir() -> Path:
     folder = paths.user_templates_dir() / "alpinist"
     folder.mkdir(parents=True, exist_ok=True)
@@ -84,18 +102,10 @@ class AlpinistService:
         source = Path(source)
         if source.suffix.lower() not in STAMP_SUFFIXES or not source.exists():
             raise ValidationError("Печать PNG ёки JPG расм бўлиши керак")
-        import numpy as np
-        from PIL import Image
-
-        image = Image.open(io.BytesIO(source.read_bytes())).convert("RGBA")
-        pixels = np.array(image)
-        paper = pixels[:, :, :3].astype(int).sum(axis=2) > 690
-        pixels[paper, 3] = 0
-        image = Image.fromarray(pixels)
         folder = templates_dir() / "stamp"
         folder.mkdir(parents=True, exist_ok=True)
         dest = folder / "stamp.png"
-        image.save(dest, "PNG")
+        dest.write_bytes(ink_only(source.read_bytes()))
         log.info("АЛПИНИСТ печати янгиланди")
         return dest
 
