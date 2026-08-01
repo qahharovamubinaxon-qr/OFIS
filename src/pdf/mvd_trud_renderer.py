@@ -19,8 +19,9 @@ from src.pdf.mvd_trud_spec import (
     FONT,
     MONTHS_RU,
     P5_LINE_BUDGET,
-    PAGE_COUNT,
+    PAGE_COUNTS,
     SLOTS,
+    SLOTS_BY_REGION,
     TEXT_OPACITY,
     Slot,
 )
@@ -188,6 +189,99 @@ def values(data: MvdTrudData) -> dict[str, str]:
     }
 
 
+def oblast_values(data: MvdTrudData) -> dict[str, str]:
+    """The Московская область packet's texts — same worker, its own keys.
+
+    The области's Прил.№1 runs its dates as ONE row of eight boxes (ДДММГГГГ),
+    its справка о приеме writes «б/н» when the уведомление has no number, and
+    the договор names the patent's issuer inline over two lines.
+    """
+    deal_d, deal_m, deal_y = _worded(data.deal_date)
+    birth = _dmy(data.birth_date)
+    issue = _dmy(data.pass_issued)
+    pat = _dmy(data.pat_issued)
+    until = _dmy(data.pat_until)
+    deal = _dmy(data.deal_date)
+    line1, line2 = split_rep_fio(data.citizenship, data.fio(), budget=42)
+    issuer1, issuer2 = split_rep_fio("", data.pat_issued_by, budget=17)
+    fio = data.fio()
+    return {
+        "o2_surname": (data.surname or "").upper(),
+        "o2_name": (data.name or "").upper(),
+        "o2_patronymic": (data.patronymic or "").upper(),
+        "o2_citizenship": (data.citizenship or "").upper(),
+        "o2_birth_place": (data.citizenship or "").upper(),
+        "o2_birth_day": birth[0], "o2_birth_month": birth[1],
+        "o2_birth_year": birth[2],
+        "o2_doc_kind": "ПАСПОРТ",
+        "o2_pass_series": (data.pass_series or "").upper(),
+        "o2_pass_number": (data.pass_number or "").upper(),
+        "o2_issue_day": issue[0], "o2_issue_month": issue[1],
+        "o2_issue_year": issue[2],
+        "o2_issued_by": (data.pass_issued_by or "").upper(),
+        "o3_pat_kind": "ПАТЕНТ",
+        "o3_pat_series": (data.pat_series or "").upper(),
+        "o3_pat_number": (data.pat_number or "").upper(),
+        "o3_pat_day": pat[0], "o3_pat_month": pat[1], "o3_pat_year": pat[2],
+        "o3_pat_issuer": (data.pat_issued_by or "").upper(),
+        "o3_valid_day": pat[0], "o3_valid_month": pat[1],
+        "o3_valid_year": pat[2],
+        "o3_until_day": until[0], "o3_until_month": until[1],
+        "o3_until_year": until[2],
+        "o3_profession": (data.profession or "").upper(),
+        "o3_deal_day": deal[0], "o3_deal_month": deal[1],
+        "o3_deal_year": deal[2],
+        "o4_day": deal_d, "o4_month": deal_m, "o4_year": deal_y[2:],
+        "o6_surname": (data.surname or "").upper(),
+        "o6_name": (data.name or "").upper(),
+        "o6_patronymic": (data.patronymic or "").upper(),
+        "o6_citizenship": (data.citizenship or "").upper(),
+        "o6_birth_day": birth[0], "o6_birth_month": birth[1],
+        "o6_birth_year": birth[2],
+        "o6_doc_kind": "ПАСПОРТ",
+        "o6_pass_series": (data.pass_series or "").upper(),
+        "o6_pass_number": (data.pass_number or "").upper(),
+        "o6_issue_all": "".join(issue),
+        "o6_issued_by": (data.pass_issued_by or "").upper(),
+        "o6_pat_series": (data.pat_series or "").upper(),
+        "o6_pat_number": (data.pat_number or "").upper(),
+        "o6_pat_issue_all": "".join(pat),
+        "o6_profession": (data.profession or "").upper(),
+        "o7_deal_day": deal[0], "o7_deal_month": deal[1],
+        "o7_deal_year": deal[2],
+        "o7_fio": fio,
+        "o7_day": deal_d, "o7_month": deal_m, "o7_year": deal_y,
+        "o8_date": (f"{deal_d} {deal_m} {deal_y} г." if data.deal_date else ""),
+        "o8_rep_fio_1": line1, "o8_rep_fio_2": line2,
+        "o8_pat_series": (data.pat_series or "").upper(),
+        "o8_pat_number": (data.pat_number or "").upper(),
+        "o8_pat_issuer_1": issuer1, "o8_pat_issuer_2": issuer2,
+        "o8_pat_date": _dots(data.pat_issued),
+        "o8_from": _dots(data.deal_date),
+        "o8_to": _dots(data.pat_until),
+        "o9_fio": fio,
+        "o9_birth": f"{_dots(data.birth_date)} г." if data.birth_date else "",
+        "o9_pass_no": _pass_line(data),
+        "o9_pass_issued": _dots(data.pass_issued),
+        "o9_organ": (data.pass_issued_by or "").upper(),
+        "o9_initials": data.initials(),
+        "o10_spravka_no": (data.spravka_no or "").strip(),
+        "o10_fio": fio,
+        "o11_uved_no": (data.spravka_no or "").strip(),
+        "o11_uved_ref": ((data.uved_no or "").strip() or "б/н")
+        + (f" от {_dots(data.deal_date)}" if data.deal_date else ""),
+        "o11_accept_date": _dots(data.deal_date),
+        "o11_republic": (data.citizenship or "").strip().upper(),
+        "o11_fio": fio,
+        "o11_passport": _pass_line(data),
+        "o11_birth": f"{_dots(data.birth_date)} Г." if data.birth_date else "",
+    }
+
+
+def values_for(data: MvdTrudData, region: str) -> dict[str, str]:
+    return oblast_values(data) if region == "oblast" else values(data)
+
+
 def _pass_line(data: MvdTrudData) -> str:
     """«FA402090755» or bare «402090755» — series only when there is one."""
     series = "".join((data.pass_series or "").split())
@@ -195,7 +289,8 @@ def _pass_line(data: MvdTrudData) -> str:
     return f"{series}{number}".strip()
 
 
-def placed(layout: dict | None = None) -> dict[str, Slot]:
+def placed(layout: dict | None = None,
+           base: dict[str, Slot] | None = None) -> dict[str, Slot]:
     """The measured slots, with anything the office dragged put on top.
 
     EVERYTHING but the three dragged numbers is carried over from the measured
@@ -204,7 +299,7 @@ def placed(layout: dict | None = None) -> dict[str, Slot]:
     «Кем выдан»'s continuation forgot the margin row and printed «БЛАСТИ»
     under the boxes instead of in them.
     """
-    out = dict(SLOTS)
+    out = dict(base if base is not None else SLOTS)
     for key, moved in ((layout or {}).get("fields") or {}).items():
         if key not in out or len(moved) != 3:
             continue
@@ -256,25 +351,28 @@ def _write_cells(page: fitz.Page, slot: Slot, text: str, *,
                 pitch = slot.wrap_pitch
 
 
-def render(data: MvdTrudData, template: Path | str) -> bytes:
-    """The finished ten-page packet as PDF bytes."""
+def render(data: MvdTrudData, template: Path | str,
+           region: str = "moscow") -> bytes:
+    """The finished packet as PDF bytes — Moscow's ten pages or the
+    область's eleven, each on its own slot map."""
     blank = Path(template)
     if not blank.exists():
         raise OfisError("МВД ТРУДАВОЙ бланкаси топилмади — бўлимда юкланг.")
 
+    wanted = PAGE_COUNTS.get(region, PAGE_COUNTS["moscow"])
     with fitz.open(str(blank)) as raw:
         source = raw if raw.is_pdf else fitz.open("pdf", raw.convert_to_pdf())
         doc = fitz.open("pdf", source.tobytes())
     with doc:
-        if doc.page_count < PAGE_COUNT:
+        if doc.page_count < wanted:
             raise OfisError(
                 f"Бланкада {doc.page_count} та саҳифа бор — тўплам "
-                f"{PAGE_COUNT} саҳифали бўлиши керак.")
+                f"{wanted} саҳифали бўлиши керак.")
         fontfile = str(_font_file(FONT))
         fontname = _fontname(FONT)
-        slots = placed(data.layout)
+        slots = placed(data.layout, SLOTS_BY_REGION.get(region, SLOTS))
 
-        for key, text in values(data).items():
+        for key, text in values_for(data, region).items():
             slot = slots.get(key)
             if slot is None or not text:
                 continue

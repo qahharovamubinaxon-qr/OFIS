@@ -55,8 +55,16 @@ class MvdTrudView(QWidget):
         title.setObjectName("viewTitle")
         root.addWidget(title)
 
-        # -- blank -----------------------------------------------------
+        # -- region + blank --------------------------------------------
         blank_row = QHBoxLayout()
+        blank_row.addWidget(QLabel("Қисм:"))
+        self._region = QComboBox()
+        from src.pdf.mvd_trud_spec import REGION_TITLES, REGIONS
+
+        for region in REGIONS:
+            self._region.addItem(REGION_TITLES[region], region)
+        self._region.currentIndexChanged.connect(lambda _i: self._reload())
+        blank_row.addWidget(self._region)
         blank_row.addWidget(QLabel("Бланка:"))
         self._template = QComboBox()
         blank_row.addWidget(self._template, stretch=1)
@@ -129,10 +137,13 @@ class MvdTrudView(QWidget):
         self._reload()
 
     # ------------------------------------------------------------- state
+    def _picked_region(self) -> str:
+        return self._region.currentData() or "moscow"
+
     def _reload(self) -> None:
         current = self._template.currentData()
         self._template.clear()
-        for blank in self._c.templates():
+        for blank in self._c.templates(self._picked_region()):
             self._template.addItem(blank.stem, str(blank))
         if self._template.count() == 0:
             self._template.addItem("— бланка юкланмаган —", None)
@@ -152,7 +163,8 @@ class MvdTrudView(QWidget):
         if not ok or not name.strip():
             return
         try:
-            dest = self._c.add_template(name.strip(), Path(source))
+            dest = self._c.add_template(name.strip(), Path(source),
+                                        self._picked_region())
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
@@ -183,7 +195,8 @@ class MvdTrudView(QWidget):
             return
         import fitz
 
-        from src.pdf.mvd_trud_renderer import placed, values
+        from src.pdf.mvd_trud_renderer import placed, values_for
+        from src.pdf.mvd_trud_spec import SLOTS_BY_REGION
         from src.ui.widgets.layout_editor import Item
         from src.ui.widgets.multipage_layout_editor import MultiPageLayoutEditor
 
@@ -198,8 +211,9 @@ class MvdTrudView(QWidget):
             return
 
 
-        sample = values(_sample_data())
-        slots = placed(self._c.layout(template))
+        region = self._picked_region()
+        sample = values_for(_sample_data(), region)
+        slots = placed(self._c.layout(template), SLOTS_BY_REGION[region])
         items_by_page: dict[int, list[Item]] = {}
         for key, slot in slots.items():
             if slot.page > len(pages):

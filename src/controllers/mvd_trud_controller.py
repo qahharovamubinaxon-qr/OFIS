@@ -29,11 +29,22 @@ class MvdTrudController:
         return self._ocr.available()
 
     # ------------------------------------------------------------- store
-    def templates(self) -> list[Path]:
-        return self._service.templates()
+    def templates(self, region: str = "moscow") -> list[Path]:
+        return self._service.templates(region)
 
-    def add_template(self, name: str, source: Path) -> Path:
-        return self._service.add_template(name, source)
+    def all_templates(self) -> list[Path]:
+        """Both regions' blanks in one list — the bot's pick list."""
+        return self._service.templates("moscow") + self._service.templates("oblast")
+
+    @staticmethod
+    def region_of(template) -> str:
+        from src.services.mvd_trud_service import region_of
+
+        return region_of(template)
+
+    def add_template(self, name: str, source: Path,
+                     region: str = "moscow") -> Path:
+        return self._service.add_template(name, source, region)
 
     def remove_template(self, template: Path) -> None:
         self._service.remove_template(template)

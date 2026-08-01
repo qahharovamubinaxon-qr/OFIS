@@ -181,6 +181,14 @@ SLOTS: dict[str, Slot] = {
 #: sentence rather than an IndexError.
 PAGE_COUNT = 10
 
+#: The section serves TWO МВД packets now: the Moscow one (the original ten
+#: pages) and the Московская область one — same worker fields, same look, but
+#: an eleven-page packet in a different order, so it carries its own slot map.
+REGIONS: tuple[str, ...] = ("moscow", "oblast")
+REGION_TITLES: dict[str, str] = {"moscow": "МОСКВА",
+                                 "oblast": "МОСКОВСКАЯ ОБЛАСТЬ"}
+PAGE_COUNTS: dict[str, int] = {"moscow": 10, "oblast": 11}
+
 #: The professions the office actually hires for — the combo's starting list;
 #: the operator can type any other.
 PROFESSIONS: tuple[str, ...] = (
@@ -201,3 +209,130 @@ MONTHS_RU: tuple[str, ...] = (
 #: On page 5 the citizenship + ФИО run into the paragraph's designed gap: what
 #: fits stays on the line, the rest starts the next line. Measured budget.
 P5_LINE_BUDGET = 34
+
+
+#: The Московская область packet, measured off the office's filled sample.
+#:
+#: FIRST-PASS positions: there was no empty twin to pixel-diff against, so
+#: these anchors were read off the filled pages by hand and by the bold-ink
+#: bands. The office uploads its own blank and drags everything true with
+#: «📐 Матнларни жойлаш» — which is exactly what the owner said he will do.
+#: Page order: Прил.№7 (стр.1 фирма — nothing ours; стр.2 worker cells;
+#: стр.3 patent; стр.4 sign date), 5 empty, Прил.№1 (стр.6 cells, стр.7
+#: dates + confirm), договор (8, 9), справка №3 (10), справка о приеме (11).
+OBLAST_SLOTS: dict[str, Slot] = {
+    # -- 2: Прил.№7 — ишчи катаклари --------------------------------------
+    "o2_surname":      Slot(2, 0.2280, 0.3845, CELL_SIZE, pitch=0.0242, per_row=22),
+    "o2_name":         Slot(2, 0.2280, 0.4130, CELL_SIZE, pitch=0.0242, per_row=22),
+    "o2_patronymic":   Slot(2, 0.2280, 0.4415, CELL_SIZE, pitch=0.0242, per_row=22),
+    "o2_citizenship":  Slot(2, 0.1830, 0.4805, CELL_SIZE, pitch=0.0242, per_row=24),
+    "o2_birth_place":  Slot(2, 0.3270, 0.5115, CELL_SIZE, pitch=0.0242, per_row=20),
+    "o2_birth_day":    Slot(2, 0.3060, 0.5830, CELL_SIZE, pitch=0.0250),
+    "o2_birth_month":  Slot(2, 0.3790, 0.5830, CELL_SIZE, pitch=0.0250),
+    "o2_birth_year":   Slot(2, 0.4470, 0.5830, CELL_SIZE, pitch=0.0250),
+    "o2_doc_kind":     Slot(2, 0.4470, 0.6300, CELL_SIZE, pitch=0.0242, per_row=9),
+    "o2_pass_series":  Slot(2, 0.1000, 0.6740, CELL_SIZE, pitch=0.0242, per_row=5),
+    "o2_pass_number":  Slot(2, 0.3310, 0.6740, CELL_SIZE, pitch=0.0250, per_row=10),
+    "o2_issue_day":    Slot(2, 0.7260, 0.6740, CELL_SIZE, pitch=0.0250),
+    "o2_issue_month":  Slot(2, 0.8020, 0.6740, CELL_SIZE, pitch=0.0250),
+    "o2_issue_year":   Slot(2, 0.8600, 0.6740, CELL_SIZE, pitch=0.0250),
+    "o2_issued_by":    Slot(2, 0.1660, 0.7340, CELL_SIZE, pitch=0.0242,
+                            per_row=26, rows=2, wrap_x=0.1000,
+                            wrap_per_row=30, row_step=0.0300),
+
+    # -- 3: Прил.№7 — патент ----------------------------------------------
+    "o3_pat_kind":     Slot(3, 0.3020, 0.1615, CELL_SIZE, pitch=0.0242, per_row=7),
+    "o3_pat_series":   Slot(3, 0.1000, 0.1970, CELL_SIZE, pitch=0.0242, per_row=6),
+    "o3_pat_number":   Slot(3, 0.2570, 0.1970, CELL_SIZE, pitch=0.0242, per_row=10),
+    "o3_pat_day":      Slot(3, 0.6670, 0.1970, CELL_SIZE, pitch=0.0250),
+    "o3_pat_month":    Slot(3, 0.7270, 0.1970, CELL_SIZE, pitch=0.0250),
+    "o3_pat_year":     Slot(3, 0.8000, 0.1970, CELL_SIZE, pitch=0.0250),
+    "o3_pat_issuer":   Slot(3, 0.2600, 0.2405, CELL_SIZE, pitch=0.0242,
+                            per_row=22, rows=2, wrap_x=0.0940,
+                            wrap_per_row=30, wrap_pitch=0.0250,
+                            row_step=0.0235),
+    "o3_valid_day":    Slot(3, 0.1500, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_valid_month":  Slot(3, 0.2130, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_valid_year":   Slot(3, 0.2760, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_until_day":    Slot(3, 0.4620, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_until_month":  Slot(3, 0.5250, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_until_year":   Slot(3, 0.5880, 0.3000, CELL_SIZE, pitch=0.0258),
+    "o3_profession":   Slot(3, 0.0890, 0.6020, CELL_SIZE, pitch=0.0242,
+                            per_row=33, rows=3, row_step=0.0260),
+    "o3_deal_day":     Slot(3, 0.5800, 0.8000, CELL_SIZE, pitch=0.0258),
+    "o3_deal_month":   Slot(3, 0.6400, 0.8000, CELL_SIZE, pitch=0.0258),
+    "o3_deal_year":    Slot(3, 0.7000, 0.8000, CELL_SIZE, pitch=0.0258),
+
+    # -- 4: Прил.№7 — имзо санаси -----------------------------------------
+    "o4_day":          Slot(4, 0.1000, 0.2470),
+    "o4_month":        Slot(4, 0.1550, 0.2470),
+    "o4_year":         Slot(4, 0.3250, 0.2470),
+
+    # -- 6: Прил.№1 — ишчи катаклари --------------------------------------
+    "o6_surname":      Slot(6, 0.1700, 0.4020, CELL_SIZE, pitch=0.0242, per_row=24),
+    "o6_name":         Slot(6, 0.1700, 0.4270, CELL_SIZE, pitch=0.0242, per_row=24),
+    "o6_patronymic":   Slot(6, 0.2470, 0.4530, CELL_SIZE, pitch=0.0242, per_row=21),
+    "o6_citizenship":  Slot(6, 0.2180, 0.4890, CELL_SIZE, pitch=0.0242, per_row=22),
+    "o6_birth_day":    Slot(6, 0.2800, 0.5330, CELL_SIZE, pitch=0.0242),
+    "o6_birth_month":  Slot(6, 0.3900, 0.5330, CELL_SIZE, pitch=0.0242),
+    "o6_birth_year":   Slot(6, 0.4800, 0.5330, CELL_SIZE, pitch=0.0242),
+    "o6_doc_kind":     Slot(6, 0.4700, 0.5680, CELL_SIZE, pitch=0.0242, per_row=9),
+    "o6_pass_series":  Slot(6, 0.1070, 0.6010, CELL_SIZE, pitch=0.0242, per_row=7),
+    "o6_pass_number":  Slot(6, 0.3330, 0.6010, CELL_SIZE, pitch=0.0242, per_row=10),
+    # this form runs the issue date as ONE row of eight boxes — ДДММГГГГ
+    "o6_issue_all":    Slot(6, 0.6950, 0.6010, CELL_SIZE, pitch=0.0242, per_row=8),
+    "o6_issued_by":    Slot(6, 0.1690, 0.6370, CELL_SIZE, pitch=0.0242,
+                            per_row=25, rows=2, row_step=0.0300),
+    "o6_pat_series":   Slot(6, 0.1690, 0.7300, CELL_SIZE, pitch=0.0242, per_row=5),
+    "o6_pat_number":   Slot(6, 0.3430, 0.7300, CELL_SIZE, pitch=0.0242, per_row=10),
+    "o6_pat_issue_all": Slot(6, 0.6950, 0.7300, CELL_SIZE, pitch=0.0242, per_row=8),
+    "o6_profession":   Slot(6, 0.0910, 0.7990, CELL_SIZE, pitch=0.0242,
+                            per_row=33, rows=3, row_step=0.0260),
+
+    # -- 7: Прил.№1 — саналар ва тасдиқ -----------------------------------
+    "o7_deal_day":     Slot(7, 0.6250, 0.1000, CELL_SIZE, pitch=0.0242),
+    "o7_deal_month":   Slot(7, 0.6850, 0.1000, CELL_SIZE, pitch=0.0242),
+    "o7_deal_year":    Slot(7, 0.7450, 0.1000, CELL_SIZE, pitch=0.0242),
+    "o7_fio":          Slot(7, 0.2900, 0.9370, 0.0128),
+    "o7_day":          Slot(7, 0.0750, 0.9750),
+    "o7_month":        Slot(7, 0.1500, 0.9750),
+    "o7_year":         Slot(7, 0.2800, 0.9750),
+
+    # -- 8: Трудовой договор, 1-бет ---------------------------------------
+    "o8_date":         Slot(8, 0.7900, 0.1520),
+    "o8_rep_fio_1":    Slot(8, 0.3100, 0.2620),
+    "o8_rep_fio_2":    Slot(8, 0.0480, 0.2790),
+    "o8_pat_series":   Slot(8, 0.4470, 0.3600),
+    "o8_pat_number":   Slot(8, 0.4900, 0.3600),
+    "o8_pat_issuer_1": Slot(8, 0.7400, 0.3600),
+    "o8_pat_issuer_2": Slot(8, 0.1180, 0.3840),
+    "o8_pat_date":     Slot(8, 0.4150, 0.3840),
+    "o8_from":         Slot(8, 0.2400, 0.4460),
+    "o8_to":           Slot(8, 0.3960, 0.4460),
+
+    # -- 9: Трудовой договор, реквизиты -----------------------------------
+    "o9_fio":          Slot(9, 0.2080, 0.7760),
+    "o9_birth":        Slot(9, 0.2080, 0.7920),
+    "o9_pass_no":      Slot(9, 0.2080, 0.8090),
+    "o9_pass_issued":  Slot(9, 0.4780, 0.8090),
+    "o9_organ":        Slot(9, 0.2080, 0.8250),
+    "o9_initials":     Slot(9, 0.4870, 0.8600),
+
+    # -- 10: Справка (655) -------------------------------------------------
+    "o10_spravka_no":  Slot(10, 0.3500, 0.3280),
+    "o10_fio":         Slot(10, 0.2980, 0.3960),
+
+    # -- 11: Справка о приеме (Прил. N2) ----------------------------------
+    "o11_uved_no":     Slot(11, 0.3300, 0.3330),
+    "o11_uved_ref":    Slot(11, 0.6000, 0.5560),
+    "o11_accept_date": Slot(11, 0.2700, 0.6000),
+    "o11_republic":    Slot(11, 0.5400, 0.6180),
+    "o11_fio":         Slot(11, 0.1850, 0.6330),
+    "o11_passport":    Slot(11, 0.2160, 0.6520),
+    "o11_birth":       Slot(11, 0.5600, 0.6520),
+}
+
+SLOTS_BY_REGION: dict[str, dict[str, Slot]] = {
+    "moscow": SLOTS,
+    "oblast": OBLAST_SLOTS,
+}

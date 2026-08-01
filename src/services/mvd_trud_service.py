@@ -20,6 +20,16 @@ log = get_logger(__name__)
 
 SECTION = "mvd_trud"
 
+#: Where each region keeps its blanks. Moscow stays at the root the section
+#: has always used, so nothing the office already uploaded moves.
+REGION_DIRS = {"moscow": "", "oblast": "oblast"}
+
+
+def region_of(template) -> str:
+    """Which packet a stored blank belongs to — told by where it lives."""
+    return "oblast" if Path(template).parent.name == "oblast" else "moscow"
+
+
 #: The blank is a scanned packet — it arrives as a PDF.
 BLANK_SUFFIXES = {".pdf"}
 
@@ -31,8 +41,11 @@ class MvdTrudResult:
     surname: str
 
 
-def templates_dir() -> Path:
+def templates_dir(region: str = "moscow") -> Path:
     folder = paths.user_templates_dir() / "mvd_trud"
+    sub = REGION_DIRS.get(region, "")
+    if sub:
+        folder = folder / sub
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -50,33 +63,43 @@ class MvdTrudService:
         self._settings = settings
 
     # ---------------------------------------------------------- templates
-    def templates(self) -> list[Path]:
-        return sorted(p for p in templates_dir().iterdir()
+    def templates(self, region: str = "moscow") -> list[Path]:
+        return sorted(p for p in templates_dir(region).iterdir()
                       if p.is_file() and p.suffix.lower() in BLANK_SUFFIXES)
 
-    def add_template(self, name: str, source: Path) -> Path:
+    def add_template(self, name: str, source: Path,
+                     region: str = "moscow") -> Path:
         source = Path(source)
         if source.suffix.lower() not in BLANK_SUFFIXES or not source.exists():
-            raise ValidationError("Бланка 10 саҳифали PDF бўлиши керак",
+            raise ValidationError("Бланка кўп саҳифали PDF бўлиши керак",
                                   context={"path": str(source)})
-        dest = templates_dir() / f"{_safe(name)}.pdf"
+        dest = templates_dir(region) / f"{_safe(name)}.pdf"
         shutil.copyfile(source, dest)
-        log.info("МВД ТРУДАВОЙ бланкаси қўшилди: %s", dest.name)
+        log.info("МВД ТРУДАВОЙ (%s) бланкаси қўшилди: %s", region, dest.name)
         return dest
 
     def remove_template(self, template: Path) -> None:
         Path(template).unlink(missing_ok=True)
-        blank_layout.reset(SECTION, template)
+        blank_layout.reset(self._section(template), template)
 
     # ------------------------------------------------------------ layout
+    @staticmethod
+    def _section(template: Path | str) -> str:
+        """Each region keeps its own layouts — the same blank name in the
+        other region must never inherit this one's dragging."""
+        return (SECTION if region_of(template) == "moscow"
+                else f"{SECTION}_oblast")
+
     def layout(self, template: Path | None) -> dict:
-        return blank_layout.load(SECTION, template) if template else {}
+        if not template:
+            return {}
+        return blank_layout.load(self._section(template), template)
 
     def save_layout(self, template: Path, layout: dict) -> Path:
-        return blank_layout.save(SECTION, template, layout)
+        return blank_layout.save(self._section(template), template, layout)
 
     def reset_layout(self, template: Path) -> None:
-        blank_layout.reset(SECTION, template)
+        blank_layout.reset(self._section(template), template)
 
     # ---------------------------------------------------------- printing
     def generate(self, data: MvdTrudData, template: Path | None) -> MvdTrudResult:
@@ -87,8 +110,9 @@ class MvdTrudService:
         if not (data.surname or "").strip():
             raise ValidationError("Фамилия керак — паспортни ўқитинг")
 
+        region = region_of(template)
         data.layout = self.layout(Path(template))
-        pdf = render(data, Path(template))
+        pdf = render(data, Path(template), region)
 
         folder = paths.output_dir() / "mvd_trud"
         folder.mkdir(parents=True, exist_ok=True)

@@ -260,3 +260,66 @@ def test_a_saved_layout_keeps_the_continuation_row(tmp_path) -> None:
                 if abs(y - (base.baseline + base.row_step)) < 0.004]
         assert row2, "the continuation row lost its place after a save"
         assert min(row2) < 0.12, "the continuation no longer starts at the margin"
+
+
+# --------------------------------------------------- МОСКОВСКАЯ ОБЛАСТЬ
+
+
+def _oblast_blank(folder: Path) -> Path:
+    blank = folder / "RADISYE.pdf"
+    doc = fitz.open()
+    for _ in range(11):
+        doc.new_page(width=595, height=842)
+    doc.save(str(blank))
+    doc.close()
+    return blank
+
+
+def test_the_oblast_map_covers_real_pages_and_has_no_dead_slots() -> None:
+    from src.pdf.mvd_trud_renderer import oblast_values
+    from src.pdf.mvd_trud_spec import OBLAST_SLOTS, PAGE_COUNTS
+
+    for key, slot in OBLAST_SLOTS.items():
+        assert 1 <= slot.page <= PAGE_COUNTS["oblast"], key
+    made = set(oblast_values(MvdTrudData(**_WORKER)))
+    slotted = set(OBLAST_SLOTS)
+    assert made == slotted, (
+        f"missing slots: {made - slotted} · dead slots: {slotted - made}")
+
+
+def test_the_oblast_packet_renders_eleven_pages(tmp_path) -> None:
+    pdf = render(MvdTrudData(**_WORKER), _oblast_blank(tmp_path), "oblast")
+    with fitz.open("pdf", pdf) as doc:
+        assert doc.page_count == 11
+        # Прил.№1 runs the issue date as ONE row of eight boxes
+        ink6 = "".join(t for t, _, _ in _ink(doc[5]))
+        assert "15052018" in ink6.replace(" ", "")
+        # the справка о приеме writes «б/н» when the уведомление has a number
+        ink11 = " ".join(t for t, _, _ in _ink(doc[10]))
+        assert "1259 от 28.07.2026" in ink11
+        # a Moscow blank of ten pages is refused for the область packet
+    from src.common.errors import OfisError
+
+    with pytest.raises(OfisError):
+        render(MvdTrudData(**_WORKER), _blank(tmp_path), "oblast")
+
+
+def test_each_region_keeps_its_own_blanks_and_layouts(tmp_path) -> None:
+    from src.app import build_container
+    from src.config.settings_service import SettingsService
+    from src.services.mvd_trud_service import MvdTrudService, region_of
+
+    service = MvdTrudService(build_container().resolve(SettingsService))
+    moscow = service.add_template("ГЛОБАЛПРО", _blank(tmp_path))
+    oblast = service.add_template("РАДИСЬЕ", _oblast_blank(tmp_path), "oblast")
+
+    assert region_of(moscow) == "moscow" and region_of(oblast) == "oblast"
+    assert moscow in service.templates("moscow")
+    assert oblast in service.templates("oblast")
+    assert oblast not in service.templates("moscow")
+
+    # the same blank NAME in the two regions must not share a layout
+    twin = service.add_template("ГЛОБАЛПРО", _oblast_blank(tmp_path), "oblast")
+    service.save_layout(moscow, {"fields": {"p1_fio": [0.1, 0.2, 0.012]}})
+    assert service.layout(twin) == {}, "the область twin inherited Moscow's dragging"
+    assert service.layout(moscow)["fields"]["p1_fio"] == [0.1, 0.2, 0.012]

@@ -933,7 +933,9 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
     Module("mvd_trud", "📮 МВД ТРУДАВОЙ", _run_mvd_trud,
-           targets=lambda c: c["mvd_trud"].templates(),
+           # both regions' blanks in one list; the runner tells them apart by
+           # where the picked one lives
+           targets=lambda c: c["mvd_trud"].all_templates(),
            target_prompt="Фирманинг бланкасини танланг:",
            photo_prompt="Учта расм: паспорт, патент олди, патент орқаси.",
            photo_labels=("Паспорт", "Патент олди", "Патент орқаси"),
