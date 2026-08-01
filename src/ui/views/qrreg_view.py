@@ -290,9 +290,11 @@ class QrRegView(QWidget):
         self._arrange(template, PODT_SLOTS, podt_values(self._sample()),
                       self._c.podt_layout(),
                       lambda fields: self._c.save_podt_layout(
-                          {"fields": fields}))
+                          {"fields": fields}),
+                      font_family="Arial")
 
-    def _arrange(self, template: Path, base_slots, sample, layout, save) -> None:
+    def _arrange(self, template: Path, base_slots, sample, layout, save,
+                 font_family: str = "Times New Roman") -> None:
         import fitz
 
         from src.ui.widgets.layout_editor import Item
@@ -318,7 +320,7 @@ class QrRegView(QWidget):
             items_by_page.setdefault(slot.page, []).append(
                 Item(key=key, label=key, sample=sample.get(key) or key,
                      x=x, baseline=baseline, size=size,
-                     font_family="Times New Roman"))
+                     font_family=font_family))
         dialog = MultiPageLayoutEditor(pages, items_by_page,
                                        title="КРКОД РЕГ", parent=self)
         if dialog.exec() != dialog.DialogCode.Accepted:

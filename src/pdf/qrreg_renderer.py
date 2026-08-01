@@ -19,9 +19,11 @@ from src.common.errors import OfisError
 from src.pdf.engine import _font_file, _fontname
 from src.pdf.qrreg_spec import (
     FONT,
+    PODT_FONT,
     PODT_RIGHT_EDGE,
     PODT_SLOTS,
-    QR_BOX,
+    QR_FRAME,
+    QR_INSET,
     REG_PAGES,
     REG_SLOTS,
     TEXT_OPACITY,
@@ -186,7 +188,7 @@ def _placed(base: dict[str, Slot], layout: dict | None) -> dict[str, Slot]:
         scale = size / slot.size if slot.size else 1.0
         out[key] = Slot(slot.page, x, baseline, size,
                         pitch=slot.pitch * scale, per_row=slot.per_row,
-                        colour=slot.colour)
+                        colour=slot.colour, font=slot.font)
     return out
 
 
@@ -204,22 +206,32 @@ def _open_blank(template: Path | str, wanted: int, what: str) -> fitz.Document:
 
 
 def _write(doc: fitz.Document, slots: dict[str, Slot],
-           texts: dict[str, str], *, shrink_edge: float = 0.0) -> None:
-    fontfile = str(_font_file(FONT))
-    fontname = _fontname(FONT)
+           texts: dict[str, str], *, font: str = FONT,
+           shrink_edge: float = 0.0) -> None:
     for key, text in texts.items():
         slot = slots.get(key)
         if slot is None or not text:
             continue
+        family = slot.font or font
+        fontfile = str(_font_file(family))
+        fontname = _fontname(family)
         page = doc[slot.page - 1]
         width, height = page.rect.width, page.rect.height
         size = slot.size * height
         if slot.pitch > 0:
+            # slot.x is the CENTRE of the first box — every character is
+            # centred in its own box, never leaned on the left border
+            try:
+                measure = fitz.Font(fontfile=fontfile)
+            except Exception:                     # noqa: BLE001
+                measure = None
             per_row = slot.per_row or len(text)
             for i, char in enumerate(text[:per_row]):
                 if char == " ":
                     continue
-                page.insert_text((slot.x * width + i * slot.pitch * width,
+                half = (measure.text_length(char, size) / 2
+                        if measure else size * 0.25)
+                page.insert_text(((slot.x + i * slot.pitch) * width - half,
                                   slot.baseline * height), char,
                                  fontsize=size, fontfile=fontfile,
                                  fontname=fontname, color=slot.colour,
@@ -257,7 +269,8 @@ def render_podt(data: QrRegData, template: Path | str) -> tuple[bytes, bytes]:
     doc = _open_blank(template, 1, "Подтверждение")
     with doc:
         slots = _placed(PODT_SLOTS, data.layout)
-        _write(doc, slots, podt_values(data), shrink_edge=PODT_RIGHT_EDGE)
+        _write(doc, slots, podt_values(data), font=PODT_FONT,
+               shrink_edge=PODT_RIGHT_EDGE)
         pdf = doc.tobytes()
         png = doc[0].get_pixmap(matrix=fitz.Matrix(3, 3)).tobytes("png")
     return pdf, png
@@ -272,12 +285,14 @@ def render_registration(data: QrRegData, template: Path | str,
         _write(doc, slots, reg_values(data))
         if qr_png:
             back = doc[1]
-            share_x, share_y, share_w = QR_BOX
-            side = share_w * back.rect.width
-            rect = fitz.Rect(share_x * back.rect.width,
-                             share_y * back.rect.height,
-                             share_x * back.rect.width + side,
-                             share_y * back.rect.height + side)
+            x0, y0, x1, y1 = QR_FRAME
+            frame_w = (x1 - x0) * back.rect.width
+            frame_h = (y1 - y0) * back.rect.height
+            side = min(frame_w, frame_h) * (1 - 2 * QR_INSET)
+            cx = (x0 + x1) / 2 * back.rect.width
+            cy = (y0 + y1) / 2 * back.rect.height
+            rect = fitz.Rect(cx - side / 2, cy - side / 2,
+                             cx + side / 2, cy + side / 2)
             back.insert_image(rect, stream=qr_png)
         return doc.tobytes()
 

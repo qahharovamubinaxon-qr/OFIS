@@ -44,6 +44,9 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     # metric-compatible with Arial, so text measures the same either way.
     "OfisArial": {"nt": ("arial.ttf",), "bundled": "OfisSans-Regular.ttf"},
     "OfisArialBold": {"nt": ("arialbd.ttf",), "bundled": "OfisSans-Bold.ttf"},
+    # Arial Bold Italic — the подтверждение card's face; off Windows the
+    # bundled bold stands in (upright, but the metrics are close).
+    "OfisArialBoldItalic": {"nt": ("arialbi.ttf",), "bundled": "OfisSans-Bold.ttf"},
     # Courier New — the typewriter face the МИГ «ИШЧИ КАРТАСИ» is set in.
     # Monospaced, so a value's width is its character count times one
     # advance: that is what lets the spaced-out letters on that card line
@@ -61,6 +64,7 @@ _FONT_IDS = {
     "OfisSansRegular": "ofis_sans_r",
     "OfisArial": "ofis_arial",
     "OfisArialBold": "ofis_arial_b",
+    "OfisArialBoldItalic": "ofis_arial_bi",
     "OfisMono": "ofis_mono",
     "OfisAkshar": "ofis_akshar",
     "OfisSerif": "ofis_serif",

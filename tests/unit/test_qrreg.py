@@ -18,7 +18,7 @@ from src.pdf.qrreg_renderer import (
     render_podt,
     render_registration,
 )
-from src.pdf.qrreg_spec import PODT_SLOTS, QR_BOX, REG_SLOTS
+from src.pdf.qrreg_spec import PODT_SLOTS, QR_FRAME, REG_SLOTS
 
 
 @pytest.fixture(autouse=True)
@@ -104,11 +104,95 @@ def test_the_qr_decodes_back_to_the_exact_link(tmp_path) -> None:
         pix = doc[1].get_pixmap(dpi=200)
         img = np.frombuffer(pix.samples, np.uint8).reshape(
             pix.height, pix.width, pix.n)[:, :, :3]
-    decoded, _pts, _ = cv2.QRCodeDetector().detectAndDecode(img)
+    decoded, pts, _ = cv2.QRCodeDetector().detectAndDecode(img)
     assert decoded == link, f"QR decoded to {decoded!r}"
-    # and it sits inside the printed box
-    share_x, share_y, share_w = QR_BOX
-    assert 0.5 < share_x < 0.8 and share_w > 0.1
+    # and the whole code sits INSIDE the printed frame, off its border
+    height, width = img.shape[:2]
+    x0, y0, x1, y1 = QR_FRAME
+    xs, ys = pts[0][:, 0] / width, pts[0][:, 1] / height
+    assert xs.min() >= x0 - 0.003 and xs.max() <= x1 + 0.003
+    assert ys.min() >= y0 - 0.003 and ys.max() <= y1 + 0.003
+
+
+def test_every_letter_sits_in_the_middle_of_its_own_box(tmp_path) -> None:
+    """The passport number's characters must land on the cells' centres —
+    the office saw them leaning on the boxes' left borders."""
+    import numpy as np
+
+    pdf = render_registration(QrRegData(**_WORKER), _reg_blank(tmp_path), None)
+    with fitz.open("pdf", pdf) as doc:
+        pix = doc[0].get_pixmap(dpi=200)
+        img = np.frombuffer(pix.samples, np.uint8).reshape(
+            pix.height, pix.width, pix.n)[:, :, :3]
+    gray = img.mean(axis=2)
+    height, width = gray.shape
+    slot = REG_SLOTS["f_doc_number"]
+    band = gray[int((slot.baseline - 0.016) * height):
+                int((slot.baseline + 0.004) * height)]
+    text = reg_values(QrRegData(**_WORKER))["f_doc_number"]
+    assert text == "FA3028791"
+    for i, char in enumerate(text):
+        centre = (slot.x + i * slot.pitch) * width
+        half = slot.pitch * width / 2
+        window = band[:, int(centre - half):int(centre + half)]
+        _ys, xs = np.nonzero(window < 128)
+        assert len(xs), f"«{char}» left no ink"
+        centroid = xs.mean() + int(centre - half)
+        assert abs(centroid - centre) < 0.006 * width, \
+            f"«{char}» off-centre by {abs(centroid - centre):.1f}px"
+
+
+def test_the_card_values_take_the_samples_own_colours(tmp_path) -> None:
+    """Brown rows print sandy-gold, light rows dark maroon — never white."""
+    import numpy as np
+
+    pdf, _png = render_podt(QrRegData(**_WORKER), _podt_blank(tmp_path))
+    with fitz.open("pdf", pdf) as doc:
+        pix = doc[0].get_pixmap(dpi=150)
+        img = np.frombuffer(pix.samples, np.uint8).reshape(
+            pix.height, pix.width, pix.n)[:, :, :3]
+    height, width = img.shape[:2]
+
+    def ink(base):
+        band = img[int((base - 0.014) * height):int((base + 0.004) * height),
+                   int(0.30 * width):int(0.95 * width)].reshape(-1, 3)
+        marked = band[band.sum(1) < 3 * 245]
+        assert len(marked), "no ink in the band"
+        # glyph cores only — the anti-aliased edges blend toward the white
+        lum = marked.sum(1)
+        core = marked[lum <= np.percentile(lum, 30)]
+        return np.median(core, axis=0) / 255.0
+
+    gold = ink(PODT_SLOTS["c_birth"].baseline)      # a brown-row value
+    assert gold[0] > 0.6 and gold[0] > gold[1] > gold[2], gold
+    maroon = ink(PODT_SLOTS["c_fio"].baseline)      # a light-row value
+    assert maroon[0] < 0.55 and maroon[1] < 0.3, maroon
+
+
+def test_the_card_is_set_in_arial_bold_italic() -> None:
+    import os
+
+    from src.pdf.engine import _font_file
+    from src.pdf.qrreg_spec import PODT_FONT
+
+    assert PODT_FONT == "OfisArialBoldItalic"
+    if os.name == "nt":
+        assert _font_file(PODT_FONT).name.lower() == "arialbi.ttf"
+
+
+def test_a_saved_legacy_layout_no_longer_pins_the_letters(tmp_path) -> None:
+    """The office saved the old defaults wholesale before the cells were
+    re-measured — those numbers must give way; a genuine drag must stay."""
+    from src.pdf.qrreg_spec import LEGACY_REG
+    from src.services.qrreg_service import QrRegService
+
+    service = QrRegService()
+    reg = service.add_template("МОСКВА", _reg_blank(tmp_path))
+    fields = {key: list(value) for key, value in LEGACY_REG.items()}
+    fields["f_dom"] = [0.1094, 0.5495, 0.0122]          # the office's nudge
+    service.save_layout(reg, {"fields": fields})
+    kept = service.layout(reg)
+    assert list(kept.get("fields") or {}) == ["f_dom"]
 
 
 def test_the_podt_renders_both_pdf_and_png(tmp_path) -> None:

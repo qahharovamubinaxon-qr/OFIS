@@ -78,6 +78,27 @@ def desktop_dir() -> Path:
     return desktop
 
 
+def _drop_legacy(layout: dict) -> dict:
+    """Saved layouts from before the cell grid was re-measured repeat the old
+    defaults verbatim for every field the office never touched. Those entries
+    must not pin the letters to the old spots — a genuine drag differs from
+    the legacy numbers and survives untouched."""
+    from src.pdf.qrreg_spec import LEGACY_REG
+
+    fields = (layout or {}).get("fields") or {}
+    kept = {}
+    for key, moved in fields.items():
+        old = LEGACY_REG.get(key)
+        if old is not None and len(moved) == 3 and all(
+                abs(float(a) - b) < 1e-6
+                for a, b in zip(moved, old, strict=True)):
+            continue
+        kept[key] = moved
+    if not kept:
+        return {}
+    return {**layout, "fields": kept}
+
+
 class QrRegService:
     def __init__(self, settings=None) -> None:
         self._settings = settings
@@ -118,7 +139,9 @@ class QrRegService:
 
     # ------------------------------------------------------------ layout
     def layout(self, template: Path | None) -> dict:
-        return blank_layout.load(SECTION, template) if template else {}
+        if not template:
+            return {}
+        return _drop_legacy(blank_layout.load(SECTION, template))
 
     def save_layout(self, template: Path, layout: dict) -> Path:
         return blank_layout.save(SECTION, template, layout)
