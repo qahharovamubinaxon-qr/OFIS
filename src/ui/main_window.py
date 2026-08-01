@@ -73,6 +73,8 @@ _NAV = [
      "🪪"),
     (None, "nav.qrreg", "КРКОД РЕГ",
      "QR кодли регистрация — подтверждение imgbb'га, QR орқасига", "🔳"),
+    (None, "nav.alpinist", "АЛПИНИСТ",
+     "Промышленный альпинист удостоверенияси — расм, имзо, печать", "🧗"),
     (None, "nav.spr3", "3-СПРАВКА",
      "6 варақли гувоҳнома — паспорт + русча ФИО ҳужжати → PDF", "📄"),
     (None, "nav.mvdtrud", "МВД ТРУДАВОЙ",
@@ -252,6 +254,15 @@ class MainWindow(QMainWindow):
             return QrRegView(QrRegController(
                 self._container.resolve(OcrService),
                 QrRegService(self._settings),
+            ))
+        if key == "nav.alpinist":
+            from src.controllers.alpinist_controller import AlpinistController
+            from src.services.alpinist_service import AlpinistService
+            from src.ui.views.alpinist_view import AlpinistView
+
+            return AlpinistView(AlpinistController(
+                self._container.resolve(OcrService),
+                AlpinistService(self._settings),
             ))
         if key == "nav.spr3":
             from src.controllers.spr3_controller import Spr3Controller

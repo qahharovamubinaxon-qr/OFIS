@@ -159,8 +159,9 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-#: Nothing is left off any more.
-_NOT_ON_THE_PHONE: set[str] = set()
+#: АЛПИНИСТ stays off the phone on purpose: the worker signs the card with
+#: the MOUSE before printing, and that pad only exists in the program.
+_NOT_ON_THE_PHONE: set[str] = {"nav.alpinist"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:
