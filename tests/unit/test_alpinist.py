@@ -88,8 +88,9 @@ def test_render_places_texts_and_all_three_pictures(tmp_path) -> None:
         ink = "".join(p.get_text() for p in doc).replace("\xa0", " ")
         assert "БАРАТОВ" in ink and "10.05.2026 г." in ink
         assert "145 от 10.05.2026 года" in ink
-        assert len(doc[0].get_images(full=True)) == 2   # photo + signature
-        assert len(doc[1].get_images(full=True)) == 1   # the печать
+        # photo + signature + печать all stand on the card's FACE
+        assert len(doc[0].get_images(full=True)) == 3
+        assert len(doc[1].get_images(full=True)) == 0
 
 
 def test_the_photo_fills_the_printed_frame(tmp_path) -> None:
@@ -109,6 +110,35 @@ def test_the_photo_fills_the_printed_frame(tmp_path) -> None:
     y1 = frame.baseline * pix.height
     y0 = (frame.baseline - frame.size) * pix.height
     assert xs.min() >= x0 - 3 and ys.min() >= y0 - 3 and ys.max() <= y1 + 3
+
+
+def test_the_stamp_lies_over_the_photos_corner() -> None:
+    """The печать certifies the picture — its default footprint must
+    overlap the photo frame on the card's face."""
+    photo, stamp = IMG_SLOTS["img_photo"], IMG_SLOTS["img_stamp"]
+    assert photo.page == 1 and stamp.page == 1
+    # both as (x0, y0, x1, y1) in page shares, a round stamp (aspect 1)
+    page_w, page_h = 842.0, 632.0
+    p = (photo.x, photo.baseline - photo.size,
+         photo.x + photo.size * page_h * 0.7305 / page_w, photo.baseline)
+    s = (stamp.x, stamp.baseline - stamp.size,
+         stamp.x + stamp.size * page_h / page_w, stamp.baseline)
+    assert s[0] < p[2] and s[2] > p[0], "no horizontal overlap with the photo"
+    assert s[1] < p[3] and s[3] > p[1], "no vertical overlap with the photo"
+
+
+def test_a_layout_saved_before_the_stamp_moved_lets_it_go(tmp_path) -> None:
+    from src.pdf.alpinist_spec import LEGACY_STAMP
+    from src.services.alpinist_service import AlpinistService
+
+    service = AlpinistService()
+    blank = service.add_template("ПРОФИ", _blank(tmp_path))
+    service.save_layout(blank, {"fields": {
+        "img_stamp": list(LEGACY_STAMP),           # the old back-page spot
+        "p1_number": [0.60, 0.34, 0.04],           # a genuine drag
+    }})
+    kept = service.layout(blank)
+    assert list(kept.get("fields") or {}) == ["p1_number"]
 
 
 # ---------------------------------------------------------- the portrait
@@ -133,6 +163,10 @@ def test_clean_portrait_whitens_the_ground_and_cuts_3x4() -> None:
     corners = np.concatenate([cut[:10, :10].reshape(-1, 3),
                               cut[:10, -10:].reshape(-1, 3)])
     assert corners.mean() > 230, "the ground behind the head is not white"
+    # the owner complained the cut kept only head and neck — the shoulders
+    # (the dark block under the head) must be in the picture too
+    lower = cut[int(0.70 * cut.shape[0]):]
+    assert (lower.mean(axis=2) < 120).any(), "the shoulders were cut away"
 
 
 def test_a_broken_photo_is_a_sentence_not_a_traceback() -> None:

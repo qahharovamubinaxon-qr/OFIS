@@ -106,7 +106,21 @@ class AlpinistService:
 
     # ------------------------------------------------------------ layout
     def layout(self, template: Path | None) -> dict:
-        return blank_layout.load(SECTION, template) if template else {}
+        if not template:
+            return {}
+        loaded = blank_layout.load(SECTION, template)
+        fields = (loaded or {}).get("fields") or {}
+        old = fields.get("img_stamp")
+        from src.pdf.alpinist_spec import LEGACY_STAMP
+
+        if (old and len(old) == 3
+                and all(abs(float(a) - b) < 1e-6
+                        for a, b in zip(old, LEGACY_STAMP, strict=True))):
+            # the печать moved to the card's face — a layout saved before
+            # that must not pin it to the back's old spot
+            fields = {k: v for k, v in fields.items() if k != "img_stamp"}
+            loaded = {**loaded, "fields": fields}
+        return loaded
 
     def save_layout(self, template: Path, layout: dict) -> Path:
         return blank_layout.save(SECTION, template, layout)

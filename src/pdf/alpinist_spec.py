@@ -54,12 +54,18 @@ SLOTS: dict[str, Slot] = {
 
 #: The pictures. The photo's default IS the printed frame (x 0.1556–0.3851,
 #: y 0.3606–0.7792); the signature sits right of «Подпись владельца»; the
-#: печать's default matches where the sample's stamp stands on the back.
+#: печать stands on the FACE of the card, half over the photo's lower-right
+#: corner — the way a real seal certifies the picture. It is drawn AFTER
+#: the photo, so it lies on top.
 IMG_SLOTS: dict[str, Slot] = {
     "img_photo": Slot(1, 0.1556, 0.7792, 0.4186),
     "img_sign":  Slot(1, 0.6720, 0.8000, 0.0900),
-    "img_stamp": Slot(2, 0.2300, 0.6900, 0.4000),
+    "img_stamp": Slot(1, 0.3100, 0.7900, 0.1900),
 }
+
+#: Where the печать stood before it moved to the face — a layout saved in
+#: that release repeats these numbers; the loader lets them go.
+LEGACY_STAMP = (0.2300, 0.6900, 0.4000)
 
 #: What the layout editor shows in an image's place while arranging.
 IMG_LABELS = {"img_photo": "🖼 РАСМ", "img_sign": "✒ ИМЗО",

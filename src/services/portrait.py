@@ -82,22 +82,29 @@ def _crop_box(img: np.ndarray, subject: np.ndarray,
     ih, iw = img.shape[:2]
     face = _face_box(img)
     if face is not None:
+        # the face takes about a third of a document photo — the rest is
+        # air above and the shoulders below
         fx, fy, fw, fh = face
-        ch = int(fh * 2.6)
+        ch = int(fh * 3.1)
         cw = int(ch * ratio)
         cx = fx + fw // 2
-        top = int(fy - 0.60 * fh)
+        top = int(fy - 0.55 * fh)
         return cx - cw // 2, top, cw, ch
     ys, xs = np.nonzero(subject > 128)
     if len(xs):
-        # head-and-shoulders around the subject: a little air at the sides,
-        # a little above the head, the height following the 3×4
+        # the head leads: its width is read off the mask's top band, so the
+        # cut keeps head AND shoulders whether GrabCut caught the whole
+        # person or only the head
         x0, x1 = int(xs.min()), int(xs.max())
         y0 = int(ys.min())
-        cw = int((x1 - x0) * 1.12)
+        band = subject[y0:y0 + max(8, (x1 - x0) // 2)] > 128
+        widths = band.sum(axis=1)
+        head_w = int(widths.max()) if widths.size else (x1 - x0)
+        head_cols = np.nonzero(band.any(axis=0))[0]
+        cx = int(head_cols.mean()) if len(head_cols) else (x0 + x1) // 2
+        cw = int(max(head_w * 2.3, (x1 - x0) * 1.08))
         ch = int(cw / ratio)
-        cx = (x0 + x1) // 2
-        top = int(y0 - 0.06 * ch)
+        top = int(y0 - 0.08 * ch)
         return cx - cw // 2, top, cw, ch
     ch = ih
     cw = int(ch * ratio)
