@@ -19,7 +19,7 @@ a = Analysis(  # noqa: F821
         # DB migrations must ship so schema upgrades apply on a built EXE.
         (str(ROOT / "src" / "database" / "migrations"), "migrations"),
     ],
-    hiddenimports=["google.generativeai", "PIL", "PIL.Image", "PIL.ImageOps"],
+    hiddenimports=["google.generativeai", "PIL", "PIL.Image", "PIL.ImageOps", "qrcode"],
     hookspath=[],
     excludes=["matplotlib", "tkinter"],  # cv2 IS bundled — РАСМ-ФОТО needs it
     noarchive=False,

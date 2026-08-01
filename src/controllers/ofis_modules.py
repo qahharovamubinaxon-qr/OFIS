@@ -677,6 +677,34 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_qrreg(ctx: RunContext, state: dict) -> list[Path]:
+    """КРКОД РЕГ from the phone — the saved dormitory does the heavy lifting.
+
+    The address, its code and its host come off the LAST SAVED dormitory (the
+    computer is where they are typed once); the phone supplies the worker's
+    two photographs and the dates.
+    """
+    ctl = ctx.ctl["qrreg"]
+    known = ctl.addresses()
+    if not known:
+        raise OfisError("Адрес ҳали сақланмаган — компютерда КРКОД РЕГ "
+                        "бўлимида бир марта тўлдириб «Тайёрлаш» қилинг.")
+    photos = state["photos"]
+    worker = ctl.read_documents(photos[0],
+                                photos[1] if len(photos) > 1 else None)
+    ctx.note(f"Ҳужжатлар ўқилди: {worker.surname or ''} "
+             f"{worker.name or ''}".strip())
+    answers = state["answers"]
+    entry = known[0]
+    result = ctl.generate(
+        template=Path(state["target"]), passport=worker,
+        valid_from=answers.get("valid_from") or date.today(),
+        valid_to=answers.get("valid_to") or date.today(),
+        address=entry, code=str(entry.get("code") or ""))
+    ctx.note(f"🔗 {result.link}")
+    return [result.saved]
+
+
 def _run_spr3(ctx: RunContext, state: dict) -> list[Path]:
     """3-СПРАВКА from the phone: passport + the Russian-ФИО photo."""
     ctl = ctx.ctl["spr3"]
@@ -948,6 +976,15 @@ MODULES: tuple[Module, ...] = (
            photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("qrreg", "🔳 КРКОД РЕГ", _run_qrreg,
+           targets=lambda c: c["qrreg"].templates(),
+           target_prompt="Бланкани танланг:",
+           photo_prompt="Иккита расм: паспорт, кейин патент (русча ФИО).",
+           photo_labels=("Паспорт", "Патент"),
+           asks=(Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("valid_to", "Тугаш санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=90))),
     Module("spr3", "📄 3-СПРАВКА", _run_spr3,
            targets=lambda c: c["spr3"].templates(),
            target_prompt="Фирманинг бланкасини танланг:",
@@ -1097,6 +1134,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
     from src.controllers.process_controller import ProcessController
+    from src.controllers.qrreg_controller import QrRegController
     from src.controllers.razreshenie_controller import RazreshenieController
     from src.controllers.registration_controller import RegistrationController
     from src.controllers.rusreg_controller import RusRegController
@@ -1132,6 +1170,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.photo_service import PhotoService
     from src.services.ppu_service import PpuService
     from src.services.profession_service import ProfessionService
+    from src.services.qrreg_service import QrRegService
     from src.services.razreshenie_service import RazreshenieService
     from src.services.registration_address_service import RegistrationAddressService
     from src.services.registration_service import RegistrationService
@@ -1156,6 +1195,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg_addr": container.resolve(RegistrationAddressService),
         # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
         # template list even though ППУ itself is not offered on the phone
+        "qrreg": QrRegController(
+            ocr, QrRegService(container.resolve(SettingsService))),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(

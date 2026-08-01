@@ -165,8 +165,13 @@ class SettingsView(QWidget):
         # -- доверенность counters ---------------------------------------
         root = self._section("📜", "Рақамлар")
         from src.services.dover_service import (
-            DEFAULT_REESTR_NEXT, DEFAULT_SERIES_NEXT, DEFAULT_SERIES_PREFIX,
-            DEFAULT_TARIF, KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX,
+            DEFAULT_REESTR_NEXT,
+            DEFAULT_SERIES_NEXT,
+            DEFAULT_SERIES_PREFIX,
+            DEFAULT_TARIF,
+            KEY_REESTR_NEXT,
+            KEY_SERIES_NEXT,
+            KEY_SERIES_PREFIX,
             KEY_TARIF,
         )
 
@@ -266,6 +271,24 @@ class SettingsView(QWidget):
                "topilmadi, shuning uchun katakcha o'chirilgan.")
         )
         root.addWidget(wa)
+        root.addStretch(1)
+
+        # -- КРКОД РЕГ: imgbb ----------------------------------------------
+        from src.services.imgbb import KEY_IMGBB
+
+        qr_card = Card("🔳", "КРКОД РЕГ — imgbb",
+                       "Подтверждение расми шу аккаунтга юкланади; QR ўша "
+                       "ҳаволага ишора қилади.")
+        qf = qr_card.form()
+        self._imgbb_key = QLineEdit(str(self._settings.get(KEY_IMGBB, "") or ""))
+        self._imgbb_key.setPlaceholderText("api.imgbb.com дан олинган калит")
+        self._imgbb_key.setEchoMode(QLineEdit.EchoMode.Password)
+        qf.addRow("API калит:", self._imgbb_key)
+        save_qr = QPushButton("Saqlash")
+        save_qr.setObjectName("primaryButton")
+        save_qr.clicked.connect(self._save_imgbb)
+        qr_card.add(_right(save_qr))
+        root.addWidget(qr_card)
         root.addStretch(1)
 
         # -- перевод certification names ----------------------------------
@@ -680,7 +703,10 @@ class SettingsView(QWidget):
 
     def _save_dover(self) -> None:
         from src.services.dover_service import (
-            KEY_REESTR_NEXT, KEY_SERIES_NEXT, KEY_SERIES_PREFIX, KEY_TARIF,
+            KEY_REESTR_NEXT,
+            KEY_SERIES_NEXT,
+            KEY_SERIES_PREFIX,
+            KEY_TARIF,
         )
 
         try:
@@ -880,6 +906,12 @@ class SettingsView(QWidget):
         self._settings.set(PEREVOD_CITY_KEY,
                            self._pv_city.text().strip() or "город Москва")
         QMessageBox.information(self, "OK", "ПЕРЕВОД sozlamalari saqlandi.")
+
+    def _save_imgbb(self) -> None:
+        from src.services.imgbb import KEY_IMGBB
+
+        self._settings.set(KEY_IMGBB, self._imgbb_key.text().strip())
+        QMessageBox.information(self, "OK", "imgbb калити сақланди.")
 
     def _save_webapp(self) -> None:
         from src.controllers.telegram_bot import KEY_WEBAPP

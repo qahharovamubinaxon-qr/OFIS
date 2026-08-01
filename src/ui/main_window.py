@@ -71,6 +71,8 @@ _NAV = [
     (None, "nav.mig", "МИГ",
      "ИШЧИ КАРТАСИ — фирманинг бланкаси, печати ва паспорт → PDF",
      "🪪"),
+    (None, "nav.qrreg", "КРКОД РЕГ",
+     "QR кодли регистрация — подтверждение imgbb'га, QR орқасига", "🔳"),
     (None, "nav.spr3", "3-СПРАВКА",
      "6 варақли гувоҳнома — паспорт + русча ФИО ҳужжати → PDF", "📄"),
     (None, "nav.mvdtrud", "МВД ТРУДАВОЙ",
@@ -241,6 +243,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.qrreg":
+            from src.controllers.qrreg_controller import QrRegController
+            from src.services.qrreg_service import QrRegService
+            from src.ui.views.qrreg_view import QrRegView
+
+            return QrRegView(QrRegController(
+                self._container.resolve(OcrService),
+                QrRegService(self._settings),
             ))
         if key == "nav.spr3":
             from src.controllers.spr3_controller import Spr3Controller
