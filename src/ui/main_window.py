@@ -71,6 +71,8 @@ _NAV = [
     (None, "nav.mig", "МИГ",
      "ИШЧИ КАРТАСИ — фирманинг бланкаси, печати ва паспорт → PDF",
      "🪪"),
+    (None, "nav.spr3", "3-СПРАВКА",
+     "6 варақли гувоҳнома — паспорт + русча ФИО ҳужжати → PDF", "📄"),
     (None, "nav.mvdtrud", "МВД ТРУДАВОЙ",
      "Узоқ муддатли ишчи учун 10 варақли МВД тўплами → PDF", "📮"),
     (None, "nav.rusreg", "РУС РЕГ",
@@ -239,6 +241,15 @@ class MainWindow(QMainWindow):
             return RazreshenieView(RazreshenieController(
                 self._container.resolve(OcrService),
                 RazreshenieService(self._settings),
+            ))
+        if key == "nav.spr3":
+            from src.controllers.spr3_controller import Spr3Controller
+            from src.services.spr3_service import Spr3Service
+            from src.ui.views.spr3_view import Spr3View
+
+            return Spr3View(Spr3Controller(
+                self._container.resolve(OcrService),
+                Spr3Service(self._settings),
             ))
         if key == "nav.mvdtrud":
             from src.controllers.mvd_trud_controller import MvdTrudController

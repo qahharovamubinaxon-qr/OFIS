@@ -677,6 +677,22 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_spr3(ctx: RunContext, state: dict) -> list[Path]:
+    """3-СПРАВКА from the phone: passport + the Russian-ФИО photo."""
+    ctl = ctx.ctl["spr3"]
+    photos = state["photos"]
+    worker = ctl.read_documents(photos[0],
+                                photos[1] if len(photos) > 1 else None)
+    ctx.note(f"Ҳужжатлар ўқилди: {worker.surname or ''} "
+             f"{worker.name or ''}".strip())
+    answers = state["answers"]
+    result = ctl.generate(
+        template=Path(state["target"]), passport=worker,
+        valid_from=answers.get("valid_from") or date.today(),
+        address=str(answers.get("address") or "").strip())
+    return [result.saved]
+
+
 def _run_mvd_trud(ctx: RunContext, state: dict) -> list[Path]:
     """МВД ТРУДАВОЙ from the phone: three photographs, a date, a должность."""
     ctl = ctx.ctl["mvd_trud"]
@@ -932,6 +948,15 @@ MODULES: tuple[Module, ...] = (
            photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
            photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
            asks=(Ask("issue_date", "Бериш санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+    Module("spr3", "📄 3-СПРАВКА", _run_spr3,
+           targets=lambda c: c["spr3"].templates(),
+           target_prompt="Фирманинг бланкасини танланг:",
+           photo_prompt="Иккита расм: паспорт, кейин русча ФИО ҳужжати "
+                        "(патент ёки миг карта).",
+           photo_labels=("Паспорт", "Русча ФИО ҳужжати"),
+           asks=(Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ) — тугаши "
+                     "ўзи 1 йил -1 кун ҳисобланади:", default_days=0),
+                 Ask("address", "Адрес (5-саҳифага):", kind="text"))),
     Module("mvd_trud", "📮 МВД ТРУДАВОЙ", _run_mvd_trud,
            # both regions' blanks in one list; the runner tells them apart by
            # where the picked one lives
@@ -1077,6 +1102,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.rusreg_controller import RusRegController
     from src.controllers.sertifikat_controller import SertifikatController
     from src.controllers.snils_controller import SnilsController
+    from src.controllers.spr3_controller import Spr3Controller
     from src.controllers.svera_controller import SveraController
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
@@ -1112,6 +1138,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.rusreg_service import RusRegService
     from src.services.sertifikat_service import SertifikatService
     from src.services.snils_service import SnilsService
+    from src.services.spr3_service import Spr3Service
     from src.services.svera_service import SveraService
     from src.services.trud_ppu_service import TrudPpuService
     from src.services.trud_service import TrudFirmService, TrudService
@@ -1129,6 +1156,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "reg_addr": container.resolve(RegistrationAddressService),
         # ТРУД ППУ prints sheet 1 on the ППУ front blank, so it needs the ППУ
         # template list even though ППУ itself is not offered on the phone
+        "spr3": Spr3Controller(
+            ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(
             ocr, MvdTrudService(container.resolve(SettingsService))),
         "rusreg": RusRegController(
