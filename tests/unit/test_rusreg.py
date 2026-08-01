@@ -338,3 +338,42 @@ def test_the_patent_name_wins_including_its_missing_patronymic(monkeypatch) -> N
     assert passport.surname == "АНДО", "the patent's Russian ФИО must win"
     assert passport.patronymic is None, (
         "the passport's invented отчество slipped back through the fallback")
+
+
+def test_a_long_zags_office_shrinks_to_fit_the_blank(tmp_path) -> None:
+    """«ОТДЕЛ ЗАПИСИ АКТОВ … ГОРОДА КРАСН» ran off the sheet's right edge.
+
+    When a value is longer than its ruled line, the type shrinks a little
+    first and is squeezed narrower after — everything stays on the blank.
+    """
+    long_office = ("ОТДЕЛ ЗАПИСИ АКТОВ ГРАЖДАНСКОГО СОСТОЯНИЯ КАРАСУНСКОГО "
+                   "ВНУТРИГОРОДСКОГО ОКРУГА ГОРОДА КРАСНОДАРА УПРАВЛЕНИЯ "
+                   "ЗАПИСИ АКТОВ ГРАЖДАНСКОГО СОСТОЯНИЯ КРАСНОДАРСКОГО КРАЯ")
+    worker = dict(_WORKER)
+    worker["doc_issued_by"] = long_office
+    pdf = render(RusRegData(**worker, is_passport=False), _blank(tmp_path))
+    with fitz.open("pdf", pdf) as doc:
+        page = doc[0]
+        rightmost = max(
+            span["bbox"][2] / page.rect.width
+            for block in page.get_text("dict")["blocks"]
+            for line in block.get("lines", [])
+            for span in line["spans"] if span["text"].strip())
+    assert rightmost <= 0.9455, f"ink runs off the rules: {rightmost:.4f}"
+
+
+def test_values_that_fit_keep_their_full_size(tmp_path) -> None:
+    """The shrink is for overflow only — a normal орган prints as before."""
+    from src.pdf.rusreg_spec import FIELDS
+
+    pdf = render(RusRegData(**_WORKER), _blank(tmp_path))
+    with fitz.open("pdf", pdf) as doc:
+        page = doc[0]
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    if "ГУ МВД РОССИИ" in span["text"].replace("\xa0", " "):
+                        want = FIELDS["issued_by"][2] * page.rect.height
+                        assert span["size"] == pytest.approx(want, rel=0.02)
+                        return
+    raise AssertionError("the орган line never printed")

@@ -153,15 +153,41 @@ def render(data: RusRegData, template: Path | str) -> bytes:
             share_x, share_y, share_size = spots[key]
             size = share_size * height
             x = share_x * width
+            squeeze = 1.0
             if key in CENTRED:
                 # a day or a year written flush left on its short rule looks
                 # knocked over; the form centres them
                 room = WIDTHS.get(key, 0.0) * width
                 x += max(0.0, (room - _text_width(text, size, fontfile)) / 2.0)
-            page.insert_text((x, share_y * height), text, fontsize=size,
+            else:
+                # a ЗАГС office writes half a paragraph into «кем выдан», and
+                # printed at full size it ran off the sheet's right edge. The
+                # type shrinks a little first; whatever still does not fit is
+                # squeezed narrower — everything stays on the blank.
+                room = _RIGHT_EDGE * width - x
+                text_width = _text_width(text, size, fontfile)
+                if text_width > room > 0:
+                    size *= max(_MIN_SHRINK, room / text_width)
+                    text_width = _text_width(text, size, fontfile)
+                    if text_width > room:
+                        squeeze = room / text_width
+            point = fitz.Point(x, share_y * height)
+            morph = ((point, fitz.Matrix(squeeze, 0, 0, 1, 0, 0))
+                     if squeeze < 1.0 else None)
+            page.insert_text(point, text, fontsize=size,
                              fontfile=fontfile, fontname=fontname,
-                             color=(0, 0, 0), fill_opacity=TEXT_OPACITY)
+                             color=(0, 0, 0), fill_opacity=TEXT_OPACITY,
+                             morph=morph)
         return doc.tobytes()
+
+
+#: Where the sheet's ruled lines end — nothing may print past it. The rules
+#: were measured at 0.9431 of the page width; a whisker of air is kept.
+_RIGHT_EDGE = 0.945
+
+#: How small the type may shrink before the text is squeezed narrower
+#: instead — below ~¾ of its size it stops reading as the same hand.
+_MIN_SHRINK = 0.72
 
 
 def _text_width(text: str, size: float, fontfile: str | None) -> float:
