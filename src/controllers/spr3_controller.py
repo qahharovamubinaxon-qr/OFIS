@@ -68,17 +68,30 @@ class Spr3Controller:
 
     # ----------------------------------------------------------- printing
     def generate(self, *, template: Path | None, passport: Passport,
-                 valid_from: date, address: str) -> Spr3Result:
+                 valid_from: date, address: dict | None = None,
+                 num3: str = "", ser3: str = "", num5: str = "") -> Spr3Result:
+        address = address or {}
         data = Spr3Data(
             surname=passport.surname or "",
             name=passport.name or "",
             patronymic=passport.patronymic or "",
             citizenship=passport.nationality or "",
             birth_date=passport.birth_date,
+            gender=(passport.gender.value
+                    if getattr(passport.gender, "value", None)
+                    else str(passport.gender or "")),
             pass_series=passport.series or "",
             pass_number=passport.number or "",
+            pass_issued=passport.issue_date,
+            pass_issued_by=passport.issued_by or "",
             valid_from=valid_from,
-            address=address)
+            num3=num3, ser3=ser3, num5=num5,
+            oblast=str(address.get("oblast") or ""),
+            gorod=str(address.get("gorod") or ""),
+            ulitsa=str(address.get("ulitsa") or ""),
+            dom=str(address.get("dom") or ""),
+            korpus=str(address.get("korpus") or ""),
+            kvartira=str(address.get("kvartira") or ""))
         return self._service.generate(data, template)
 
     @staticmethod

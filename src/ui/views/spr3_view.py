@@ -96,9 +96,38 @@ class Spr3View(QWidget):
         self._until = QLabel("")
         grid.addWidget(self._until, 0, 3)
 
-        grid.addWidget(QLabel("Адрес (5-саҳифага):"), 1, 0)
-        self._address = QLineEdit()
-        grid.addWidget(self._address, 1, 1, 1, 3)
+        grid.addWidget(QLabel("3-саҳифа № (иккита рақам):"), 1, 0)
+        self._num3 = QLineEdit()
+        self._num3.setPlaceholderText("масалан 450215 6510668")
+        grid.addWidget(self._num3, 1, 1)
+        grid.addWidget(QLabel("3-саҳифа серия:"), 1, 2)
+        self._ser3 = QLineEdit()
+        self._ser3.setPlaceholderText("масалан 235035")
+        grid.addWidget(self._ser3, 1, 3)
+        grid.addWidget(QLabel("5-саҳифа №:"), 2, 0)
+        self._num5 = QLineEdit()
+        self._num5.setPlaceholderText("масалан 45Г 8889529")
+        grid.addWidget(self._num5, 2, 1)
+
+        # the address goes onto page 5 in the form's own pieces
+        grid.addWidget(QLabel("Область:"), 3, 0)
+        self._oblast = QLineEdit()
+        grid.addWidget(self._oblast, 3, 1)
+        grid.addWidget(QLabel("Город:"), 3, 2)
+        self._gorod = QLineEdit()
+        grid.addWidget(self._gorod, 3, 3)
+        grid.addWidget(QLabel("Улица:"), 4, 0)
+        self._ulitsa = QLineEdit()
+        grid.addWidget(self._ulitsa, 4, 1)
+        grid.addWidget(QLabel("Дом:"), 4, 2)
+        self._dom = QLineEdit()
+        grid.addWidget(self._dom, 4, 3)
+        grid.addWidget(QLabel("Корпус:"), 5, 0)
+        self._korpus = QLineEdit()
+        grid.addWidget(self._korpus, 5, 1)
+        grid.addWidget(QLabel("Квартира:"), 5, 2)
+        self._kvartira = QLineEdit()
+        grid.addWidget(self._kvartira, 5, 3)
 
         # -- run --------------------------------------------------------
         run_row = QHBoxLayout()
@@ -197,11 +226,14 @@ class Spr3View(QWidget):
         from datetime import date
 
         sample = values(Spr3Data(
-            surname="ИВАНОВ", name="ИВАН", patronymic="ИВАНОВИЧ",
-            citizenship="ТАДЖИКИСТАН", birth_date=date(1985, 12, 14),
-            pass_series="", pass_number="402090755",
-            valid_from=date(2026, 7, 10),
-            address="МОСКВА, УЛ. АЛТУФЬЕВСКОЕ ШОССЕ, Д. 70, К. 1"))
+            surname="ТУРДУБЕК", name="УУЛУ", patronymic="АЙТУРГАН",
+            citizenship="КИРГИЗИЯ", birth_date=date(1998, 7, 9),
+            gender="female", pass_series="ID", pass_number="1294780",
+            pass_issued=date(2019, 7, 8), pass_issued_by="ГРС 212011",
+            valid_from=date(2026, 6, 16),
+            num3="450215 6510668", ser3="235035", num5="45Г 8889529",
+            oblast="Московская область", gorod="г Химки",
+            ulitsa="пр-кт Рязанский", dom="72", korpus="2", kvartira="134"))
         slots = placed(self._c.layout(template))
         items_by_page: dict[int, list[Item]] = {}
         for key, slot in slots.items():
@@ -241,7 +273,13 @@ class Spr3View(QWidget):
         name_doc = (Path(self._name_doc.path).read_bytes()
                     if self._name_doc.path is not None else None)
         when = self._from.date().toPython()
-        address = self._address.text().strip()
+        address = {"oblast": self._oblast.text(), "gorod": self._gorod.text(),
+                   "ulitsa": self._ulitsa.text(), "dom": self._dom.text(),
+                   "korpus": self._korpus.text(),
+                   "kvartira": self._kvartira.text()}
+        num3, ser3, num5 = (self._num3.text().strip(),
+                            self._ser3.text().strip(),
+                            self._num5.text().strip())
 
         self._run.setEnabled(False)
         self._progress.start("Ҳужжатлар ўқилиб, 6 варақ тўлдирилаяпти…")
@@ -249,7 +287,8 @@ class Spr3View(QWidget):
         def work():
             worker = self._c.read_documents(passport, name_doc)
             return self._c.generate(template=Path(template), passport=worker,
-                                    valid_from=when, address=address)
+                                    valid_from=when, address=address,
+                                    num3=num3, ser3=ser3, num5=num5)
 
         run_async(work, on_success=self._done, on_error=self._failed)
 

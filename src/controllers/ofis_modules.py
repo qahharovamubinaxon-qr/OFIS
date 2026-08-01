@@ -717,7 +717,15 @@ def _run_spr3(ctx: RunContext, state: dict) -> list[Path]:
     result = ctl.generate(
         template=Path(state["target"]), passport=worker,
         valid_from=answers.get("valid_from") or date.today(),
-        address=str(answers.get("address") or "").strip())
+        address={"oblast": str(answers.get("oblast") or ""),
+                 "gorod": str(answers.get("gorod") or ""),
+                 "ulitsa": str(answers.get("ulitsa") or ""),
+                 "dom": str(answers.get("dom") or ""),
+                 "korpus": str(answers.get("korpus") or ""),
+                 "kvartira": str(answers.get("kvartira") or "")},
+        num3=str(answers.get("num3") or ""),
+        ser3=str(answers.get("ser3") or ""),
+        num5=str(answers.get("num5") or ""))
     return [result.saved]
 
 
@@ -993,7 +1001,15 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("Паспорт", "Русча ФИО ҳужжати"),
            asks=(Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ) — тугаши "
                      "ўзи 1 йил -1 кун ҳисобланади:", default_days=0),
-                 Ask("address", "Адрес (5-саҳифага):", kind="text"))),
+                 Ask("num3", "3-саҳифа № (бўлмаса «Тайёрла»):", kind="text"),
+                 Ask("ser3", "3-саҳифа серия:", kind="text"),
+                 Ask("num5", "5-саҳифа №:", kind="text"),
+                 Ask("oblast", "Область:", kind="text"),
+                 Ask("gorod", "Город:", kind="text"),
+                 Ask("ulitsa", "Улица:", kind="text"),
+                 Ask("dom", "Дом:", kind="text"),
+                 Ask("korpus", "Корпус:", kind="text"),
+                 Ask("kvartira", "Квартира:", kind="text"))),
     Module("mvd_trud", "📮 МВД ТРУДАВОЙ", _run_mvd_trud,
            # both regions' blanks in one list; the runner tells them apart by
            # where the picked one lives

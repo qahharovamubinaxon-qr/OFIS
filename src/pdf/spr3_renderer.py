@@ -10,22 +10,56 @@ import fitz
 
 from src.common.errors import OfisError
 from src.pdf.engine import _font_file, _fontname
-from src.pdf.spr3_spec import FONT, PAGE_COUNT, SLOTS, TEXT_OPACITY, Slot
+from src.pdf.spr3_spec import (
+    FONT,
+    MONTHS_RU,
+    PAGE_COUNT,
+    SLOTS,
+    TEXT_OPACITY,
+    Slot,
+)
+
+#: Cyrillic → Latin, the way a Kyrgyz/Uzbek passport writes its own MRZ names.
+_LATIN = {
+    "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
+    "Ж": "ZH", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
+    "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U",
+    "Ф": "F", "Х": "KH", "Ц": "TS", "Ч": "CH", "Ш": "SH", "Щ": "SHCH",
+    "Ъ": "", "Ы": "Y", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
+    "Ў": "U", "Қ": "Q", "Ғ": "G", "Ҳ": "H",
+}
+
+
+def to_latin(text: str) -> str:
+    return "".join(_LATIN.get(c, c) for c in (text or "").upper())
 
 
 @dataclass
 class Spr3Data:
-    """One worker's certificate — texts as they get printed."""
+    """One worker's certificate packet — texts as they get printed."""
 
     surname: str = ""
     name: str = ""
     patronymic: str = ""
     citizenship: str = ""
     birth_date: date | None = None
+    gender: str = ""                   # "male" | "female"
     pass_series: str = ""
     pass_number: str = ""
+    pass_issued: date | None = None
+    pass_issued_by: str = ""
     valid_from: date | None = None
-    address: str = ""
+    #: the blanks' own serial numbers, typed by the operator
+    num3: str = ""                     # «450215 6510668»
+    ser3: str = ""                     # «235035»
+    num5: str = ""                     # «45Г 8889529»
+    #: the address, in page 5's own pieces
+    oblast: str = ""
+    gorod: str = ""
+    ulitsa: str = ""
+    dom: str = ""
+    korpus: str = ""
+    kvartira: str = ""
     layout: dict = field(default_factory=dict)
 
     def fio(self) -> str:
@@ -49,34 +83,92 @@ def _dots(value: date | None) -> str:
     return f"{value:%d.%m.%Y}" if value else ""
 
 
-def _passport(data: Spr3Data) -> str:
+def _worded(value: date | None) -> str:
+    """«16» июня 2026 г — the quoted manner page 1 uses."""
+    if value is None:
+        return ""
+    return f"«{value.day:02d}» {MONTHS_RU[value.month - 1]} {value.year} г"
+
+
+def _passport_joined(data: Spr3Data) -> str:
     series = "".join((data.pass_series or "").split())
     number = "".join((data.pass_number or "").split())
-    return f"{series} {number}".strip()
+    return f"{series}{number}".strip()
+
+
+def _split_two(text: str) -> tuple[str, str]:
+    """«450215 6510668» → the two numbers, for the guide's two spots."""
+    parts = (text or "").split(None, 1)
+    if not parts:
+        return "", ""
+    return parts[0], (parts[1].strip() if len(parts) > 1 else "")
 
 
 def values(data: Spr3Data) -> dict[str, str]:
-    """Each printed page repeats the same block; the address is page 5's.
-
-    The start date is written THE SAME on every page, as the owner asked, and
-    the end is never typed — it is always the year-minus-a-day arithmetic.
-    """
-    out: dict[str, str] = {}
-    fio = data.fio()
-    until = year_minus_day(data.valid_from)
-    for page in (1, 3, 5, 6):
-        out[f"p{page}_fio"] = fio
-        out[f"p{page}_birth"] = _dots(data.birth_date)
-        out[f"p{page}_passport"] = _passport(data)
-        out[f"p{page}_citizenship"] = (data.citizenship or "").upper()
-        out[f"p{page}_from"] = _dots(data.valid_from)
-        out[f"p{page}_to"] = _dots(until)
-    out["p5_address"] = " ".join((data.address or "").split()).upper()
+    """Every slot's finished text, exactly the way the owner's guide has it."""
+    start = data.valid_from
+    until = year_minus_day(start)
+    day = f"{start.day:02d}" if start else ""
+    month = MONTHS_RU[start.month - 1] if start else ""
+    yy = str(start.year)[2:] if start else ""
+    gender_ru = "женский" if data.gender == "female" else "мужской"
+    num3_1, num3_2 = _split_two(data.num3)
+    num5_1, num5_2 = _split_two(data.num5)
+    passport = _passport_joined(data)
+    out: dict[str, str] = {
+        "p1_fio": data.fio(),
+        "p1_birth": _worded(data.birth_date),
+        "p1_gender": gender_ru,
+        "p1_passport": (
+            f"серия и номер: {passport}, выдан {_dots(data.pass_issued)} г. "
+            f"{(data.pass_issued_by or '').strip()}").strip().rstrip("."),
+        "p1_date_osvid": _worded(start),
+        "p1_date_chim": _worded(start),
+        "p1_date_low": _worded(start),
+        "p3_num1": num3_1, "p3_num2": num3_2,
+        "p3_fio": data.fio(),
+        "p3_fio_lat": to_latin(data.fio()),
+        "p3_pass_grajd": f"{passport} {(data.citizenship or '').upper()}".strip(),
+        "p3_birth": _dots(data.birth_date),
+        "p3_date_ser": (f"{_dots(start)} сер. {data.ser3.strip()}"
+                        if (data.ser3 or "").strip() else _dots(start)),
+        "p3_from_day": day, "p3_from_month": (f"{start.month:02d}" if start else ""),
+        "p3_from_year": (str(start.year) if start else ""),
+        "p3_to_day": (f"{until.day:02d}" if until else ""),
+        "p3_to_month": (f"{until.month:02d}" if until else ""),
+        "p3_to_year": (str(until.year) if until else ""),
+        "p5_num1": num5_1, "p5_num2": num5_2,
+        "p5_date_day": day, "p5_date_month": month, "p5_date_yy": yy,
+        "p5_fio": data.fio(),
+        "p5_birth_day": (f"{data.birth_date.day:02d}" if data.birth_date else ""),
+        "p5_birth_month": (f"{data.birth_date.month:02d}"
+                           if data.birth_date else ""),
+        "p5_birth_year": (str(data.birth_date.year) if data.birth_date else ""),
+        "p5_citizenship": (data.citizenship or "").upper(),
+        "p5_gender": gender_ru,
+        "p5_passport": (f"{passport} выдан {_dots(data.pass_issued)}").strip(),
+        "p5_issuer": (data.pass_issued_by or "").strip(),
+        "p5_rf": "Российская Федерация",
+        "p5_oblast": (data.oblast or "").strip(),
+        "p5_gorod": (data.gorod or "").strip(),
+        "p5_ulitsa": (data.ulitsa or "").strip(),
+        "p5_dom": (data.dom or "").strip(),
+        "p5_korpus": (data.korpus or "").strip(),
+        "p5_kvartira": (data.kvartira or "").strip(),
+        "p5_citizen2": (data.citizenship or "").upper(),
+        "p5_citizen3": (data.citizenship or "").upper(),
+        "p5_range": (f"с {_dots(start)} до {_dots(until)}" if start else ""),
+    }
+    # page 6: the same start date scattered over its seven spots
+    for spot in ("d1", "d2", "d3", "d4", "d5", "d6", "low"):
+        out[f"p6_{spot}_day"] = day
+        out[f"p6_{spot}_month"] = month
+        out[f"p6_{spot}_yy"] = yy
     return out
 
 
 def placed(layout: dict | None = None) -> dict[str, Slot]:
-    """The default slots, with anything the office dragged put on top."""
+    """The measured slots, with anything the office dragged put on top."""
     out = dict(SLOTS)
     for key, moved in ((layout or {}).get("fields") or {}).items():
         if key in out and len(moved) == 3:
