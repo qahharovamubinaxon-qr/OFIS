@@ -502,17 +502,14 @@ def _run_insurance(ctx: RunContext, state: dict) -> list[Path]:
     """ОСАГО — the СТС decides the car, the licences decide who is covered."""
     photos, answers = state["photos"], state["answers"]
     result = ctx.ctl["insurance"].generate_from_images(
-        state["target"], photos[0],
-        photos[1] if len(photos) > 1 else None,
-        photos[2:6],
-        start=answers.get("start") or date.today(),
-        policy_holder=str(answers.get("policy_holder") or ""))
+        template=Path(state["target"]), sts_front=photos[0],
+        sts_back=photos[1] if len(photos) > 1 else None,
+        licences=photos[2:6],
+        start=answers.get("start") or date.today())
     cover = (f"{result.drivers} та ҳайдовчи (лица, допущенные)"
              if result.drivers else "без ограничения")
     ctx.note(f"{result.plate} · {cover}")
-    if result.notes:
-        ctx.note("\n".join(f"• {note}" for note in result.notes))
-    return [p for p in (result.pdf_path, result.docx_path) if p]
+    return [result.saved]
 
 
 def _run_shablon(ctx: RunContext, state: dict) -> list[Path]:
@@ -950,9 +947,7 @@ MODULES: tuple[Module, ...] = (
            photo_labels=("СТС (олд)", "СТС (орқа)", "Права 1", "Права 2",
                          "Права 3", "Права 4"),
            asks=(Ask("start", "Страховка БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):",
-                     default_days=0),
-                 Ask("policy_holder", "Страхователь (бўш — СТС эгаси):",
-                     kind="text"))),
+                     default_days=0),)),
     Module("shablon", "📐 ЎЗ ШАБЛОНИМ", _run_shablon,
            targets=lambda c: c["template"].saved_templates(),
            target_prompt="Шаблонни танланг:",
@@ -1209,9 +1204,9 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.hostel_controller import HostelController
     from src.controllers.imgbb_controller import ImgbbController
     from src.controllers.inn_controller import InnController
-    from src.controllers.insurance_controller import InsuranceController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
+    from src.controllers.osago_controller import OsagoController
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
     from src.controllers.process_controller import ProcessController
@@ -1226,9 +1221,6 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud_controller import TrudController
     from src.controllers.trud_ppu_controller import TrudPpuController
-    from src.database.repositories.insurance_template_repo import (
-        InsuranceTemplateRepository,
-    )
     from src.database.repositories.template_profile_repo import (
         TemplateProfileRepository,
     )
@@ -1241,12 +1233,9 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
     from src.services.inn_service import InnService
-    from src.services.insurance_service import (
-        InsuranceService,
-        InsuranceTemplateService,
-    )
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
+    from src.services.osago_service import OsagoService
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
     from src.services.photo_service import PhotoService
@@ -1322,11 +1311,9 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "snils": SnilsController(
             ocr, SnilsService(container.resolve(SettingsService))),
         # СТРАХОВКА and ЎЗ ШАБЛОНИМ own their services the same way the desktop
-        # views do; only the repositories come from the container.
-        "insurance": InsuranceController(
-            InsuranceTemplateService(
-                container.resolve(InsuranceTemplateRepository)),
-            ocr, InsuranceService(container.resolve(SettingsService))),
+        # views do.
+        "insurance": OsagoController(
+            ocr, OsagoService(container.resolve(SettingsService))),
         "template": TemplateController(
             container.resolve(TemplateProfileRepository), ocr),
         "umumiy": UmumiyService(key_getter=key_getter),

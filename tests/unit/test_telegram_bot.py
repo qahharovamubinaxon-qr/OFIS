@@ -538,36 +538,33 @@ def test_inn_flow_asks_the_number_and_date(ready, monkeypatch) -> None:
 # --------------------------------------------------------- СТРАХОВКА flow
 
 
-class _FakeTemplate:
-    name = "РЕСО-Гарантия"
-
-
 def _fake_policy(seen):
-    def generate(template, sts_front, sts_back, licences, *, start,
-                 unlimited=None, policy_holder=""):
+    def generate(*, template, sts_front, sts_back, licences, start,
+                 policy_no="", premium=""):
         seen.update(template=template, front=sts_front, back=sts_back,
-                    licences=list(licences), start=start,
-                    policy_holder=policy_holder)
-        out = paths.output_dir() / "osago.docx"
+                    licences=list(licences), start=start)
+        out = paths.output_dir() / "osago" / "Х420КС797.pdf"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"PK\x03\x04")
+        out.write_bytes(b"%PDF-1.4\n")
 
         class R:
-            docx_path = out
-            pdf_path = None
+            saved = out
+            pdf = b"%PDF-1.4\n"
             plate = "Х420КС797"
             drivers = len(seen["licences"])
-            notes = ["Полис серия/номерини страховая компания беради"]
 
         return R()
 
     return generate
 
 
-def test_insurance_flow_splits_the_photos_and_asks_the_dates(ready, monkeypatch) -> None:
+def test_insurance_flow_splits_the_photos_and_asks_the_dates(
+        ready, monkeypatch, tmp_path) -> None:
     seen = {}
+    blank = tmp_path / "РЕСО-Гарантия.pdf"
+    blank.write_bytes(b"%PDF-1.4\n")
     ctl = ready.ctl()["insurance"]
-    monkeypatch.setattr(ctl, "templates", lambda: [_FakeTemplate()])
+    monkeypatch.setattr(ctl, "templates", lambda: [blank])
     monkeypatch.setattr(ctl, "generate_from_images", _fake_policy(seen))
 
     _text(ready, "🚗 СТРАХОВКА")
@@ -579,22 +576,22 @@ def test_insurance_flow_splits_the_photos_and_asks_the_dates(ready, monkeypatch)
     _text(ready, "✅ Тайёрла")
     assert "БОШЛАНИШ" in _last(ready)
     _text(ready, "10.07.2026")
-    assert "Страхователь" in _last(ready)
-    _text(ready, "✅ Тайёрла")   # left blank — the СТС owner is used
 
     assert seen["start"] == date(2026, 7, 10)
     assert seen["back"] is not None
     assert len(seen["licences"]) == 2
-    assert seen["policy_holder"] == ""
     assert "Х420КС797" in _all(ready)
     assert "лица, допущенные" in _all(ready)
     assert ready.files, "the policy was never sent back"
 
 
-def test_insurance_without_licences_is_unlimited_cover(ready, monkeypatch) -> None:
+def test_insurance_without_licences_is_unlimited_cover(
+        ready, monkeypatch, tmp_path) -> None:
     seen = {}
+    blank = tmp_path / "ИНГО.pdf"
+    blank.write_bytes(b"%PDF-1.4\n")
     ctl = ready.ctl()["insurance"]
-    monkeypatch.setattr(ctl, "templates", lambda: [_FakeTemplate()])
+    monkeypatch.setattr(ctl, "templates", lambda: [blank])
     monkeypatch.setattr(ctl, "generate_from_images", _fake_policy(seen))
 
     _text(ready, "🚗 СТРАХОВКА")
@@ -603,7 +600,6 @@ def test_insurance_without_licences_is_unlimited_cover(ready, monkeypatch) -> No
     _photo(ready)
     _text(ready, "✅ Тайёрла")
     _text(ready, "10.07.2026")
-    _text(ready, "✅ Тайёрла")
 
     assert seen["licences"] == []
     assert "без ограничения" in _all(ready)

@@ -343,6 +343,15 @@ class MainWindow(QMainWindow):
                 SertifikatService(self._settings),
             ))
         if key == "nav.strahovka":
+            from src.controllers.osago_controller import OsagoController
+            from src.services.osago_service import OsagoService
+            from src.ui.views.osago_view import OsagoView
+
+            return OsagoView(OsagoController(
+                self._container.resolve(OcrService),
+                OsagoService(self._settings),
+            ))
+        if key == "nav.strahovka_old":
             from src.controllers.insurance_controller import InsuranceController
             from src.database.repositories.insurance_template_repo import (
                 InsuranceTemplateRepository,
