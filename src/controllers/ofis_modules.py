@@ -785,7 +785,9 @@ def _run_mvd_trud(ctx: RunContext, state: dict) -> list[Path]:
         or (patent.profession or ""),
         deal_date=answers.get("deal_date") or date.today(),
         uved_no=str(answers.get("uved_no") or "").strip(),
-        spravka_no=str(answers.get("spravka_no") or "").strip())
+        spravka_no=str(answers.get("spravka_no") or "").strip(),
+        # the place of work is the firm's own — what the computer remembered
+        work_address=ctl.work_address())
     return [result.saved]
 
 

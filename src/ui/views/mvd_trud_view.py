@@ -116,6 +116,13 @@ class MvdTrudView(QWidget):
         self._spravka_no = QLineEdit()
         grid.addWidget(self._spravka_no, 1, 3)
 
+        grid.addWidget(QLabel("Иш жойи адреси (область, эсда қолади):"), 2, 0)
+        self._work_address = QLineEdit(self._c.work_address())
+        self._work_address.setPlaceholderText(
+            "масалан Московская обл., г. Подольск, ул. Большая "
+            "Серпуховская, д. 43с12")
+        grid.addWidget(self._work_address, 2, 1, 1, 3)
+
         # -- run --------------------------------------------------------
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")
@@ -266,6 +273,9 @@ class MvdTrudView(QWidget):
         profession = self._profession.currentText().strip()
         uved_no = self._uved_no.text().strip()
         spravka_no = self._spravka_no.text().strip()
+        work_address = self._work_address.text().strip()
+        if work_address:
+            self._c.remember_work_address(work_address)
 
         self._run.setEnabled(False)
         self._progress.start("Ҳужжатлар ўқилиб, 10 варақ тўлдирилаяпти…")
@@ -276,7 +286,8 @@ class MvdTrudView(QWidget):
             return self._c.generate(
                 template=Path(template), passport=read_passport,
                 patent=read_patent, profession=profession,
-                deal_date=when, uved_no=uved_no, spravka_no=spravka_no)
+                deal_date=when, uved_no=uved_no, spravka_no=spravka_no,
+                work_address=work_address)
 
         run_async(work, on_success=self._done, on_error=self._failed)
 

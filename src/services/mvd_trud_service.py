@@ -58,9 +58,25 @@ def _safe(name: str) -> str:
     return cleaned
 
 
+#: The область form asks the place of work; it is the firm's own and
+#: constant, so it is typed once and offered back every next run.
+KEY_WORK_ADDRESS = "mvdtrud.work_address"
+
+
 class MvdTrudService:
     def __init__(self, settings=None) -> None:
         self._settings = settings
+
+    # ------------------------------------------------------- work address
+    def work_address(self) -> str:
+        if self._settings is None:
+            return ""
+        return str(self._settings.get(KEY_WORK_ADDRESS, "") or "").strip()
+
+    def remember_work_address(self, value: str) -> None:
+        value = " ".join((value or "").split())
+        if self._settings is not None and value:
+            self._settings.set(KEY_WORK_ADDRESS, value)
 
     # ---------------------------------------------------------- templates
     def templates(self, region: str = "moscow") -> list[Path]:

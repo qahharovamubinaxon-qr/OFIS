@@ -323,3 +323,50 @@ def test_each_region_keeps_its_own_blanks_and_layouts(tmp_path) -> None:
     service.save_layout(moscow, {"fields": {"p1_fio": [0.1, 0.2, 0.012]}})
     assert service.layout(twin) == {}, "the область twin inherited Moscow's dragging"
     assert service.layout(moscow)["fields"]["p1_fio"] == [0.1, 0.2, 0.012]
+
+
+def test_the_oblast_missing_texts_now_print() -> None:
+    """The owner found two spots the packet left empty: Прил.№1's place-of-
+    work cells and the справка's «Дата приема уведомления»."""
+    from src.pdf.mvd_trud_renderer import oblast_values
+
+    data = MvdTrudData(**_WORKER,
+                       work_address="Московская обл., г. Подольск")
+    made = oblast_values(data)
+    assert made["o6_address"] == "МОСКОВСКАЯ ОБЛ., Г. ПОДОЛЬСК"
+    assert made["o10_accept_date"] == "28.07.2026"
+
+
+def test_a_long_rep_line_shrinks_into_the_printed_gap(tmp_path) -> None:
+    """Page 8 prints «, именуемый в дальнейшем» right after the gap — the
+    citizenship+ФИО line must stop at the slot's right edge, never over it."""
+    import numpy as np
+    from src.pdf.mvd_trud_spec import OBLAST_SLOTS
+
+    slot = OBLAST_SLOTS["o8_rep_fio_1"]
+    assert slot.right_edge > slot.x
+    data = MvdTrudData(**{**_WORKER,
+                          "surname": "ОЧЕНЬДЛИННОФАМИЛИЕВ",
+                          "patronymic": "АЛЕКСАНДРОВИЧ УГЛИ"})
+    pdf = render(data, _blank(tmp_path, pages=11), region="oblast")
+    with fitz.open("pdf", pdf) as doc:
+        pix = doc[7].get_pixmap(dpi=150)
+        img = np.frombuffer(pix.samples, np.uint8).reshape(
+            pix.height, pix.width, pix.n)[:, :, :3]
+    band = img[int((slot.baseline - 0.014) * pix.height):
+               int((slot.baseline + 0.004) * pix.height)]
+    _ys, xs = np.nonzero(band.mean(axis=2) < 128)
+    assert len(xs), "the line left no ink"
+    assert xs.max() <= (slot.right_edge + 0.004) * pix.width, \
+        "the line ran over the form's own words"
+
+
+def test_the_work_address_is_typed_once_and_kept() -> None:
+    from src.app import build_container
+    from src.config.settings_service import SettingsService
+    from src.services.mvd_trud_service import MvdTrudService
+
+    service = MvdTrudService(build_container().resolve(SettingsService))
+    assert service.work_address() == ""
+    service.remember_work_address("  Московская обл.,  г. Подольск ")
+    assert service.work_address() == "Московская обл., г. Подольск"

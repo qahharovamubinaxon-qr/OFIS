@@ -51,6 +51,9 @@ class MvdTrudData:
     pat_until: date | None = None
     uved_no: str = ""
     spravka_no: str = ""
+    #: the область Прил.№1 asks the place of work in its own cells — the
+    #: blank leaves them empty, so the office types the address once
+    work_address: str = ""
     #: per-page overrides the office dragged: {"fields": {key: [x, b, size]}}
     layout: dict = field(default_factory=dict)
 
@@ -247,6 +250,7 @@ def oblast_values(data: MvdTrudData) -> dict[str, str]:
         "o6_pat_number": (data.pat_number or "").upper(),
         "o6_pat_issue_all": "".join(pat),
         "o6_profession": (data.profession or "").upper(),
+        "o6_address": (data.work_address or "").upper(),
         "o7_deal_day": deal[0], "o7_deal_month": deal[1],
         "o7_deal_year": deal[2],
         "o7_fio": fio,
@@ -267,6 +271,7 @@ def oblast_values(data: MvdTrudData) -> dict[str, str]:
         "o9_initials": data.initials(),
         "o10_spravka_no": (data.spravka_no or "").strip(),
         "o10_fio": fio,
+        "o10_accept_date": _dots(data.deal_date),
         "o11_uved_no": (data.spravka_no or "").strip(),
         "o11_uved_ref": ((data.uved_no or "").strip() or "б/н")
         + (f" от {_dots(data.deal_date)}" if data.deal_date else ""),
@@ -314,7 +319,8 @@ def placed(layout: dict | None = None,
                         wrap_per_row=slot.wrap_per_row,
                         wrap_pitch=(slot.wrap_pitch * scale
                                     if slot.wrap_pitch > 0 else slot.wrap_pitch),
-                        row_step=slot.row_step)
+                        row_step=slot.row_step,
+                        right_edge=slot.right_edge)
     return out
 
 
@@ -381,11 +387,32 @@ def render(data: MvdTrudData, template: Path | str,
             if slot.pitch > 0:
                 _write_cells(page, slot, text, width=width, height=height,
                              fontfile=fontfile, fontname=fontname)
-            else:
-                page.insert_text((slot.x * width, slot.baseline * height),
-                                 text, fontsize=slot.size * height,
-                                 fontfile=fontfile, fontname=fontname,
-                                 color=(0, 0, 0), fill_opacity=TEXT_OPACITY)
+                continue
+            size = slot.size * height
+            squeeze = 1.0
+            if slot.right_edge > slot.x:
+                # shrink into the printed gap, never over the form's words
+                room = (slot.right_edge - slot.x) * width
+                try:
+                    text_w = fitz.Font(fontfile=fontfile).text_length(text, size)
+                except Exception:                 # noqa: BLE001
+                    text_w = len(text) * size * 0.5
+                if text_w > room > 0:
+                    size *= max(0.72, room / text_w)
+                    try:
+                        text_w = fitz.Font(fontfile=fontfile).text_length(
+                            text, size)
+                    except Exception:             # noqa: BLE001
+                        text_w = len(text) * size * 0.5
+                    if text_w > room:
+                        squeeze = room / text_w
+            point = fitz.Point(slot.x * width, slot.baseline * height)
+            morph = ((point, fitz.Matrix(squeeze, 0, 0, 1, 0, 0))
+                     if squeeze < 1.0 else None)
+            page.insert_text(point, text, fontsize=size,
+                             fontfile=fontfile, fontname=fontname,
+                             color=(0, 0, 0), fill_opacity=TEXT_OPACITY,
+                             morph=morph)
         return doc.tobytes()
 
 

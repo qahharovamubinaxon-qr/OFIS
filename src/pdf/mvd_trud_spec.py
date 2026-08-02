@@ -64,6 +64,10 @@ class Slot:
     wrap_pitch: float = -1.0
     #: how far each continuation row sits below the previous (page height)
     row_step: float = ROW_STEP
+    #: plain text only: never run past this page-x — the value shrinks and
+    #: squeezes to fit, so a long ФИО stops colliding with the form's own
+    #: words printed right after the gap (0 → no limit)
+    right_edge: float = 0.0
 
 
 #: Every worker value, measured off the office's own filled packet.
@@ -269,25 +273,32 @@ OBLAST_SLOTS: dict[str, Slot] = {
     "o4_year":         Slot(4, 0.3250, 0.2470),
 
     # -- 6: Прил.№1 — ишчи катаклари --------------------------------------
-    "o6_surname":      Slot(6, 0.1700, 0.4020, CELL_SIZE, pitch=0.0242, per_row=24),
-    "o6_name":         Slot(6, 0.1700, 0.4270, CELL_SIZE, pitch=0.0242, per_row=24),
-    "o6_patronymic":   Slot(6, 0.2470, 0.4530, CELL_SIZE, pitch=0.0242, per_row=21),
-    "o6_citizenship":  Slot(6, 0.2180, 0.4890, CELL_SIZE, pitch=0.0242, per_row=22),
-    "o6_birth_day":    Slot(6, 0.2800, 0.5330, CELL_SIZE, pitch=0.0242),
-    "o6_birth_month":  Slot(6, 0.3900, 0.5330, CELL_SIZE, pitch=0.0242),
-    "o6_birth_year":   Slot(6, 0.4800, 0.5330, CELL_SIZE, pitch=0.0242),
-    "o6_doc_kind":     Slot(6, 0.4700, 0.5680, CELL_SIZE, pitch=0.0242, per_row=9),
-    "o6_pass_series":  Slot(6, 0.1070, 0.6010, CELL_SIZE, pitch=0.0242, per_row=7),
-    "o6_pass_number":  Slot(6, 0.3330, 0.6010, CELL_SIZE, pitch=0.0242, per_row=10),
+    # page 6's grid was measured box-by-box off the owner's own ПОДОЛЬСК
+    # blank — its cells run a 0.0274 pitch, not the первый черновик's 0.0242,
+    # which is why long values drifted onto the borders
+    "o6_surname":      Slot(6, 0.1715, 0.3927, CELL_SIZE, pitch=0.0274, per_row=27),
+    "o6_name":         Slot(6, 0.1715, 0.4195, CELL_SIZE, pitch=0.0274, per_row=27),
+    "o6_patronymic":   Slot(6, 0.2538, 0.4469, CELL_SIZE, pitch=0.0274, per_row=24),
+    "o6_citizenship":  Slot(6, 0.2247, 0.4834, CELL_SIZE, pitch=0.0274, per_row=25),
+    "o6_birth_day":    Slot(6, 0.2804, 0.5290, CELL_SIZE, pitch=0.0282),
+    "o6_birth_month":  Slot(6, 0.3917, 0.5290, CELL_SIZE, pitch=0.0274),
+    "o6_birth_year":   Slot(6, 0.4739, 0.5290, CELL_SIZE, pitch=0.0277),
+    "o6_doc_kind":     Slot(6, 0.4739, 0.5672, CELL_SIZE, pitch=0.0274, per_row=16),
+    "o6_pass_series":  Slot(6, 0.1699, 0.6015, CELL_SIZE, pitch=0.0277, per_row=7),
+    "o6_pass_number":  Slot(6, 0.3917, 0.6015, CELL_SIZE, pitch=0.0275, per_row=9),
     # this form runs the issue date as ONE row of eight boxes — ДДММГГГГ
-    "o6_issue_all":    Slot(6, 0.6950, 0.6010, CELL_SIZE, pitch=0.0242, per_row=8),
-    "o6_issued_by":    Slot(6, 0.1690, 0.6370, CELL_SIZE, pitch=0.0242,
-                            per_row=25, rows=2, row_step=0.0300),
-    "o6_pat_series":   Slot(6, 0.1690, 0.7300, CELL_SIZE, pitch=0.0242, per_row=5),
-    "o6_pat_number":   Slot(6, 0.3430, 0.7300, CELL_SIZE, pitch=0.0242, per_row=10),
-    "o6_pat_issue_all": Slot(6, 0.6950, 0.7300, CELL_SIZE, pitch=0.0242, per_row=8),
-    "o6_profession":   Slot(6, 0.0910, 0.7990, CELL_SIZE, pitch=0.0242,
-                            per_row=33, rows=3, row_step=0.0260),
+    "o6_issue_all":    Slot(6, 0.6956, 0.6015, CELL_SIZE, pitch=0.0275, per_row=8),
+    "o6_issued_by":    Slot(6, 0.1699, 0.6362, CELL_SIZE, pitch=0.0274,
+                            per_row=27, rows=2, row_step=0.0319),
+    "o6_pat_series":   Slot(6, 0.1699, 0.7343, CELL_SIZE, pitch=0.0277, per_row=5),
+    "o6_pat_number":   Slot(6, 0.3368, 0.7343, CELL_SIZE, pitch=0.0275, per_row=10),
+    "o6_pat_issue_all": Slot(6, 0.6956, 0.7343, CELL_SIZE, pitch=0.0275, per_row=8),
+    "o6_profession":   Slot(6, 0.0909, 0.8073, CELL_SIZE, pitch=0.0274,
+                            per_row=30, rows=3, row_step=0.0273),
+    # section 4 — место осуществления трудовой деятельности; the blank
+    # leaves it empty, the owner types the work address once and it stays
+    "o6_address":      Slot(6, 0.0909, 0.9282, CELL_SIZE, pitch=0.0274,
+                            per_row=30, rows=2, row_step=0.0382),
 
     # -- 7: Прил.№1 — саналар ва тасдиқ -----------------------------------
     "o7_deal_day":     Slot(7, 0.6250, 0.1000, CELL_SIZE, pitch=0.0242),
@@ -300,7 +311,9 @@ OBLAST_SLOTS: dict[str, Slot] = {
 
     # -- 8: Трудовой договор, 1-бет ---------------------------------------
     "o8_date":         Slot(8, 0.7900, 0.1520),
-    "o8_rep_fio_1":    Slot(8, 0.3100, 0.2620),
+    # the blank prints «, именуемый в дальнейшем» right after the gap — a
+    # long ФИО shrinks into the gap instead of running over those words
+    "o8_rep_fio_1":    Slot(8, 0.3100, 0.2620, right_edge=0.7750),
     "o8_rep_fio_2":    Slot(8, 0.0480, 0.2790),
     "o8_pat_series":   Slot(8, 0.4470, 0.3600),
     "o8_pat_number":   Slot(8, 0.4900, 0.3600),
@@ -321,6 +334,8 @@ OBLAST_SLOTS: dict[str, Slot] = {
     # -- 10: Справка (655) -------------------------------------------------
     "o10_spravka_no":  Slot(10, 0.3500, 0.3280),
     "o10_fio":         Slot(10, 0.2980, 0.3960),
+    # «Дата приема уведомления» — the label stood alone with no date after it
+    "o10_accept_date": Slot(10, 0.4200, 0.5150),
 
     # -- 11: Справка о приеме (Прил. N2) ----------------------------------
     "o11_uved_no":     Slot(11, 0.3300, 0.3330),

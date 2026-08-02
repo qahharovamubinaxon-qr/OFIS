@@ -84,7 +84,8 @@ class MvdTrudController:
     # ----------------------------------------------------------- printing
     def generate(self, *, template: Path | None, passport: Passport,
                  patent: Patent, profession: str, deal_date: date,
-                 uved_no: str = "", spravka_no: str = "") -> MvdTrudResult:
+                 uved_no: str = "", spravka_no: str = "",
+                 work_address: str = "") -> MvdTrudResult:
         """One packet from what the documents said and the operator picked."""
         data = MvdTrudData(
             surname=passport.surname or patent.holder_surname or "",
@@ -106,8 +107,17 @@ class MvdTrudController:
             # the patent's own end date when the back said it; a year from
             # issue otherwise — that is how long a patent runs
             pat_until=patent.valid_to or plus_one_year(patent.issue_date),
-            uved_no=uved_no, spravka_no=spravka_no)
+            uved_no=uved_no, spravka_no=spravka_no,
+            work_address=work_address)
         return self._service.generate(data, template)
+
+    # the область's place-of-work address is the firm's own and constant —
+    # typed once, kept in settings, offered back on the next run
+    def work_address(self) -> str:
+        return self._service.work_address()
+
+    def remember_work_address(self, value: str) -> None:
+        self._service.remember_work_address(value)
 
     @staticmethod
     def read_image(path: Path) -> bytes:
