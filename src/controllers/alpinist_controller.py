@@ -12,15 +12,28 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.domain.documents import Passport
 from src.ocr.service import OcrService
 from src.pdf.alpinist_renderer import AlpinistData, plus_three_years
 from src.pdf.alpinist_spec import PHOTO_RATIO
 from src.services.alpinist_service import AlpinistResult, AlpinistService
-from src.services.portrait import clean_portrait
+from src.services.photo_service import prepare_portrait
 
 log = get_logger(__name__)
+
+
+def _card_photo(photo: bytes) -> bytes:
+    """The worker's snapshot through the ONE crop the office trusts.
+
+    :func:`prepare_portrait` is the РАСМ-ФОТО/СФЕРА pipeline — YuNet face,
+    eye-line straightening, head at the office's own share of the frame,
+    U²-Net white ground — the owner asked АЛПИНИСТ cut exactly like that."""
+    made = prepare_portrait(photo, aspect=PHOTO_RATIO)
+    if made is None:
+        raise OfisError("Ишчи расми ўқилмади — JPG ёки PNG расм ташланг.")
+    return made
 
 
 class AlpinistController:
@@ -76,7 +89,7 @@ class AlpinistController:
             patronymic=passport.patronymic or "",
             ud_number=ud_number, blank_number=blank_number,
             issue_date=issue_date,
-            photo_png=clean_portrait(photo, PHOTO_RATIO) if photo else None,
+            photo_png=_card_photo(photo) if photo else None,
             sign_png=signature)
         stamp = self._service.stamp()
         if stamp is not None:

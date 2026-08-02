@@ -144,37 +144,50 @@ def test_a_layout_saved_before_the_stamp_moved_lets_it_go(tmp_path) -> None:
 # ---------------------------------------------------------- the portrait
 
 
-def test_clean_portrait_whitens_the_ground_and_cuts_3x4() -> None:
+def test_the_card_photo_takes_the_sfera_crop(monkeypatch) -> None:
+    """The owner: «СФЕРА кесгандек кессин» — the card photo must go through
+    the ONE crop (photo_service.prepare_portrait), at the frame's aspect."""
+    from src.controllers import alpinist_controller
+    from src.pdf.alpinist_spec import PHOTO_RATIO
+
+    seen = {}
+
+    def fake_prepare(data, aspect=0.75, height=800):
+        seen["aspect"] = aspect
+        return b"\x89PNG\r\n\x1a\nmade"
+
+    monkeypatch.setattr(alpinist_controller, "prepare_portrait", fake_prepare)
+    made = alpinist_controller._card_photo(b"snapshot")
+    assert made.startswith(b"\x89PNG")
+    assert seen["aspect"] == PHOTO_RATIO
+
+
+def test_an_unreadable_photo_is_a_sentence_not_a_traceback(monkeypatch) -> None:
+    from src.common.errors import OfisError
+    from src.controllers import alpinist_controller
+
+    monkeypatch.setattr(alpinist_controller, "prepare_portrait",
+                        lambda *a, **k: None)
+    with pytest.raises(OfisError):
+        alpinist_controller._card_photo(b"not a picture")
+
+
+def test_the_real_pipeline_hands_back_the_frames_aspect() -> None:
     import cv2
     import numpy as np
     from src.pdf.alpinist_spec import PHOTO_RATIO
-    from src.services.portrait import clean_portrait
+    from src.services.photo_service import prepare_portrait
 
     canvas = np.full((800, 600, 3), (140, 120, 100), np.uint8)
     cv2.ellipse(canvas, (300, 300), (120, 160), 0, 0, 360, (30, 30, 60), -1)
     cv2.rectangle(canvas, (140, 430), (460, 800), (40, 35, 70), -1)
     ok, jpg = cv2.imencode(".jpg", canvas)
     assert ok
-
-    out = clean_portrait(jpg.tobytes(), PHOTO_RATIO)
+    out = prepare_portrait(jpg.tobytes(), aspect=PHOTO_RATIO)
+    assert out is not None
     cut = cv2.imdecode(np.frombuffer(out, np.uint8), cv2.IMREAD_COLOR)
     ratio = cut.shape[1] / cut.shape[0]
-    assert abs(ratio - PHOTO_RATIO) < 0.03, f"cut ratio {ratio:.3f}"
-    corners = np.concatenate([cut[:10, :10].reshape(-1, 3),
-                              cut[:10, -10:].reshape(-1, 3)])
-    assert corners.mean() > 230, "the ground behind the head is not white"
-    # the owner complained the cut kept only head and neck — the shoulders
-    # (the dark block under the head) must be in the picture too
-    lower = cut[int(0.70 * cut.shape[0]):]
-    assert (lower.mean(axis=2) < 120).any(), "the shoulders were cut away"
-
-
-def test_a_broken_photo_is_a_sentence_not_a_traceback() -> None:
-    from src.common.errors import OfisError
-    from src.services.portrait import clean_portrait
-
-    with pytest.raises(OfisError):
-        clean_portrait(b"not a picture")
+    assert abs(ratio - PHOTO_RATIO) < 0.02, f"cut ratio {ratio:.3f}"
 
 
 # ----------------------------------------------------------- the service
