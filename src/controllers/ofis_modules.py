@@ -163,7 +163,12 @@ def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     result = ctl.generate(
         firm=Path(state["target"]), passport=passport, patent=patent,
         profession=str(state["answers"].get("profession") or "").strip(),
-        deal_date=state["answers"].get("form_date") or date.today())
+        deal_date=state["answers"].get("form_date") or date.today(),
+        want_pdf=True)
+    for out in result.saved:
+        if out.suffix.lower() == ".docx":
+            ctx.note("Word ҳолида юборилди — PDF учун компютерда Word керак.")
+            break
     return list(result.saved)
 
 

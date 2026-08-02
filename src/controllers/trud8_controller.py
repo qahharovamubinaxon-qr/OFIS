@@ -30,12 +30,12 @@ class Trud8Controller:
     def firms(self) -> list[Path]:
         return self._service.firms()
 
-    def add_firm(self, name: str, td_pdf: Path,
-                 uv_pdf: Path | None = None) -> Path:
-        return self._service.add_firm(name, td_pdf, uv_pdf)
+    def add_firm(self, name: str, td_file: Path,
+                 uv_file: Path | None = None) -> Path:
+        return self._service.add_firm(name, td_file, uv_file)
 
-    def set_uv(self, firm: Path, uv_pdf: Path) -> None:
-        self._service.set_uv(firm, uv_pdf)
+    def set_uv(self, firm: Path, uv_file: Path) -> None:
+        self._service.set_uv(firm, uv_file)
 
     def remove_firm(self, firm: Path) -> None:
         self._service.remove_firm(firm)
@@ -58,8 +58,8 @@ class Trud8Controller:
 
     # ----------------------------------------------------------- printing
     def generate(self, *, firm: Path | None, passport: Passport,
-                 patent: Patent, profession: str,
-                 deal_date: date) -> Trud8Result:
+                 patent: Patent, profession: str, deal_date: date,
+                 want_pdf: bool = False) -> Trud8Result:
         data = Trud8Data(
             surname=passport.surname or patent.holder_surname or "",
             name=passport.name or patent.holder_name or "",
@@ -81,4 +81,4 @@ class Trud8Controller:
             pat_issued=patent.issue_date,
             profession=profession or (patent.profession or ""),
             deal_date=deal_date)
-        return self._service.generate(data, firm)
+        return self._service.generate(data, firm, want_pdf=want_pdf)

@@ -15,8 +15,9 @@ from pathlib import Path
 from src.common.errors import ValidationError
 from src.common.logging import get_logger
 from src.config import paths
-from src.pdf.trud8_renderer import Trud8Data, output_stem, render
+from src.pdf.trud8_renderer import Trud8Data, output_stem, render, values
 from src.services import blank_layout
+from src.services.trud8_docx import fill, to_pdf
 
 log = get_logger(__name__)
 
@@ -57,44 +58,50 @@ class Trud8Service:
         return sorted(p for p in firms_dir().iterdir() if p.is_dir())
 
     def seed(self) -> None:
-        """The bundled eight, copied once — never overwriting the office's."""
+        """The bundled firms, copied once — and folders seeded in the old
+        PDF days are UPGRADED file-by-file, so the Word blanks arrive
+        without touching anything the office added itself."""
         bundled = bundled_dir()
         if not bundled.exists():
             return
         for firm in bundled.iterdir():
+            if not firm.is_dir():
+                continue
             dest = firms_dir() / firm.name
-            if firm.is_dir() and not dest.exists():
-                shutil.copytree(firm, dest)
+            dest.mkdir(parents=True, exist_ok=True)
+            for item in firm.iterdir():
+                if not (dest / item.name).exists():
+                    shutil.copyfile(item, dest / item.name)
 
-    def add_firm(self, name: str, td_pdf: Path,
-                 uv_pdf: Path | None = None) -> Path:
-        td_pdf = Path(td_pdf)
-        if td_pdf.suffix.lower() != ".pdf" or not td_pdf.exists():
-            raise ValidationError("ТД бланкаси PDF бўлиши керак")
+    def _install(self, folder: Path, kind: str, source: Path) -> None:
+        """One blank into the firm: a Word file is probed for its OLD
+        worker so replacement works with no hand-made map."""
+        source = Path(source)
+        suffix = source.suffix.lower()
+        if suffix not in (".docx", ".pdf") or not source.exists():
+            raise ValidationError("Бланка Word (.docx) ёки PDF бўлиши керак")
+        shutil.copyfile(source, folder / f"{kind}{suffix}")
+        if suffix == ".docx":
+            from src.services.trud8_probe import doc_texts, td_values, uv_values
+
+            texts = doc_texts(folder / f"{kind}{suffix}")
+            found = uv_values(texts) if kind == "uv" else td_values(texts)
+            (folder / f"{kind}.values.json").write_text(
+                json.dumps(found, ensure_ascii=False, indent=1),
+                encoding="utf-8")
+
+    def add_firm(self, name: str, td_file: Path,
+                 uv_file: Path | None = None) -> Path:
         folder = firms_dir() / _safe(name)
         folder.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(td_pdf, folder / "td.pdf")
-        # a fresh firm starts from МОНОТЕК's map — the closest style — and
-        # the office drags from there
-        for kind, _source in (("td", td_pdf), ("uv", uv_pdf)):
-            if kind == "uv":
-                if uv_pdf is None:
-                    continue
-                shutil.copyfile(Path(uv_pdf), folder / "uv.pdf")
-            donor = bundled_dir() / "МОНОТЕК СТРОЙ" / f"{kind}.json"
-            if donor.exists() and not (folder / f"{kind}.json").exists():
-                shutil.copyfile(donor, folder / f"{kind}.json")
+        self._install(folder, "td", td_file)
+        if uv_file is not None:
+            self._install(folder, "uv", uv_file)
         log.info("ТРУД фирмаси қўшилди: %s", folder.name)
         return folder
 
-    def set_uv(self, firm: Path, uv_pdf: Path) -> None:
-        uv_pdf = Path(uv_pdf)
-        if uv_pdf.suffix.lower() != ".pdf" or not uv_pdf.exists():
-            raise ValidationError("УВ бланкаси PDF бўлиши керак")
-        shutil.copyfile(uv_pdf, Path(firm) / "uv.pdf")
-        donor = bundled_dir() / "МОНОТЕК СТРОЙ" / "uv.json"
-        if donor.exists() and not (Path(firm) / "uv.json").exists():
-            shutil.copyfile(donor, Path(firm) / "uv.json")
+    def set_uv(self, firm: Path, uv_file: Path) -> None:
+        self._install(Path(firm), "uv", uv_file)
 
     def remove_firm(self, firm: Path) -> None:
         firm = Path(firm)
@@ -118,7 +125,25 @@ class Trud8Service:
                                  layout)
 
     # ----------------------------------------------------------- printing
-    def generate(self, data: Trud8Data, firm: Path | None) -> Trud8Result:
+    def _replacements(self, firm: Path, kind: str,
+                      data: Trud8Data) -> dict[str, str]:
+        """old worker's strings (off the firm's own json) → the new ones."""
+        stored_path = Path(firm) / f"{kind}.values.json"
+        if not stored_path.exists():
+            return {}
+        stored = json.loads(stored_path.read_text(encoding="utf-8"))
+        texts = values(data)
+        out: dict[str, str] = {}
+        for key, old in stored.items():
+            new = (texts.get(key) or "").strip()
+            old = (old or "").strip()
+            if old and new and old != new:
+                out[old] = new
+        return out
+
+    def generate(self, data: Trud8Data, firm: Path | None,
+                 want_pdf: bool = False) -> Trud8Result:
+        """Both papers as the firm's own Word files — PDF for the бот."""
         if firm is None:
             raise ValidationError("Фирмани танланг.")
         firm = Path(firm)
@@ -128,22 +153,37 @@ class Trud8Service:
         out_dir.mkdir(parents=True, exist_ok=True)
         saved: list[Path] = []
         for kind, tag in (("td", "ТД"), ("uv", "УВ")):
-            template = firm / f"{kind}.pdf"
-            if not template.exists():
+            template = firm / f"{kind}.docx"
+            if template.exists():
+                target = out_dir / f"{output_stem(data)}_{tag}.docx"
+                counter = 2
+                while target.exists():
+                    target = out_dir / (f"{output_stem(data)}_{tag} "
+                                        f"({counter}).docx")
+                    counter += 1
+                fill(template, self._replacements(firm, kind, data), target)
+                if want_pdf:
+                    pdf = to_pdf(target)
+                    saved.append(pdf if pdf is not None else target)
+                else:
+                    saved.append(target)
                 continue
-            pdf = render(data, template, self.slots(firm, kind),
-                         self.layout(firm, kind))
-            target = out_dir / f"{output_stem(data)}_{tag}.pdf"
-            counter = 2
-            while target.exists():
-                target = out_dir / (f"{output_stem(data)}_{tag} "
-                                    f"({counter}).pdf")
-                counter += 1
-            target.write_bytes(pdf)
-            saved.append(target)
+            # a firm the office added with a PDF blank keeps the old path
+            template = firm / f"{kind}.pdf"
+            if template.exists():
+                pdf = render(data, template, self.slots(firm, kind),
+                             self.layout(firm, kind))
+                target = out_dir / f"{output_stem(data)}_{tag}.pdf"
+                counter = 2
+                while target.exists():
+                    target = out_dir / (f"{output_stem(data)}_{tag} "
+                                        f"({counter}).pdf")
+                    counter += 1
+                target.write_bytes(pdf)
+                saved.append(target)
         if not saved:
             raise ValidationError(
-                f"«{firm.name}» да бланка йўқ — ТД/УВ PDF ларини юкланг.")
+                f"«{firm.name}» да бланка йўқ — ТД/УВ файлларини юкланг.")
         log.info("ТРУД: %s — %s (%s)", data.fio(), firm.name,
                  ", ".join(p.name for p in saved))
         return Trud8Result(saved=saved, surname=(data.surname or "").strip())

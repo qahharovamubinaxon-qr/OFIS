@@ -140,12 +140,12 @@ class Trud8View(QWidget):
         if not ok or not name.strip():
             return
         td, _ = QFileDialog.getOpenFileName(
-            self, "ТД бланкаси (PDF)", "", "Бланка (*.pdf)")
+            self, "ТД бланкаси (Word/PDF)", "", "Бланка (*.docx *.pdf)")
         if not td:
             return
         uv, _ = QFileDialog.getOpenFileName(
-            self, "УВ бланкаси (PDF, ихтиёрий — Бекор = ўтказиш)", "",
-            "Бланка (*.pdf)")
+            self, "УВ бланкаси (Word/PDF, ихтиёрий — Бекор = ўтказиш)", "",
+            "Бланка (*.docx *.pdf)")
         try:
             self._c.add_firm(name.strip(), Path(td),
                              Path(uv) if uv else None)
@@ -161,7 +161,7 @@ class Trud8View(QWidget):
         if not firm:
             return
         uv, _ = QFileDialog.getOpenFileName(
-            self, "УВ бланкаси (PDF)", "", "Бланка (*.pdf)")
+            self, "УВ бланкаси (Word/PDF)", "", "Бланка (*.docx *.pdf)")
         if not uv:
             return
         try:
@@ -197,6 +197,10 @@ class Trud8View(QWidget):
         from src.ui.widgets.layout_editor import Item
         from src.ui.widgets.multipage_layout_editor import MultiPageLayoutEditor
 
+        if (Path(firm) / f"{kind}.docx").exists():
+            self._warn("Бу фирма Word бланкали — жойлаш керак эмас: формат "
+                       "ўзи жойлайди, натижа Word файл бўлиб чиқади.")
+            return
         template = Path(firm) / f"{kind}.pdf"
         if not template.exists():
             self._warn("Бу фирмада бундай бланка йўқ — «➕ УВ» билан юкланг.")

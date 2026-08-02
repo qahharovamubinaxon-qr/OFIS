@@ -1,11 +1,10 @@
-"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — the eight mapped firms."""
+"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — the firms' own Word files, worker swapped."""
 
 from __future__ import annotations
 
 import tempfile
 from datetime import date
 
-import fitz
 import pytest
 from src.config import paths
 from src.pdf.trud8_renderer import Trud8Data, output_stem, values
@@ -22,78 +21,91 @@ def isolated(monkeypatch):
 
 
 _WORKER = dict(
-    surname="КОРЁГДИЕВ", name="ТУЛКИНЖОН", patronymic="ТЕША УГЛИ",
-    gender="male", citizenship="УЗБЕКИСТАН", birth_date=date(1994, 11, 10),
-    pass_series="FA", pass_number="2533791", pass_issued=date(2021, 4, 12),
-    pass_issued_by="MIA OF UZBEKISTAN", pat_series="77",
-    pat_number="250695887", pat_blank_series="ПР",
-    pat_blank_number="5094937", pat_issued=date(2026, 7, 1),
+    surname="АБДУЛХАКОВ", name="СУНАТУЛЛО", patronymic="ИБОДУЛЛОЕВИЧ",
+    gender="male", citizenship="ТАДЖИКИСТАН", birth_date=date(1990, 12, 8),
+    pass_series="P", pass_number="402543058", pass_issued=date(2019, 3, 5),
+    pass_issued_by="DIA IN KULOB", pat_series="50",
+    pat_number="2600164027", pat_blank_series="ПР",
+    pat_blank_number="7805409", pat_issued=date(2026, 5, 28),
     profession="Разнорабочий", deal_date=date(2026, 8, 2))
 
 
-def test_the_bundle_ships_all_eight_firms() -> None:
+def _text_of(path) -> str:
+    from src.services.trud8_probe import doc_texts
+
+    return "\n".join(doc_texts(path))
+
+
+def test_the_bundle_ships_all_ten_firms_as_word() -> None:
     from src.services.trud8_service import bundled_dir
 
     firms = sorted(p.name for p in bundled_dir().iterdir() if p.is_dir())
-    assert len(firms) == 8
-    assert "МОНОТЕК СТРОЙ" in firms and "БАХАМ" in firms
+    assert len(firms) == 10
+    assert "МОНОТЕК СТРОЙ" in firms and "ТУЛА СЕРВИС" in firms
     for firm in bundled_dir().iterdir():
-        assert (firm / "td.pdf").exists() and (firm / "td.json").exists()
+        assert (firm / "td.docx").exists()
+        assert (firm / "td.values.json").exists()
+        assert (firm / "uv.docx").exists()
+        assert (firm / "uv.values.json").exists()
 
 
-def test_values_write_the_samples_manner() -> None:
-    made = values(Trud8Data(**_WORKER))
-    assert made["surname"] == "Корёгдиев"
-    assert made["fio"] == "Корёгдиев Тулкинжон Теша Угли"
-    assert made["gender"] == "Мужской"
-    assert made["deal_date"] == "02.08.2026"
-    assert made["pat_blank_series"] == "ПР"
-
-
-def test_generate_replaces_the_old_worker_on_both_papers() -> None:
-    from src.services.trud8_service import Trud8Service, firms_dir
+def test_generate_swaps_the_worker_inside_word() -> None:
+    from src.services.trud8_service import Trud8Service
 
     service = Trud8Service()
     firms = {f.name: f for f in service.firms()}
-    assert len(firms) == 8, "seeding lost a firm"
-    assert firms_dir().exists()
-
-    monotek = firms["МОНОТЕК СТРОЙ"]
-    result = service.generate(Trud8Data(**_WORKER), monotek)
-    assert len(result.saved) == 2                # ТД and УВ
-    assert result.saved[0].name.startswith("КОРЁГДИЕВ_ТУЛКИНЖОН")
+    assert len(firms) == 10
+    result = service.generate(Trud8Data(**_WORKER), firms["МОНОТЕК СТРОЙ"])
+    assert [p.suffix for p in result.saved] == [".docx", ".docx"]
+    assert result.saved[0].name.startswith("АБДУЛХАКОВ_СУНАТУЛЛО")
     for out in result.saved:
-        with fitz.open(str(out)) as doc:
-            ink = "".join(p.get_text() for p in doc).replace("\xa0", " ")
-        assert "Корёгдиев" in ink, f"{out.name}: the new worker is missing"
+        ink = _text_of(out)
+        assert "Абдулхаков" in ink, f"{out.name}: янги ишчи йўқ"
         assert "Хурсанов" not in ink and "Шосулаймонов" not in ink, \
-            f"{out.name}: the sample's old worker survived"
-        assert "02.08.2026" in ink
+            f"{out.name}: эски ишчи қолди"
+    uv_ink = _text_of(result.saved[1])
+    assert "02.08.2026" in uv_ink            # шартнома санаси янгиланди
+    assert "01.07.2025" not in uv_ink        # эскиси кетди
+    assert "2600164027" in uv_ink            # янги патент рақами
 
 
-def test_a_firm_without_uv_still_prints_the_td() -> None:
+def test_every_firm_loses_its_old_worker() -> None:
+    import json
+
     from src.services.trud8_service import Trud8Service
 
     service = Trud8Service()
-    firms = {f.name: f for f in service.firms()}
-    obshestroy = firms["ОБЩЕСТРОЙ-А"]
-    assert not (obshestroy / "uv.pdf").exists()
-    result = service.generate(Trud8Data(**_WORKER), obshestroy)
+    for firm in service.firms():
+        stored = json.loads(
+            (firm / "uv.values.json").read_text(encoding="utf-8"))
+        old_surname = stored.get("surname", "")
+        result = service.generate(Trud8Data(**_WORKER), firm)
+        for out in result.saved:
+            ink = _text_of(out)
+            assert "Абдулхаков" in ink, f"{firm.name}/{out.name}"
+            if old_surname and old_surname != "Абдулхаков":
+                assert old_surname not in ink, \
+                    f"{firm.name}/{out.name}: {old_surname} қолди"
+
+
+def test_adding_a_word_firm_probes_its_old_worker() -> None:
+    from src.services.trud8_service import Trud8Service, bundled_dir
+
+    service = Trud8Service()
+    donor = bundled_dir() / "ПИТЕР" / "td.docx"
+    made = service.add_firm("ЯНГИ ФИРМА", donor)
+    assert (made / "td.docx").exists()
+    import json
+
+    found = json.loads((made / "td.values.json").read_text(encoding="utf-8"))
+    assert found.get("fio") == "Шодиев Исомидин Ёкубович"
+    result = service.generate(Trud8Data(**_WORKER), made)
     assert len(result.saved) == 1
-    assert result.saved[0].name.endswith("_ТД.pdf")
+    assert "Шодиев" not in _text_of(result.saved[0])
 
 
-def test_a_dragged_slot_overrides_its_own_occurrence(tmp_path) -> None:
-    from src.services.trud8_service import Trud8Service
-
-    service = Trud8Service()
-    firms = {f.name: f for f in service.firms()}
-    piter = firms["ПИТЕР"]
-    service.save_layout(piter, "td", {"fields": {}})
-    assert service.layout(piter, "td")["fields"] == {}
-    slots = service.slots(piter, "td")
-    assert slots and all("clear" in s for s in slots)
-
-
-def test_the_filename_is_surname_name() -> None:
-    assert output_stem(Trud8Data(**_WORKER)) == "КОРЁГДИЕВ_ТУЛКИНЖОН"
+def test_values_and_filename() -> None:
+    made = values(Trud8Data(**_WORKER))
+    assert made["fio"] == "Абдулхаков Сунатулло Ибодуллоевич"
+    assert made["gender"] == "Мужской"
+    assert output_stem(Trud8Data(**_WORKER)) == "АБДУЛХАКОВ_СУНАТУЛЛО"
