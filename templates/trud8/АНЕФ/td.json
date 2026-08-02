@@ -1,0 +1,154 @@
+{
+ "slots": [
+  {
+   "key": "surname",
+   "page": 1,
+   "x": 0.3014,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2994,
+    0.2372,
+    0.3734,
+    0.2543
+   ]
+  },
+  {
+   "key": "name",
+   "page": 1,
+   "x": 0.4605,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4585,
+    0.2372,
+    0.551,
+    0.2543
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 1,
+   "x": 0.676,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.674,
+    0.2372,
+    0.8297,
+    0.2543
+   ]
+  },
+  {
+   "key": "birth_date",
+   "page": 1,
+   "x": 0.304,
+   "baseline": 0.265,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.302,
+    0.2532,
+    0.392,
+    0.2703
+   ]
+  },
+  {
+   "key": "citizenship",
+   "page": 1,
+   "x": 0.2849,
+   "baseline": 0.2969,
+   "size": 0.0107,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2829,
+    0.2869,
+    0.3757,
+    0.3016
+   ]
+  },
+  {
+   "key": "pass_number",
+   "page": 1,
+   "x": 0.4643,
+   "baseline": 0.3127,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4623,
+    0.3009,
+    0.5526,
+    0.318
+   ]
+  },
+  {
+   "key": "profession",
+   "page": 1,
+   "x": 0.4927,
+   "baseline": 0.3287,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4907,
+    0.3169,
+    0.6121,
+    0.334
+   ]
+  },
+  {
+   "key": "surname",
+   "page": 6,
+   "x": 0.2395,
+   "baseline": 0.6486,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2375,
+    0.6368,
+    0.3114,
+    0.6539
+   ]
+  },
+  {
+   "key": "name",
+   "page": 6,
+   "x": 0.3986,
+   "baseline": 0.6486,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.3966,
+    0.6368,
+    0.4891,
+    0.6539
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 6,
+   "x": 0.6143,
+   "baseline": 0.6486,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.6123,
+    0.6368,
+    0.768,
+    0.6539
+   ]
+  }
+ ]
+}

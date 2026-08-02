@@ -1,0 +1,244 @@
+{
+ "slots": [
+  {
+   "key": "pat_series",
+   "page": 1,
+   "x": 0.2033,
+   "baseline": 0.1502,
+   "size": 0.0143,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2013,
+    0.1375,
+    0.2278,
+    0.1558
+   ]
+  },
+  {
+   "key": "pat_series",
+   "page": 1,
+   "x": 0.3603,
+   "baseline": 0.1502,
+   "size": 0.0143,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.3583,
+    0.1375,
+    0.3848,
+    0.1558
+   ]
+  },
+  {
+   "key": "surname",
+   "page": 1,
+   "x": 0.2025,
+   "baseline": 0.2359,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.2005,
+    0.2232,
+    0.3433,
+    0.2414
+   ]
+  },
+  {
+   "key": "name",
+   "page": 1,
+   "x": 0.4333,
+   "baseline": 0.2359,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.4313,
+    0.2232,
+    0.5352,
+    0.2414
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 1,
+   "x": 0.6661,
+   "baseline": 0.2359,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.6641,
+    0.2232,
+    0.8189,
+    0.2414
+   ]
+  },
+  {
+   "key": "birth_date",
+   "page": 1,
+   "x": 0.2082,
+   "baseline": 0.2534,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.2062,
+    0.2407,
+    0.3042,
+    0.259
+   ]
+  },
+  {
+   "key": "citizenship",
+   "page": 1,
+   "x": 0.1955,
+   "baseline": 0.2712,
+   "size": 0.0143,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.1935,
+    0.2585,
+    0.3136,
+    0.2768
+   ]
+  },
+  {
+   "key": "pass_number",
+   "page": 1,
+   "x": 0.3362,
+   "baseline": 0.2883,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.3342,
+    0.2756,
+    0.4319,
+    0.2939
+   ]
+  },
+  {
+   "key": "pass_issued",
+   "page": 1,
+   "x": 0.5445,
+   "baseline": 0.2883,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.5425,
+    0.2756,
+    0.6403,
+    0.2939
+   ]
+  },
+  {
+   "key": "pat_series",
+   "page": 1,
+   "x": 0.2698,
+   "baseline": 0.3238,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.2678,
+    0.3112,
+    0.2941,
+    0.3294
+   ]
+  },
+  {
+   "key": "pat_number",
+   "page": 1,
+   "x": 0.3567,
+   "baseline": 0.3238,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.3547,
+    0.3112,
+    0.4614,
+    0.3294
+   ]
+  },
+  {
+   "key": "pat_series",
+   "page": 6,
+   "x": 0.4393,
+   "baseline": 0.1616,
+   "size": 0.0143,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4373,
+    0.1489,
+    0.4636,
+    0.1672
+   ]
+  },
+  {
+   "key": "pat_series",
+   "page": 6,
+   "x": 0.5951,
+   "baseline": 0.1616,
+   "size": 0.0143,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.5931,
+    0.1489,
+    0.6194,
+    0.1672
+   ]
+  },
+  {
+   "key": "surname",
+   "page": 6,
+   "x": 0.2023,
+   "baseline": 0.3709,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.2003,
+    0.3582,
+    0.3431,
+    0.3764
+   ]
+  },
+  {
+   "key": "name",
+   "page": 6,
+   "x": 0.4331,
+   "baseline": 0.3709,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.4311,
+    0.3582,
+    0.535,
+    0.3764
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 6,
+   "x": 0.6659,
+   "baseline": 0.3709,
+   "size": 0.0143,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.6639,
+    0.3582,
+    0.8187,
+    0.3764
+   ]
+  }
+ ]
+}

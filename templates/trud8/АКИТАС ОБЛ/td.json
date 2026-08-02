@@ -1,0 +1,169 @@
+{
+ "slots": [
+  {
+   "key": "surname",
+   "page": 1,
+   "x": 0.3014,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2994,
+    0.2372,
+    0.4014,
+    0.2543
+   ]
+  },
+  {
+   "key": "name",
+   "page": 1,
+   "x": 0.4887,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4867,
+    0.2372,
+    0.5816,
+    0.2543
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 1,
+   "x": 0.7022,
+   "baseline": 0.249,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.7002,
+    0.2372,
+    0.8012,
+    0.2543
+   ]
+  },
+  {
+   "key": "birth_date",
+   "page": 1,
+   "x": 0.304,
+   "baseline": 0.265,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.302,
+    0.2532,
+    0.392,
+    0.2703
+   ]
+  },
+  {
+   "key": "citizenship",
+   "page": 1,
+   "x": 0.2849,
+   "baseline": 0.2969,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.2829,
+    0.2851,
+    0.3794,
+    0.3022
+   ]
+  },
+  {
+   "key": "pass_number",
+   "page": 1,
+   "x": 0.4883,
+   "baseline": 0.3127,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4863,
+    0.3009,
+    0.5579,
+    0.318
+   ]
+  },
+  {
+   "key": "pass_issued",
+   "page": 1,
+   "x": 0.6619,
+   "baseline": 0.3127,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.6599,
+    0.3009,
+    0.7501,
+    0.318
+   ]
+  },
+  {
+   "key": "profession",
+   "page": 1,
+   "x": 0.4927,
+   "baseline": 0.3446,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.4907,
+    0.3327,
+    0.6626,
+    0.3498
+   ]
+  },
+  {
+   "key": "surname",
+   "page": 6,
+   "x": 0.3117,
+   "baseline": 0.5662,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.3097,
+    0.5544,
+    0.412,
+    0.5715
+   ]
+  },
+  {
+   "key": "name",
+   "page": 6,
+   "x": 0.5179,
+   "baseline": 0.5662,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.5159,
+    0.5544,
+    0.611,
+    0.5715
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 6,
+   "x": 0.7316,
+   "baseline": 0.5662,
+   "size": 0.0131,
+   "bold": true,
+   "serif": false,
+   "clear": [
+    0.7296,
+    0.5544,
+    0.8306,
+    0.5715
+   ]
+  }
+ ]
+}

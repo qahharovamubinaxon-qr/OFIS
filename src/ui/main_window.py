@@ -204,6 +204,15 @@ class MainWindow(QMainWindow):
             )
             return SveraView(svera_controller)
         if key == "nav.trud":
+            from src.controllers.trud8_controller import Trud8Controller
+            from src.services.trud8_service import Trud8Service
+            from src.ui.views.trud8_view import Trud8View
+
+            return Trud8View(Trud8Controller(
+                self._container.resolve(OcrService),
+                Trud8Service(self._settings),
+            ))
+        if key == "nav.trud_old":
             from src.controllers.trud_controller import TrudController
 
             trud_controller = TrudController(

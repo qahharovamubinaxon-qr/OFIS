@@ -1,0 +1,259 @@
+{
+ "slots": [
+  {
+   "key": "surname",
+   "page": 1,
+   "x": 0.1715,
+   "baseline": 0.7809,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.7684,
+    0.97,
+    0.7853
+   ]
+  },
+  {
+   "key": "name",
+   "page": 1,
+   "x": 0.1715,
+   "baseline": 0.8268,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.8143,
+    0.97,
+    0.8312
+   ]
+  },
+  {
+   "key": "patronymic",
+   "page": 1,
+   "x": 0.1715,
+   "baseline": 0.8717,
+   "size": 0.0103,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.8601,
+    0.97,
+    0.8758
+   ]
+  },
+  {
+   "key": "birth_date",
+   "page": 1,
+   "x": 0.1715,
+   "baseline": 0.9169,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.9043,
+    0.97,
+    0.9213
+   ]
+  },
+  {
+   "key": "gender",
+   "page": 1,
+   "x": 0.1715,
+   "baseline": 0.9629,
+   "size": 0.0116,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.9504,
+    0.97,
+    0.9673
+   ]
+  },
+  {
+   "key": "citizenship",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.0364,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.0238,
+    0.97,
+    0.0408
+   ]
+  },
+  {
+   "key": "birth_place",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.0819,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.0693,
+    0.97,
+    0.0863
+   ]
+  },
+  {
+   "key": "pass_series",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.2265,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.214,
+    0.97,
+    0.2309
+   ]
+  },
+  {
+   "key": "pass_number",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.2726,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.26,
+    0.97,
+    0.277
+   ]
+  },
+  {
+   "key": "pass_issued",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.3185,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.306,
+    0.97,
+    0.3229
+   ]
+  },
+  {
+   "key": "pass_issued_by",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.3644,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.3519,
+    0.97,
+    0.3688
+   ]
+  },
+  {
+   "key": "pat_series",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.4884,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.4758,
+    0.97,
+    0.4928
+   ]
+  },
+  {
+   "key": "pat_number",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.5344,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.5219,
+    0.97,
+    0.5388
+   ]
+  },
+  {
+   "key": "pat_blank_series",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.6258,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.6133,
+    0.97,
+    0.6302
+   ]
+  },
+  {
+   "key": "pat_blank_number",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.6717,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.6592,
+    0.97,
+    0.6761
+   ]
+  },
+  {
+   "key": "profession",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.7636,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.751,
+    0.97,
+    0.768
+   ]
+  },
+  {
+   "key": "deal_date",
+   "page": 2,
+   "x": 0.1715,
+   "baseline": 0.9009,
+   "size": 0.0114,
+   "bold": false,
+   "serif": false,
+   "clear": [
+    0.1685,
+    0.8883,
+    0.97,
+    0.9053
+   ]
+  }
+ ]
+}

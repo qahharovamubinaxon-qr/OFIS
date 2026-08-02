@@ -154,11 +154,17 @@ def _run_hostel(ctx: RunContext, state: dict) -> list[Path]:
 
 
 def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
-    passport, patent, back = _trio(state)
-    r = ctx.ctl["trud"].generate_from_images(
-        state["target"], passport, patent, back,
-        form_date=state["answers"].get("form_date") or date.today(), profession=None)
-    return [p for p in (r.trud_path, r.uved_path, getattr(r, "hod_path", None)) if p]
+    """ТД + УВ off the firm's own mapped samples."""
+    passport_img, patent_img, back = _trio(state)
+    ctl = ctx.ctl["trud"]
+    passport, patent = ctl.read_documents(passport_img, patent_img, back)
+    ctx.note(f"Ҳужжатлар ўқилди: {passport.surname or ''} "
+             f"{passport.name or ''}".strip())
+    result = ctl.generate(
+        firm=Path(state["target"]), passport=passport, patent=patent,
+        profession=str(state["answers"].get("profession") or "").strip(),
+        deal_date=state["answers"].get("form_date") or date.today())
+    return list(result.saved)
 
 
 def _run_dms(ctx: RunContext, state: dict) -> list[Path]:
@@ -927,7 +933,9 @@ MODULES: tuple[Module, ...] = (
            targets=lambda c: c["trud"].firms(),
            target_prompt="Фирмани танланг:",
            photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
-           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),)),
+           asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("profession", "Должность (бўш — патентдагиси):",
+                     kind="text"))),
     Module("dms", "🏥 ДМС", _run_dms,
            photo_prompt="Ишчининг паспорт расмини юборинг.",
            photo_labels=("Паспорт",),
@@ -1219,7 +1227,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.spr3_controller import Spr3Controller
     from src.controllers.svera_controller import SveraController
     from src.controllers.template_controller import TemplateController
-    from src.controllers.trud_controller import TrudController
+    from src.controllers.trud8_controller import Trud8Controller
     from src.controllers.trud_ppu_controller import TrudPpuController
     from src.database.repositories.template_profile_repo import (
         TemplateProfileRepository,
@@ -1250,8 +1258,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.snils_service import SnilsService
     from src.services.spr3_service import Spr3Service
     from src.services.svera_service import SveraService
+    from src.services.trud8_service import Trud8Service
     from src.services.trud_ppu_service import TrudPpuService
-    from src.services.trud_service import TrudFirmService, TrudService
     from src.services.umumiy_service import UmumiyService
 
     ocr = container.resolve(OcrService)
@@ -1288,8 +1296,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         # view builds it the same way).
         "hostel": HostelController(
             container.resolve(RegistrationAddressService), ocr, HostelService()),
-        "trud": TrudController(
-            container.resolve(TrudFirmService), ocr, container.resolve(TrudService)),
+        "trud": Trud8Controller(
+            ocr, Trud8Service(container.resolve(SettingsService))),
         "svera": SveraController(
             container.resolve(ProfessionService), ocr,
             container.resolve(SveraService)),
