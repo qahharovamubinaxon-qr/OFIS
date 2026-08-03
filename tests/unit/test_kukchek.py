@@ -64,7 +64,8 @@ def test_the_uip_carries_the_days_digits_inside() -> None:
     assert uip[16:24] == "30072026"
 
 
-def test_render_prints_in_matricha_blue(tmp_path) -> None:
+def test_render_prints_bold_in_the_offices_indigo(tmp_path) -> None:
+    """#3f1ba6, and thick — Matricha has one weight, so bold is stroked."""
     import numpy as np
 
     pdf = render(KukChekData(**_WORKER), _blank(tmp_path))
@@ -77,10 +78,20 @@ def test_render_prints_in_matricha_blue(tmp_path) -> None:
         pix = doc[0].get_pixmap(dpi=100)
         img = np.frombuffer(pix.samples, np.uint8).reshape(
             pix.height, pix.width, pix.n)[:, :, :3].astype(int)
+    from src.pdf.kukchek_renderer import BLUE, BOLD_STROKE
+
     marked = img.reshape(-1, 3)
-    blue = marked[(marked[:, 2] - marked[:, 0] > 60)
-                  & (marked.sum(1) < 600)]
-    assert len(blue) > 200, "the чек ink is not blue"
+    ink = marked[marked.sum(1) < 600]
+    assert len(ink) > 200, "the чек left no ink"
+    # glyph CORES only — the anti-aliased edges blend toward the paper
+    core = ink[ink.sum(1) <= np.percentile(ink.sum(1), 40)]
+    median = np.median(core, axis=0)
+    wanted = np.array([c * 255 for c in BLUE])
+    # the dot-matrix glyphs are thin, so even their cores touch the paper a
+    # little at 100 dpi — the hue must be the office's, not the old blue
+    assert np.abs(median - wanted).max() < 25,         f"ink {median} is not #3f1ba6 {wanted}"
+    assert median[2] > median[0] > median[1], "not an indigo"
+    assert BOLD_STROKE > 0, "the чек must print bold"
 
 
 def test_the_service_keeps_the_stamp_and_prints(tmp_path) -> None:

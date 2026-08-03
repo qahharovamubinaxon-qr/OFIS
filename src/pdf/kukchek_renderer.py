@@ -21,10 +21,14 @@ from src.pdf.engine import _font_file, _fontname
 from src.utils.rus_words import amount_to_words
 
 FONT = "OfisMatricha"
-#: The чек's ink — the deep blue off the sample.
-BLUE = (0.13, 0.16, 0.72)
+#: The чек's ink — #3f1ba6, the office's own indigo.
+BLUE = (0.2471, 0.1059, 0.6510)
 TEXT_SIZE = 0.0110
 TEXT_OPACITY = 1.0
+#: Matricha ships in ONE weight, so bold is drawn: the glyph is filled AND
+#: stroked with a hairline of its own colour, which thickens it evenly
+#: without touching its dot-matrix shape.
+BOLD_STROKE = 0.035
 
 MONTHS_RU = ("января", "февраля", "марта", "апреля", "мая", "июня",
              "июля", "августа", "сентября", "октября", "ноября", "декабря")
@@ -150,7 +154,9 @@ def render(data: KukChekData, template: Path | str) -> bytes:
             page.insert_text((slot.x * width, slot.baseline * height), text,
                              fontsize=slot.size * height,
                              fontfile=fontfile, fontname=fontname,
-                             color=BLUE, fill_opacity=TEXT_OPACITY)
+                             color=BLUE, fill_opacity=TEXT_OPACITY,
+                             render_mode=2, stroke_opacity=TEXT_OPACITY,
+                             border_width=BOLD_STROKE)
         if data.stamp_png:
             slot = placed(data.layout, IMG_SLOTS)["img_stamp"]
             pix = fitz.Pixmap(data.stamp_png)
