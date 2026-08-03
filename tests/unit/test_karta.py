@@ -100,6 +100,43 @@ def test_the_qr_carries_the_owners_own_wording() -> None:
     ]
 
 
+def test_the_machine_zone_fills_the_cards_whole_band(tmp_path) -> None:
+    """The office marked both edges: every line must start at the left
+    mark and END at the right one, not stop half way."""
+    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT
+
+    pdf = render(KartaData(**_WORKER), _blank(tmp_path, "inner"))
+    with fitz.open("pdf", pdf) as doc:
+        page = doc[0]
+        wide = page.rect.width
+        spans = [s for b in page.get_text("dict")["blocks"]
+                 for line in b.get("lines", []) for s in line["spans"]
+                 if s["text"].strip()]
+    rows: dict[int, list] = {}
+    for span in spans:
+        rows.setdefault(round(span["origin"][1]), []).append(span)
+    mrz_rows = [r for r in rows.values()
+                if any("<" in s["text"] or s["text"].strip().isdigit()
+                       for s in r) and len(r) > 5]
+    assert len(mrz_rows) == 3, "the three machine lines are not there"
+    for row in mrz_rows:
+        starts = min(s["bbox"][0] for s in row) / wide
+        ends = max(s["bbox"][2] for s in row) / wide
+        assert abs(starts - MRZ_LEFT) < 0.01, f"starts at {starts:.4f}"
+        assert abs(ends - MRZ_RIGHT) < 0.01, f"ends at {ends:.4f}"
+
+
+def test_the_machine_zone_is_set_in_franklin_gothic() -> None:
+    import os
+
+    from src.pdf.engine import _font_file
+    from src.pdf.karta_spec import FONT_MRZ
+
+    assert FONT_MRZ == "OfisFranklin"
+    if os.name == "nt":
+        assert _font_file(FONT_MRZ).name.upper() == "FRABK.TTF"
+
+
 def test_render_puts_the_qr_photo_and_both_sides(tmp_path) -> None:
     import cv2
     import numpy as np
@@ -113,7 +150,10 @@ def test_render_puts_the_qr_photo_and_both_sides(tmp_path) -> None:
         assert doc.page_count == 2
         ink = "".join(p.get_text() for p in doc).replace("\xa0", " ")
         assert "МАМАТОВ" in ink and "06/30 0077" in ink
-        assert "I<MOSAA5675223" in ink
+        # the machine zone is stepped glyph by glyph so it fills the
+        # card's whole band — extraction sees the spacing, so compare
+        # without it
+        assert "I<MOSAA5675223" in "".join(ink.split())
         assert "AA5675223" in doc[1].get_text()      # the outer side
         assert len(doc[0].get_images(full=True)) >= 2  # photo + QR
         pix = doc[0].get_pixmap(dpi=150)

@@ -16,8 +16,16 @@ from dataclasses import dataclass
 
 FONT_BOLD = "OfisArialBold"
 FONT_REGULAR = "OfisArial"
-FONT_MRZ = "OfisMono"
+#: The machine zone is set in Franklin Gothic Book, the card's own face.
+FONT_MRZ = "OfisFranklin"
 TEXT_OPACITY = 1.0
+
+#: The machine zone spans the card's whole lower band, marked by the
+#: office: every line starts at MRZ_LEFT and its last character ends at
+#: MRZ_RIGHT, the 30 characters spread evenly in between — which is how a
+#: real card reads, and why the lines never stop half way.
+MRZ_LEFT = 0.1700
+MRZ_RIGHT = 0.8560
 
 BLACK = (0.0, 0.0, 0.0)
 #: The card runs five years to the day.

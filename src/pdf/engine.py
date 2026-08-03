@@ -59,6 +59,8 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     # Matricha — the dot-matrix face the СФЕРА payment чек is printed in.
     # Bundled from the office's own font, so the EXE prints it anywhere.
     "OfisMatricha": {"nt": (), "bundled": "OfisMatricha.ttf"},
+    # Franklin Gothic Book — the face the card's machine zone is set in.
+    "OfisFranklin": {"nt": ("FRABK.TTF",), "bundled": "OfisFranklin.ttf"},
 }
 
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
@@ -71,6 +73,7 @@ _FONT_IDS = {
     "OfisMono": "ofis_mono",
     "OfisAkshar": "ofis_akshar",
     "OfisMatricha": "ofis_matricha",
+    "OfisFranklin": "ofis_franklin",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",

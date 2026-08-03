@@ -18,7 +18,9 @@ from src.pdf.karta_spec import (
     FONT_MRZ,
     FONT_REGULAR,
     MRZ_FILL,
+    MRZ_LEFT,
     MRZ_LEN,
+    MRZ_RIGHT,
     PHOTO_BOX,
     QR_BOX,
     QR_INSET,
@@ -199,6 +201,33 @@ def placed(layout: dict | None) -> dict[str, Slot]:
     return out
 
 
+def _spread(page, text: str, slot: Slot, size: float,
+            left: float, right: float, *, fontfile: str,
+            fontname: str) -> None:
+    """One character per even step, the last one ending on ``right``.
+
+    Franklin Gothic Book is proportional, so a plain string would stop
+    well short of the card's edge; stepping every glyph — and centring it
+    in its own step — fills the band exactly, the way a real card reads.
+    """
+    width, height = page.rect.width, page.rect.height
+    count = max(1, len(text))
+    try:
+        measure = fitz.Font(fontfile=fontfile)
+    except Exception:                             # noqa: BLE001
+        measure = None
+    last = (measure.text_length(text[-1], size) if measure else size * 0.5)
+    span = (right * width - last) - left * width
+    step = span / (count - 1) if count > 1 else 0.0
+    for i, char in enumerate(text):
+        if char == " ":
+            continue
+        page.insert_text((left * width + i * step, slot.baseline * height),
+                         char, fontsize=size, fontfile=fontfile,
+                         fontname=fontname, color=slot.colour,
+                         fill_opacity=TEXT_OPACITY)
+
+
 def _fit(box, aspect: float, inset: float = 0.0):
     """The biggest rect of ``aspect`` (w/h) inside the box, centred."""
     x0, y0, x1, y1 = box
@@ -228,6 +257,7 @@ def render(data: KartaData, inner: Path | str,
                 doc.insert_pdf(back)
         slots = placed(data.layout)
         texts = values(data)
+        moved = ((data.layout or {}).get("fields") or {})
         for key, text in texts.items():
             slot = slots.get(key)
             if slot is None or not text or slot.page > doc.page_count:
@@ -236,10 +266,18 @@ def render(data: KartaData, inner: Path | str,
             width, height = page.rect.width, page.rect.height
             family = (FONT_MRZ if slot.mono
                       else (FONT_BOLD if slot.bold else FONT_REGULAR))
+            fontfile = str(_font_file(family))
+            fontname = _fontname(family)
+            size = slot.size * height
+            if slot.mono and key not in moved:
+                # spread the 30 characters across the card's whole band, so
+                # the line ends where the office marked it, not half way
+                _spread(page, text, slot, size, MRZ_LEFT, MRZ_RIGHT,
+                        fontfile=fontfile, fontname=fontname)
+                continue
             page.insert_text((slot.x * width, slot.baseline * height), text,
-                             fontsize=slot.size * height,
-                             fontfile=str(_font_file(family)),
-                             fontname=_fontname(family),
+                             fontsize=size, fontfile=fontfile,
+                             fontname=fontname,
                              color=slot.colour, fill_opacity=TEXT_OPACITY)
         page = doc[0]
         width, height = page.rect.width, page.rect.height
