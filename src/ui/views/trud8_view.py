@@ -1,8 +1,10 @@
-"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — the eight firms, one press, both papers.
+"""ТРУДАВОЙ + УВЕДОМЛЕНИЕ — the office's own blanks, the office's own map.
 
-Passport + patent in, the firm picked, the date set — the ТД and the УВ
-come out as the firm's own documents with only the worker changed. Every
-text on every page can be dragged and resized against the firm's blank.
+Nothing is built in. A firm is a name; the office uploads its EMPTY ТД and
+УВ PDFs, then adds each text one by one, saying from a list what that text
+means (ФИО, паспорт серия, шартнома санаси…), and drags it where it must
+print. Colour, weight and face are chosen per text. The worker's papers
+then come out on those very blanks.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QColorDialog,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -27,11 +30,14 @@ from PySide6.QtWidgets import (
 
 from src.common.threading import run_async
 from src.controllers.trud8_controller import Trud8Controller
+from src.pdf.trud8_fields import CATALOGUE
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
 _PROFESSIONS = ("ПОДСОБНЫЙ РАБОЧИЙ", "РАЗНОРАБОЧИЙ", "УБОРЩИЦА", "КУРЬЕР",
                 "МОНТАЖНИК", "ШТУКАТУР", "БЕТОНЩИК", "МАЛЯР")
+
+_KINDS = (("ТД — трудовой договор", "td"), ("УВ — уведомление", "uv"))
 
 
 class Trud8View(QWidget):
@@ -51,32 +57,61 @@ class Trud8View(QWidget):
         root.setContentsMargins(28, 24, 28, 16)
         root.setSpacing(12)
 
-        title = QLabel("ТРУДАВОЙ + УВЕДОМЛЕНИЕ — 8 фирма")
+        title = QLabel("ТРУДАВОЙ + УВЕДОМЛЕНИЕ — ўз бланкангиз, ўз майдонларингиз")
         title.setObjectName("viewTitle")
         root.addWidget(title)
 
         firm_row = QHBoxLayout()
         firm_row.addWidget(QLabel("Фирма:"))
         self._firm = QComboBox()
+        self._firm.currentIndexChanged.connect(lambda _: self._show_state())
         firm_row.addWidget(self._firm, stretch=1)
         add_firm = QPushButton("➕ Фирма")
+        add_firm.setToolTip("Фирма номини ёзасиз — бланкаларини кейин юклайсиз")
         add_firm.clicked.connect(self._add_firm)
         firm_row.addWidget(add_firm)
-        set_uv = QPushButton("➕ УВ")
-        set_uv.setToolTip("Танланган фирмага УВ бланкасини юклаш")
-        set_uv.clicked.connect(self._set_uv)
-        firm_row.addWidget(set_uv)
-        drop = QPushButton("🗑")
+        drop = QPushButton("🗑 Фирма")
         drop.clicked.connect(self._remove_firm)
         firm_row.addWidget(drop)
+        root.addLayout(firm_row)
+
+        blank_row = QHBoxLayout()
+        blank_row.addWidget(QLabel("Бўш бланка (PDF):"))
+        set_td = QPushButton("📄 ТД юклаш")
+        set_td.clicked.connect(lambda: self._set_blank("td"))
+        blank_row.addWidget(set_td)
+        set_uv = QPushButton("📄 УВ юклаш")
+        set_uv.clicked.connect(lambda: self._set_blank("uv"))
+        blank_row.addWidget(set_uv)
+        blank_row.addStretch(1)
+        root.addLayout(blank_row)
+
+        field_row = QHBoxLayout()
+        field_row.addWidget(QLabel("Матнлар:"))
+        add_text = QPushButton("➕ Матн")
+        add_text.setToolTip("Бланкага матн қўшиш — рўйхатдан маъносини танлайсиз")
+        add_text.clicked.connect(self._add_field)
+        field_row.addWidget(add_text)
+        drop_text = QPushButton("🗑 Матн")
+        drop_text.clicked.connect(self._remove_field)
+        field_row.addWidget(drop_text)
+        style = QPushButton("🎨 Ранг ва қалинлик")
+        style.clicked.connect(self._style_field)
+        field_row.addWidget(style)
         arrange_td = QPushButton("📐 ТД")
-        arrange_td.setToolTip("ТД матнларини суриш/размерлаш — ҳар варақда")
+        arrange_td.setToolTip("ТД матнларини суриш/катта-кичик қилиш — ҳар варақда")
         arrange_td.clicked.connect(lambda: self._arrange("td"))
-        firm_row.addWidget(arrange_td)
+        field_row.addWidget(arrange_td)
         arrange_uv = QPushButton("📐 УВ")
         arrange_uv.clicked.connect(lambda: self._arrange("uv"))
-        firm_row.addWidget(arrange_uv)
-        root.addLayout(firm_row)
+        field_row.addWidget(arrange_uv)
+        field_row.addStretch(1)
+        root.addLayout(field_row)
+
+        self._state = QLabel("")
+        self._state.setWordWrap(True)
+        self._state.setStyleSheet("color:#8a94a3;")
+        root.addWidget(self._state)
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
@@ -124,140 +159,248 @@ class Trud8View(QWidget):
     # ------------------------------------------------------------- state
     def _reload(self) -> None:
         current = self._firm.currentData()
+        self._firm.blockSignals(True)
         self._firm.clear()
         for firm in self._c.firms():
             self._firm.addItem(firm.name, str(firm))
         if self._firm.count() == 0:
-            self._firm.addItem("— фирма йўқ —", None)
+            self._firm.addItem("— фирма йўқ, «➕ Фирма» —", None)
         elif current:
             index = self._firm.findData(current)
             if index >= 0:
                 self._firm.setCurrentIndex(index)
+        self._firm.blockSignals(False)
+        self._show_state()
+
+    def _show_state(self) -> None:
+        firm = self._firm.currentData()
+        if not firm:
+            self._state.setText("Фирма қўшинг, сўнг унинг бўш ТД ва УВ "
+                                "PDF ларини юкланг.")
+            return
+        firm = Path(firm)
+        parts = []
+        for label, kind in _KINDS:
+            tag = label.split(" ")[0]
+            if self._c.blank(firm, kind) is None:
+                parts.append(f"{tag}: бланка йўқ")
+                continue
+            count = len(self._c.fields(firm, kind))
+            parts.append(f"{tag}: {self._c.pages(firm, kind)} варақ, "
+                         f"{count} та матн")
+        self._state.setText(" · ".join(parts))
+
+    def _firm_now(self) -> Path | None:
+        firm = self._firm.currentData()
+        if not firm:
+            self._warn("Аввал фирмани танланг ёки «➕ Фирма» билан қўшинг.")
+            return None
+        return Path(firm)
+
+    def _pick_kind(self, question: str) -> str | None:
+        labels = [label for label, _ in _KINDS]
+        picked, ok = QInputDialog.getItem(self, "ТРУДАВОЙ", question, labels,
+                                          0, False)
+        if not ok:
+            return None
+        return dict((label, kind) for label, kind in _KINDS)[picked]
 
     # ------------------------------------------------------------- firms
     def _add_firm(self) -> None:
         name, ok = QInputDialog.getText(self, "Янги фирма", "Фирма номи:")
         if not ok or not name.strip():
             return
-        td, _ = QFileDialog.getOpenFileName(
-            self, "ТД бланкаси (Word/PDF)", "", "Бланка (*.docx *.pdf)")
-        if not td:
-            return
-        uv, _ = QFileDialog.getOpenFileName(
-            self, "УВ бланкаси (Word/PDF, ихтиёрий — Бекор = ўтказиш)", "",
-            "Бланка (*.docx *.pdf)")
         try:
-            self._c.add_firm(name.strip(), Path(td),
-                             Path(uv) if uv else None)
+            made = self._c.add_firm(name.strip())
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
         self._reload()
-        self._status.setText(f"✅ «{name.strip()}» қўшилди — жойларини "
-                             "«📐 ТД / 📐 УВ» билан тўғрилаб чиқинг.")
-
-    def _set_uv(self) -> None:
-        firm = self._firm.currentData()
-        if not firm:
-            return
-        uv, _ = QFileDialog.getOpenFileName(
-            self, "УВ бланкаси (Word/PDF)", "", "Бланка (*.docx *.pdf)")
-        if not uv:
-            return
-        try:
-            self._c.set_uv(Path(firm), Path(uv))
-        except Exception as error:                # noqa: BLE001
-            self._failed(error)
-            return
-        self._status.setText("✅ УВ бланкаси юкланди.")
+        index = self._firm.findData(str(made))
+        if index >= 0:
+            self._firm.setCurrentIndex(index)
+        self._status.setText(f"✅ «{made.name}» қўшилди — энди унинг бўш ТД ва "
+                             "УВ PDF ларини юкланг.")
 
     def _remove_firm(self) -> None:
-        firm = self._firm.currentData()
-        if not firm:
+        firm = self._firm_now()
+        if firm is None:
             return
         if QMessageBox.question(
                 self, "Ўчириш",
-                f"«{Path(firm).name}» фирмаси ўчирилсинми?") \
-                != QMessageBox.StandardButton.Yes:
+                f"«{firm.name}» фирмаси (бланка ва матнлари билан) "
+                "ўчирилсинми?") != QMessageBox.StandardButton.Yes:
             return
-        self._c.remove_firm(Path(firm))
+        self._c.remove_firm(firm)
         self._reload()
+
+    # ------------------------------------------------------------ blanks
+    def _set_blank(self, kind: str) -> None:
+        firm = self._firm_now()
+        if firm is None:
+            return
+        tag = "ТД" if kind == "td" else "УВ"
+        source, _ = QFileDialog.getOpenFileName(
+            self, f"{tag} — бўш бланка PDF", "", "Бланка (*.pdf)")
+        if not source:
+            return
+        try:
+            self._c.set_blank(firm, kind, Path(source))
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._show_state()
+        self._status.setText(
+            f"✅ {tag} бланкаси юкланди ({self._c.pages(firm, kind)} варақ) — "
+            "«➕ Матн» билан майдонларни қўйинг.")
+
+    # ------------------------------------------------------------ fields
+    def _add_field(self) -> None:
+        firm = self._firm_now()
+        if firm is None:
+            return
+        kind = self._pick_kind("Қайси бланкага?")
+        if kind is None:
+            return
+        pages = self._c.pages(firm, kind)
+        if pages == 0:
+            self._warn("Аввал шу бланканинг PDF ини юкланг.")
+            return
+        page = 1
+        if pages > 1:
+            page, ok = QInputDialog.getInt(self, "Саҳифа",
+                                           f"Нечанчи варақ? (1—{pages})",
+                                           1, 1, pages)
+            if not ok:
+                return
+        labels = list(CATALOGUE.values())
+        picked, ok = QInputDialog.getItem(
+            self, "Матн маъноси", "Бу матн ишчининг қайси маълумоти?",
+            labels, 0, False)
+        if not ok:
+            return
+        key = [k for k, v in CATALOGUE.items() if v == picked][0]
+        try:
+            self._c.add_field(firm, kind, key, page)
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._show_state()
+        self._status.setText(
+            f"✅ «{picked}» {page}-варақга қўшилди — «📐» билан жойига суринг.")
+
+    def _pick_field(self, firm: Path, kind: str, question: str) -> int | None:
+        fields = self._c.fields(firm, kind)
+        if not fields:
+            self._warn("Бу бланкада ҳали матн йўқ — «➕ Матн» билан қўшинг.")
+            return None
+        labels = [f"{i + 1}. {f.label()} ({f.page}-варақ)"
+                  for i, f in enumerate(fields)]
+        picked, ok = QInputDialog.getItem(self, "ТРУДАВОЙ", question, labels,
+                                          0, False)
+        if not ok:
+            return None
+        return labels.index(picked)
+
+    def _remove_field(self) -> None:
+        firm = self._firm_now()
+        if firm is None:
+            return
+        kind = self._pick_kind("Қайси бланкадан?")
+        if kind is None:
+            return
+        index = self._pick_field(firm, kind, "Қайси матн ўчирилсин?")
+        if index is None:
+            return
+        self._c.remove_field(firm, kind, index)
+        self._show_state()
+        self._status.setText("✅ Матн ўчирилди.")
+
+    def _style_field(self) -> None:
+        firm = self._firm_now()
+        if firm is None:
+            return
+        kind = self._pick_kind("Қайси бланкада?")
+        if kind is None:
+            return
+        index = self._pick_field(firm, kind, "Қайси матн?")
+        if index is None:
+            return
+        colour = QColorDialog.getColor(parent=self, title="Матн ранги")
+        if not colour.isValid():
+            return
+        weight, ok = QInputDialog.getItem(
+            self, "Қалинлиги", "Матн қалинлиги:",
+            ["Юпқа (оддий)", "Қалин (жирний)"], 0, False)
+        if not ok:
+            return
+        face, ok = QInputDialog.getItem(
+            self, "Шрифт", "Шрифт тури:",
+            ["Times New Roman (сериф)", "Arial / Calibri (сансериф)"], 0, False)
+        if not ok:
+            return
+        self._c.restyle_field(
+            firm, kind, index,
+            colour=(colour.redF(), colour.greenF(), colour.blueF()),
+            bold=weight.startswith("Қалин"), serif=face.startswith("Times"))
+        self._status.setText("✅ Матннинг ранги, қалинлиги ва шрифти сақланди.")
 
     # ----------------------------------------------------------- arrange
     def _arrange(self, kind: str) -> None:
-        firm = self._firm.currentData()
-        if not firm:
-            self._warn("Аввал фирмани танланг.")
+        firm = self._firm_now()
+        if firm is None:
             return
-        from datetime import date as _date
-
         import fitz
 
-        from src.pdf.trud8_renderer import Trud8Data, values
         from src.ui.widgets.layout_editor import Item
         from src.ui.widgets.multipage_layout_editor import MultiPageLayoutEditor
 
-        if (Path(firm) / f"{kind}.docx").exists():
-            self._warn("Бу фирма Word бланкали — жойлаш керак эмас: формат "
-                       "ўзи жойлайди, натижа Word файл бўлиб чиқади.")
+        blank = self._c.blank(firm, kind)
+        if blank is None:
+            self._warn("Бу фирмада бундай бланка йўқ — аввал PDF ини юкланг.")
             return
-        template = Path(firm) / f"{kind}.pdf"
-        if not template.exists():
-            self._warn("Бу фирмада бундай бланка йўқ — «➕ УВ» билан юкланг.")
+        fields = self._c.fields(firm, kind)
+        if not fields:
+            self._warn("Бу бланкада ҳали матн йўқ — «➕ Матн» билан қўшинг.")
             return
-        slots = self._c.slots(Path(firm), kind)
         try:
             pages = []
-            with fitz.open(str(template)) as doc:
+            with fitz.open(str(blank)) as doc:
                 for page in doc:
                     pages.append(page.get_pixmap(dpi=100).tobytes("png"))
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
 
-        sample = values(Trud8Data(
-            surname="ХУРСАНОВ", name="МИРШОЯД", patronymic="ЗОХИДЖОН УГЛИ",
-            citizenship="УЗБЕКИСТАН", birth_date=_date(1995, 5, 1),
-            gender="male", pass_series="FB", pass_number="0826891",
-            pass_issued=_date(2025, 2, 22), pass_issued_by="МВД 3206",
-            pat_series="47", pat_number="2500044825",
-            pat_blank_series="ПР", pat_blank_number="5094937",
-            pat_issued=_date(2025, 6, 1),
-            profession="Разнорабочий", deal_date=_date(2026, 7, 1)))
-        moved = (self._c.layout(Path(firm), kind) or {}).get("fields") or {}
         items_by_page: dict[int, list[Item]] = {}
-        for index, slot in enumerate(slots):
-            key = f"{slot['key']}#{index}"
-            x, baseline, size = slot["x"], slot["baseline"], slot["size"]
-            if key in moved and len(moved[key]) == 3:
-                x, baseline, size = (float(v) for v in moved[key])
-            items_by_page.setdefault(slot["page"], []).append(
-                Item(key=key, label=slot["key"],
-                     sample=sample.get(slot["key"]) or slot["key"],
-                     x=x, baseline=baseline, size=size,
-                     font_family=("Times New Roman" if slot.get("serif")
-                                  else "Calibri")))
+        for index, item in enumerate(fields):
+            if item.page > len(pages):
+                continue
+            items_by_page.setdefault(item.page, []).append(
+                Item(key=f"{item.key}#{index}", label=item.label(),
+                     sample=item.sample(), x=item.x, baseline=item.baseline,
+                     size=item.size, colour=item.colour,
+                     font_family=("Times New Roman" if item.serif
+                                  else "Arial")))
         if not items_by_page:
-            self._warn("Бу бланкада харита йўқ.")
+            self._warn("Матнлар бу бланкада йўқ варақларга қўйилган.")
             return
+        tag = "ТД" if kind == "td" else "УВ"
         dialog = MultiPageLayoutEditor(pages, items_by_page,
-                                       title=f"ТРУД {kind.upper()}",
-                                       parent=self)
+                                       title=f"ТРУД {tag}", parent=self)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         try:
-            self._c.save_layout(Path(firm), kind,
-                                {"fields": dialog.result().items})
+            self._c.move_fields(firm, kind, dialog.result().items)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
-        self._status.setText("✅ Матн жойлари сақланди.")
+        self._status.setText(f"✅ {tag} матнларининг жойи сақланди.")
 
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
-        firm = self._firm.currentData()
-        if not firm:
-            self._warn("Аввал фирмани танланг.")
+        firm = self._firm_now()
+        if firm is None:
             return
         if self._passport.path is None or self._front.path is None:
             self._warn("Паспорт ва патент олди расмларини ташланг.")
@@ -279,7 +422,7 @@ class Trud8View(QWidget):
             read_passport, read_patent = self._c.read_documents(
                 passport, front, back)
             return self._c.generate(
-                firm=Path(firm), passport=read_passport, patent=read_patent,
+                firm=firm, passport=read_passport, patent=read_patent,
                 profession=profession, deal_date=when)
 
         run_async(work, on_success=self._done, on_error=self._failed)

@@ -1,10 +1,9 @@
-"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — print onto the firms' own filled samples.
+"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — print the worker onto the firm's own blank PDF.
 
-Every firm's ТД and УВ was mapped 1:1 off its sample: each slot knows where
-the old worker's value sits (the ``clear`` rectangle) and where the new one
-starts. Rendering paints the old value white and writes the new one at the
-same spot, in the same size and face — so the finished document is the
-firm's own paper with only the worker changed.
+The office uploads an EMPTY ТД and УВ, then places every text itself and
+says what each one means (:mod:`src.pdf.trud8_fields`). Printing is then
+simply: for each placed field, write the worker's matching value at its
+spot, in its size, colour and weight.
 """
 
 from __future__ import annotations
@@ -17,11 +16,15 @@ import fitz
 
 from src.common.errors import OfisError
 from src.pdf.engine import _font_file, _fontname
+from src.pdf.trud8_fields import Field
 
 TEXT_OPACITY = 1.0
 
 _FACES = {(False, False): "OfisSansRegular", (False, True): "OfisSans",
           (True, False): "OfisSerif", (True, True): "OfisSerifBold"}
+
+MONTHS_RU = ("января", "февраля", "марта", "апреля", "мая", "июня",
+             "июля", "августа", "сентября", "октября", "ноября", "декабря")
 
 
 @dataclass
@@ -41,8 +44,10 @@ class Trud8Data:
     pat_blank_series: str = ""
     pat_blank_number: str = ""
     pat_issued: date | None = None
+    pat_valid_to: date | None = None
     profession: str = ""
     deal_date: date | None = None
+    work_address: str = ""
     layout: dict = field(default_factory=dict)
 
     def fio(self) -> str:
@@ -59,68 +64,76 @@ def _dots(value: date | None) -> str:
     return f"{value:%d.%m.%Y}" if value else ""
 
 
+def _join(*parts: str) -> str:
+    return " ".join(p.strip() for p in parts if (p or "").strip())
+
+
 def values(data: Trud8Data) -> dict[str, str]:
-    """Every mapped key's finished text — the samples' own manner."""
+    """Every catalogue key's finished text for this worker."""
+    birth, deal = data.birth_date, data.deal_date
     return {
+        "fio": data.fio(),
+        "fio_upper": data.fio().upper(),
         "surname": _title(data.surname),
         "name": _title(data.name),
         "patronymic": _title(data.patronymic),
-        "fio": data.fio(),
         "gender": "Женский" if data.gender == "female" else "Мужской",
         "citizenship": _title(data.citizenship),
         "birth_place": _title(data.citizenship),
-        "birth_date": _dots(data.birth_date),
+        "birth_date": _dots(birth),
+        "birth_day": f"{birth.day:02d}" if birth else "",
+        "birth_month": f"{birth.month:02d}" if birth else "",
+        "birth_year": str(birth.year) if birth else "",
+        "pass_kind": "Иностранный паспорт",
         "pass_series": (data.pass_series or "").upper(),
         "pass_number": (data.pass_number or "").upper(),
+        "pass_full": _join((data.pass_series or "").upper(),
+                           (data.pass_number or "").upper()),
         "pass_issued": _dots(data.pass_issued),
         "pass_issued_by": (data.pass_issued_by or "").upper(),
+        "pat_kind": "Патент ИГ (ЛБГ)",
         "pat_series": (data.pat_series or "").upper(),
         "pat_number": (data.pat_number or "").upper(),
+        "pat_full": _join((data.pat_series or "").upper(),
+                          (data.pat_number or "").upper()),
         "pat_blank_series": (data.pat_blank_series or "").upper(),
         "pat_blank_number": (data.pat_blank_number or "").upper(),
         "pat_issued": _dots(data.pat_issued),
+        "pat_valid_to": _dots(data.pat_valid_to),
         "profession": (data.profession or "").strip().capitalize(),
-        "deal_date": _dots(data.deal_date),
+        "deal_date": _dots(deal),
+        "deal_day": f"{deal.day:02d}" if deal else "",
+        "deal_month": f"{deal.month:02d}" if deal else "",
+        "deal_month_ru": MONTHS_RU[deal.month - 1] if deal else "",
+        "deal_year": str(deal.year) if deal else "",
+        "deal_year_short": str(deal.year)[2:] if deal else "",
+        "work_address": (data.work_address or "").strip(),
     }
 
 
-def render(data: Trud8Data, template: Path, slots: list[dict],
-           layout: dict | None = None) -> bytes:
-    """One document: the firm's sample with the worker replaced."""
-    if not Path(template).exists():
+def render(data: Trud8Data, template: Path,
+           fields: list[Field]) -> bytes:
+    """The firm's blank with the worker's own values written onto it."""
+    template = Path(template)
+    if not template.exists():
         raise OfisError("Фирманинг бланкаси топилмади — бўлимда юкланг.")
     texts = values(data)
-    moved = ((layout or {}).get("fields") or {})
-    with fitz.open(str(template)) as doc:
-        # the old worker is REDACTED — removed from the text layer, not
-        # merely painted over, so nothing of the sample's person survives
-        # in a copy-paste or a search
-        touched = set()
-        for slot in slots:
-            page = doc[slot["page"] - 1]
-            pw, ph = page.rect.width, page.rect.height
-            x0, y0, x1, y1 = slot["clear"]
-            page.add_redact_annot(
-                fitz.Rect(x0 * pw, y0 * ph, x1 * pw, y1 * ph), fill=(1, 1, 1))
-            touched.add(slot["page"] - 1)
-        for index in touched:
-            doc[index].apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-        for index, slot in enumerate(slots):
-            text = texts.get(slot["key"]) or ""
-            if not text:
+    with fitz.open(str(template)) as raw:
+        source = raw if raw.is_pdf else fitz.open("pdf", raw.convert_to_pdf())
+        doc = fitz.open("pdf", source.tobytes())
+    with doc:
+        for item in fields:
+            text = texts.get(item.key) or ""
+            if not text or item.page > doc.page_count:
                 continue
-            page = doc[slot["page"] - 1]
+            page = doc[item.page - 1]
             pw, ph = page.rect.width, page.rect.height
-            x, baseline, size = slot["x"], slot["baseline"], slot["size"]
-            override = moved.get(f"{slot['key']}#{index}")
-            if override and len(override) == 3:
-                x, baseline, size = (float(v) for v in override)
-            family = _FACES[(bool(slot.get("serif")), bool(slot.get("bold")))]
-            page.insert_text((x * pw, baseline * ph), text,
-                             fontsize=size * ph,
+            family = _FACES[(bool(item.serif), bool(item.bold))]
+            page.insert_text((item.x * pw, item.baseline * ph), text,
+                             fontsize=item.size * ph,
                              fontfile=str(_font_file(family)),
-                             fontname=_fontname(family), color=(0, 0, 0),
-                             fill_opacity=TEXT_OPACITY)
+                             fontname=_fontname(family),
+                             color=item.colour, fill_opacity=TEXT_OPACITY)
         return doc.tobytes()
 
 

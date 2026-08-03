@@ -1,8 +1,9 @@
-"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — the eight firms, their maps, and the printing.
+"""ТРУДАВОЙ/УВЕДОМЛЕНИЕ — the office's own blanks and its own field maps.
 
-The firms ship with the program (templates/trud8/<ФИРМА>/td.pdf + td.json,
-uv.pdf + uv.json) and are seeded into the user's own store on first use, so
-new firms can be added and every text dragged per page without rebuilding.
+Nothing ships with the program any more: the office uploads an empty ТД
+and УВ per firm, then places every text and says what it means. The map
+lives beside the blank as ``td.fields.json`` / ``uv.fields.json``, so a
+firm can be adjusted for ever without touching the program.
 """
 
 from __future__ import annotations
@@ -15,23 +16,46 @@ from pathlib import Path
 from src.common.errors import ValidationError
 from src.common.logging import get_logger
 from src.config import paths
-from src.pdf.trud8_renderer import Trud8Data, output_stem, render, values
-from src.services import blank_layout
-from src.services.trud8_docx import fill, to_pdf
+from src.pdf.trud8_fields import CATALOGUE, Field
+from src.pdf.trud8_renderer import Trud8Data, output_stem, render
 
 log = get_logger(__name__)
 
-SECTIONS = {"td": "trud8_td", "uv": "trud8_uv"}
+KINDS = ("td", "uv")
+KIND_TITLES = {"td": "ТД", "uv": "УВ"}
 
-
-def bundled_dir() -> Path:
-    return paths.templates_dir() / "trud8"
+#: The firms that used to ship with the program printed wrong, so the office
+#: throws them away and uploads its own empty PDFs. These are the files only
+#: that old way ever wrote — a folder holding one of them is a leftover.
+LEGACY_FILES = ("td.docx", "uv.docx", "td.values.json", "uv.values.json",
+                "td.json", "uv.json")
+#: Written once the leftovers are gone, so a firm rebuilt under its old name
+#: is never mistaken for one.
+LEGACY_MARK = ".pdf-only"
 
 
 def firms_dir() -> Path:
     folder = paths.user_templates_dir() / "trud8"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def drop_legacy_firms() -> list[str]:
+    """Clear away the old bundled firms — once, and never again."""
+    root = firms_dir()
+    mark = root / LEGACY_MARK
+    if mark.exists():
+        return []
+    dropped = []
+    for firm in root.iterdir():
+        if firm.is_dir() and any((firm / n).exists() for n in LEGACY_FILES):
+            shutil.rmtree(firm, ignore_errors=True)
+            dropped.append(firm.name)
+    mark.write_text("Эски фирмалар ўчирилди — энди ўз PDF бланкангиз.\n",
+                    encoding="utf-8")
+    if dropped:
+        log.info("ТРУД: эски фирмалар ўчирилди — %s", ", ".join(dropped))
+    return dropped
 
 
 def _safe(name: str) -> str:
@@ -54,96 +78,121 @@ class Trud8Service:
 
     # -------------------------------------------------------------- firms
     def firms(self) -> list[Path]:
-        self.seed()
+        drop_legacy_firms()
         return sorted(p for p in firms_dir().iterdir() if p.is_dir())
 
-    def seed(self) -> None:
-        """The bundled firms, copied once — and folders seeded in the old
-        PDF days are UPGRADED file-by-file, so the Word blanks arrive
-        without touching anything the office added itself."""
-        bundled = bundled_dir()
-        if not bundled.exists():
-            return
-        for firm in bundled.iterdir():
-            if not firm.is_dir():
-                continue
-            dest = firms_dir() / firm.name
-            dest.mkdir(parents=True, exist_ok=True)
-            for item in firm.iterdir():
-                if not (dest / item.name).exists():
-                    shutil.copyfile(item, dest / item.name)
-
-    def _install(self, folder: Path, kind: str, source: Path) -> None:
-        """One blank into the firm: a Word file is probed for its OLD
-        worker so replacement works with no hand-made map."""
-        source = Path(source)
-        suffix = source.suffix.lower()
-        if suffix not in (".docx", ".pdf") or not source.exists():
-            raise ValidationError("Бланка Word (.docx) ёки PDF бўлиши керак")
-        shutil.copyfile(source, folder / f"{kind}{suffix}")
-        if suffix == ".docx":
-            from src.services.trud8_probe import doc_texts, td_values, uv_values
-
-            texts = doc_texts(folder / f"{kind}{suffix}")
-            found = uv_values(texts) if kind == "uv" else td_values(texts)
-            (folder / f"{kind}.values.json").write_text(
-                json.dumps(found, ensure_ascii=False, indent=1),
-                encoding="utf-8")
-
-    def add_firm(self, name: str, td_file: Path,
-                 uv_file: Path | None = None) -> Path:
+    def add_firm(self, name: str, td_pdf: Path | None = None,
+                 uv_pdf: Path | None = None) -> Path:
+        drop_legacy_firms()
         folder = firms_dir() / _safe(name)
         folder.mkdir(parents=True, exist_ok=True)
-        self._install(folder, "td", td_file)
-        if uv_file is not None:
-            self._install(folder, "uv", uv_file)
+        if td_pdf is not None:
+            self.set_blank(folder, "td", td_pdf)
+        if uv_pdf is not None:
+            self.set_blank(folder, "uv", uv_pdf)
         log.info("ТРУД фирмаси қўшилди: %s", folder.name)
         return folder
 
-    def set_uv(self, firm: Path, uv_file: Path) -> None:
-        self._install(Path(firm), "uv", uv_file)
-
     def remove_firm(self, firm: Path) -> None:
-        firm = Path(firm)
-        for kind in ("td", "uv"):
-            blank_layout.reset(SECTIONS[kind], firm / f"{kind}.pdf")
-        shutil.rmtree(firm, ignore_errors=True)
+        shutil.rmtree(Path(firm), ignore_errors=True)
 
-    # ------------------------------------------------------------ layouts
-    def slots(self, firm: Path, kind: str) -> list[dict]:
-        path = Path(firm) / f"{kind}.json"
+    # ------------------------------------------------------------- blanks
+    def blank(self, firm: Path, kind: str) -> Path | None:
+        found = Path(firm) / f"{kind}.pdf"
+        return found if found.exists() else None
+
+    def set_blank(self, firm: Path, kind: str, source: Path) -> Path:
+        if kind not in KINDS:
+            raise ValidationError("Бланка тури нотўғри")
+        source = Path(source)
+        if source.suffix.lower() != ".pdf" or not source.exists():
+            raise ValidationError("Бланка PDF бўлиши керак")
+        dest = Path(firm) / f"{kind}.pdf"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest)
+        log.info("ТРУД бланкаси юкланди: %s / %s", Path(firm).name, kind)
+        return dest
+
+    def pages(self, firm: Path, kind: str) -> int:
+        blank = self.blank(firm, kind)
+        if blank is None:
+            return 0
+        import fitz
+
+        with fitz.open(str(blank)) as doc:
+            return doc.page_count
+
+    # ------------------------------------------------------------- fields
+    def _fields_path(self, firm: Path, kind: str) -> Path:
+        return Path(firm) / f"{kind}.fields.json"
+
+    def fields(self, firm: Path, kind: str) -> list[Field]:
+        path = self._fields_path(firm, kind)
         if not path.exists():
             return []
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("slots") or []
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return [Field.from_dict(item) for item in (raw.get("fields") or [])]
 
-    def layout(self, firm: Path, kind: str) -> dict:
-        return blank_layout.load(SECTIONS[kind], Path(firm) / f"{kind}.pdf")
+    def save_fields(self, firm: Path, kind: str,
+                    fields: list[Field]) -> Path:
+        path = self._fields_path(firm, kind)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"fields": [f.as_dict() for f in fields]},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+        return path
 
-    def save_layout(self, firm: Path, kind: str, layout: dict):
-        return blank_layout.save(SECTIONS[kind], Path(firm) / f"{kind}.pdf",
-                                 layout)
+    def add_field(self, firm: Path, kind: str, key: str,
+                  page: int = 1) -> Field:
+        if key not in CATALOGUE:
+            raise ValidationError("Бундай маълумот рўйхатда йўқ")
+        made = Field(key=key, page=max(1, page))
+        kept = self.fields(firm, kind)
+        kept.append(made)
+        self.save_fields(firm, kind, kept)
+        return made
+
+    def remove_field(self, firm: Path, kind: str, index: int) -> None:
+        kept = self.fields(firm, kind)
+        if 0 <= index < len(kept):
+            kept.pop(index)
+            self.save_fields(firm, kind, kept)
+
+    def restyle_field(self, firm: Path, kind: str, index: int, *,
+                      colour: tuple[float, float, float] | None = None,
+                      bold: bool | None = None,
+                      serif: bool | None = None) -> None:
+        kept = self.fields(firm, kind)
+        if not (0 <= index < len(kept)):
+            return
+        old = kept[index]
+        kept[index] = Field(
+            key=old.key, page=old.page, x=old.x, baseline=old.baseline,
+            size=old.size,
+            bold=old.bold if bold is None else bold,
+            serif=old.serif if serif is None else serif,
+            colour=old.colour if colour is None else colour)
+        self.save_fields(firm, kind, kept)
+
+    def move_fields(self, firm: Path, kind: str, moved: dict) -> None:
+        """What the drag editor handed back: «key#index» → x, baseline, size."""
+        kept = self.fields(firm, kind)
+        for tag, place in (moved or {}).items():
+            if len(place) != 3 or "#" not in tag:
+                continue
+            index = int(tag.rsplit("#", 1)[1])
+            if not (0 <= index < len(kept)):
+                continue
+            old = kept[index]
+            x, baseline, size = (float(v) for v in place)
+            kept[index] = Field(key=old.key, page=old.page, x=x,
+                                baseline=baseline, size=size, bold=old.bold,
+                                serif=old.serif, colour=old.colour)
+        self.save_fields(firm, kind, kept)
 
     # ----------------------------------------------------------- printing
-    def _replacements(self, firm: Path, kind: str,
-                      data: Trud8Data) -> dict[str, str]:
-        """old worker's strings (off the firm's own json) → the new ones."""
-        stored_path = Path(firm) / f"{kind}.values.json"
-        if not stored_path.exists():
-            return {}
-        stored = json.loads(stored_path.read_text(encoding="utf-8"))
-        texts = values(data)
-        out: dict[str, str] = {}
-        for key, old in stored.items():
-            new = (texts.get(key) or "").strip()
-            old = (old or "").strip()
-            if old and new and old != new:
-                out[old] = new
-        return out
-
     def generate(self, data: Trud8Data, firm: Path | None,
-                 want_pdf: bool = False) -> Trud8Result:
-        """Both papers as the firm's own Word files — PDF for the бот."""
+                 want_pdf: bool = True) -> Trud8Result:
         if firm is None:
             raise ValidationError("Фирмани танланг.")
         firm = Path(firm)
@@ -152,38 +201,23 @@ class Trud8Service:
         out_dir = paths.output_dir() / "trud"
         out_dir.mkdir(parents=True, exist_ok=True)
         saved: list[Path] = []
-        for kind, tag in (("td", "ТД"), ("uv", "УВ")):
-            template = firm / f"{kind}.docx"
-            if template.exists():
-                target = out_dir / f"{output_stem(data)}_{tag}.docx"
-                counter = 2
-                while target.exists():
-                    target = out_dir / (f"{output_stem(data)}_{tag} "
-                                        f"({counter}).docx")
-                    counter += 1
-                fill(template, self._replacements(firm, kind, data), target)
-                if want_pdf:
-                    pdf = to_pdf(target)
-                    saved.append(pdf if pdf is not None else target)
-                else:
-                    saved.append(target)
+        for kind in KINDS:
+            blank = self.blank(firm, kind)
+            if blank is None:
                 continue
-            # a firm the office added with a PDF blank keeps the old path
-            template = firm / f"{kind}.pdf"
-            if template.exists():
-                pdf = render(data, template, self.slots(firm, kind),
-                             self.layout(firm, kind))
-                target = out_dir / f"{output_stem(data)}_{tag}.pdf"
-                counter = 2
-                while target.exists():
-                    target = out_dir / (f"{output_stem(data)}_{tag} "
-                                        f"({counter}).pdf")
-                    counter += 1
-                target.write_bytes(pdf)
-                saved.append(target)
+            fields = self.fields(firm, kind)
+            pdf = render(data, blank, fields)
+            tag = KIND_TITLES[kind]
+            target = out_dir / f"{output_stem(data)}_{tag}.pdf"
+            counter = 2
+            while target.exists():
+                target = out_dir / f"{output_stem(data)}_{tag} ({counter}).pdf"
+                counter += 1
+            target.write_bytes(pdf)
+            saved.append(target)
         if not saved:
             raise ValidationError(
-                f"«{firm.name}» да бланка йўқ — ТД/УВ файлларини юкланг.")
+                f"«{firm.name}» да бланка йўқ — ТД/УВ PDF ларини юкланг.")
         log.info("ТРУД: %s — %s (%s)", data.fio(), firm.name,
                  ", ".join(p.name for p in saved))
         return Trud8Result(saved=saved, surname=(data.surname or "").strip())
