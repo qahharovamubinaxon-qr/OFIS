@@ -101,57 +101,64 @@ def test_the_qr_carries_the_owners_own_wording() -> None:
 
 
 def test_the_machine_zone_fills_the_cards_whole_band(tmp_path) -> None:
-    """The office marked both edges: every line must start at the left
-    mark and END at the right one, not stop half way."""
-    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT
+    """The office marked both edges: under the photo frame's left corner
+    and level with the expiry date. Normal spacing, the sample's letter
+    size, chevrons filling whatever is left."""
+    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT, MRZ_SIZE
 
     pdf = render(KartaData(**_WORKER), _blank(tmp_path, "inner"))
     with fitz.open("pdf", pdf) as doc:
         page = doc[0]
-        wide = page.rect.width
-        spans = [s for b in page.get_text("dict")["blocks"]
+        wide, tall = page.rect.width, page.rect.height
+        lines = [s for b in page.get_text("dict")["blocks"]
                  for line in b.get("lines", []) for s in line["spans"]
-                 if s["text"].strip()]
-    rows: dict[int, list] = {}
-    for span in spans:
-        rows.setdefault(round(span["origin"][1]), []).append(span)
-    mrz_rows = [r for r in rows.values()
-                if any("<" in s["text"] or s["text"].strip().isdigit()
-                       for s in r) and len(r) > 5]
-    assert len(mrz_rows) == 3, "the three machine lines are not there"
-    for row in mrz_rows:
-        starts = min(s["bbox"][0] for s in row) / wide
-        ends = max(s["bbox"][2] for s in row) / wide
-        assert abs(starts - MRZ_LEFT) < 0.01, f"starts at {starts:.4f}"
-        assert abs(ends - MRZ_RIGHT) < 0.01, f"ends at {ends:.4f}"
+                 if "<" in s["text"]]
+    assert len(lines) == 3, "the three machine lines are not there"
+    for span in lines:
+        starts = span["bbox"][0] / wide
+        ends = span["bbox"][2] / wide
+        assert abs(starts - MRZ_LEFT) < 0.005, f"starts at {starts:.4f}"
+        assert MRZ_RIGHT - ends < 0.025, f"stops short at {ends:.4f}"
+        assert ends <= MRZ_RIGHT + 0.002, f"runs past at {ends:.4f}"
+        assert abs(span["size"] / tall - MRZ_SIZE) < 0.001
+        assert span["text"].count("<") > 5, "no chevrons were added"
 
 
 def test_a_saved_layout_never_shortens_the_machine_zone(tmp_path) -> None:
-    """The office had already arranged the card, so every MRZ key sat in
-    the saved layout — and the lines stopped half way. A saved layout may
-    move where a line STARTS; it may never cut how far it reaches."""
-    from src.pdf.karta_spec import MRZ_RIGHT
+    """The office had already arranged the card — a saved x or size for a
+    machine line must not shrink the strip; it is one fixed band."""
+    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT
 
-    layout = {"fields": {"mrz1": [0.1700, 0.7080, 0.0330],
-                         "mrz2": [0.1700, 0.7590, 0.0330],
-                         "mrz3": [0.1700, 0.8100, 0.0330]}}
+    layout = {"fields": {"mrz1": [0.1700, 0.7155, 0.0450],
+                         "mrz2": [0.1700, 0.7684, 0.0450],
+                         "mrz3": [0.1700, 0.8214, 0.0450]}}
     pdf = render(KartaData(**_WORKER, layout=layout),
                  _blank(tmp_path, "inner"))
     with fitz.open("pdf", pdf) as doc:
         page = doc[0]
         wide = page.rect.width
-        rows: dict[int, list] = {}
-        for block in page.get_text("dict")["blocks"]:
-            for line in block.get("lines", []):
-                for span in line["spans"]:
-                    if span["text"].strip():
-                        rows.setdefault(round(span["origin"][1]), []).append(span)
-    long_rows = [r for r in rows.values() if len(r) > 5]
-    assert len(long_rows) == 3
-    for row in long_rows:
-        ends = max(s["bbox"][2] for s in row) / wide
-        assert abs(ends - MRZ_RIGHT) < 0.01, \
-            f"a saved layout cut the line at {ends:.4f}"
+        lines = [s for b in page.get_text("dict")["blocks"]
+                 for line in b.get("lines", []) for s in line["spans"]
+                 if "<" in s["text"]]
+    assert len(lines) == 3
+    for span in lines:
+        assert abs(span["bbox"][0] / wide - MRZ_LEFT) < 0.005
+        assert MRZ_RIGHT - span["bbox"][2] / wide < 0.025
+
+
+def test_the_check_digit_stays_last_after_the_filling() -> None:
+    from src.pdf.karta_renderer import fill_to_width
+
+    class _Measure:
+        @staticmethod
+        def text_length(text, size):
+            return len(text) * 10.0
+
+    made = fill_to_width("7504150M3105205UZB", 300.0, _Measure(), 1.0,
+                         tail="6")
+    assert made.endswith("6"), "the check digit was buried in the chevrons"
+    assert made.startswith("7504150M3105205UZB<")
+    assert len(made) == 30
 
 
 def test_the_machine_zone_is_set_in_franklin_gothic() -> None:

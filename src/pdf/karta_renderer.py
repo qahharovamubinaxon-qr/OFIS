@@ -21,6 +21,7 @@ from src.pdf.karta_spec import (
     MRZ_LEFT,
     MRZ_LEN,
     MRZ_RIGHT,
+    MRZ_SIZE,
     PHOTO_BOX,
     QR_BOX,
     QR_INSET,
@@ -201,31 +202,38 @@ def placed(layout: dict | None) -> dict[str, Slot]:
     return out
 
 
-def _spread(page, text: str, slot: Slot, size: float,
-            left: float, right: float, *, fontfile: str,
-            fontname: str) -> None:
-    """One character per even step, the last one ending on ``right``.
+def fill_to_width(text: str, room: float, measure, size: float,
+                  tail: str = "") -> str:
+    """``text`` padded with «<» until one more would pass ``room``.
 
-    Franklin Gothic Book is proportional, so a plain string would stop
-    well short of the card's edge; stepping every glyph — and centring it
-    in its own step — fills the band exactly, the way a real card reads.
+    The office asked for this in as many words: normal spacing, the
+    sample's own letter size, and the gap filled with chevrons. ``tail``
+    is a character that must stay LAST — line 2's check digit does.
     """
+    body = text
+    while True:
+        candidate = body + MRZ_FILL + tail
+        wide = (measure.text_length(candidate, size) if measure
+                else len(candidate) * size * 0.5)
+        if wide > room:
+            return body + tail
+        body += MRZ_FILL
+
+
+def _write_mrz(page, text: str, slot: Slot, size: float,
+               left: float, right: float, *, fontfile: str,
+               fontname: str, tail: str = "") -> None:
+    """One machine line: natural spacing, chevrons out to the right edge."""
     width, height = page.rect.width, page.rect.height
-    count = max(1, len(text))
     try:
         measure = fitz.Font(fontfile=fontfile)
     except Exception:                             # noqa: BLE001
         measure = None
-    last = (measure.text_length(text[-1], size) if measure else size * 0.5)
-    span = (right * width - last) - left * width
-    step = span / (count - 1) if count > 1 else 0.0
-    for i, char in enumerate(text):
-        if char == " ":
-            continue
-        page.insert_text((left * width + i * step, slot.baseline * height),
-                         char, fontsize=size, fontfile=fontfile,
-                         fontname=fontname, color=slot.colour,
-                         fill_opacity=TEXT_OPACITY)
+    room = (right - left) * width
+    line = fill_to_width(text, room, measure, size, tail)
+    page.insert_text((left * width, slot.baseline * height), line,
+                     fontsize=size, fontfile=fontfile, fontname=fontname,
+                     color=slot.colour, fill_opacity=TEXT_OPACITY)
 
 
 def _fit(box, aspect: float, inset: float = 0.0):
@@ -257,7 +265,6 @@ def render(data: KartaData, inner: Path | str,
                 doc.insert_pdf(back)
         slots = placed(data.layout)
         texts = values(data)
-        moved = ((data.layout or {}).get("fields") or {})
         for key, text in texts.items():
             slot = slots.get(key)
             if slot is None or not text or slot.page > doc.page_count:
@@ -270,13 +277,18 @@ def render(data: KartaData, inner: Path | str,
             fontname = _fontname(family)
             size = slot.size * height
             if slot.mono:
-                # the machine zone ALWAYS spans the card's band — a saved
-                # layout moves where it starts, never how far it reaches
-                # (skipping this for dragged slots left the line half way,
-                # which is exactly what the office saw)
-                left = slot.x if key in moved else MRZ_LEFT
-                _spread(page, text, slot, size, left, MRZ_RIGHT,
-                        fontfile=fontfile, fontname=fontname)
+                # The machine zone is one fixed strip, not free text: it
+                # always starts under the photo frame, ends level with the
+                # expiry date and prints at the sample card's own letter
+                # size. A saved layout may still raise or lower a line —
+                # only that. (Honouring a saved x/size is what left the
+                # strip short and small on the office's own card.)
+                size = MRZ_SIZE * height
+                tail = text[-1] if key == "mrz2" else ""
+                body = text[:-1] if tail else text
+                _write_mrz(page, body.rstrip(MRZ_FILL), slot, size, MRZ_LEFT,
+                           MRZ_RIGHT, fontfile=fontfile, fontname=fontname,
+                           tail=tail)
                 continue
             page.insert_text((slot.x * width, slot.baseline * height), text,
                              fontsize=size, fontfile=fontfile,

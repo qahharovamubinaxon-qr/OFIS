@@ -20,13 +20,18 @@ FONT_REGULAR = "OfisArial"
 FONT_MRZ = "OfisFranklin"
 TEXT_OPACITY = 1.0
 
-#: The machine zone spans the card's whole lower band, marked by the
-#: office: every line starts at MRZ_LEFT and its last character ends at
-#: MRZ_RIGHT, the 30 characters spread evenly in between — which is how a
-#: real card reads, and why the lines never stop half way.
-MRZ_LEFT = 0.1700
-#: nearly the card's own corner — the office marked it there
-MRZ_RIGHT = 0.8660
+#: The machine zone's own band, marked by the office on its card: it
+#: begins under the photo frame's left corner and ends level with the
+#: expiry date's last digit. The characters keep their natural spacing at
+#: the sample's own size, and «<» is added until the line reaches the
+#: right edge — the way the printed card fills it.
+MRZ_LEFT = 0.1646
+MRZ_RIGHT = 0.8707
+#: The sample's glyphs measure 38 px of a 1058 pt card — cap height is
+#: about seven tenths of the type size, hence this.
+MRZ_SIZE = 0.0510
+#: The three lines' baselines, off the sample card itself.
+MRZ_BASELINES = (0.7155, 0.7684, 0.8214)
 
 BLACK = (0.0, 0.0, 0.0)
 #: The card runs five years to the day.
@@ -65,9 +70,12 @@ SLOTS: dict[str, Slot] = {
     "card_number":  Slot(1, 0.7372, 0.5000, 0.0270),
     "card_series":  Slot(1, 0.7372, 0.5690, 0.0270),
     "expiry":       Slot(1, 0.7372, 0.6360, 0.0270),
-    "mrz1":         Slot(1, 0.1700, 0.7080, 0.0330, bold=False, mono=True),
-    "mrz2":         Slot(1, 0.1700, 0.7590, 0.0330, bold=False, mono=True),
-    "mrz3":         Slot(1, 0.1700, 0.8100, 0.0330, bold=False, mono=True),
+    "mrz1":         Slot(1, MRZ_LEFT, MRZ_BASELINES[0], MRZ_SIZE,
+                         bold=False, mono=True),
+    "mrz2":         Slot(1, MRZ_LEFT, MRZ_BASELINES[1], MRZ_SIZE,
+                         bold=False, mono=True),
+    "mrz3":         Slot(1, MRZ_LEFT, MRZ_BASELINES[2], MRZ_SIZE,
+                         bold=False, mono=True),
     # the outer side: the card number, nothing else
     "back_number":  Slot(2, 0.1700, 0.7700, 0.0300, bold=False),
 }
