@@ -126,9 +126,11 @@ def mrz(data: KartaData) -> tuple[str, str, str]:
     line2 = (body + MRZ_FILL * MRZ_LEN)[:MRZ_LEN - 1]
     line2 += _check_digit(line1 + body)
 
-    names = [to_latin(data.surname)]
-    rest = [to_latin(p) for p in (data.name, data.patronymic) if (p or "").strip()]
-    line3 = MRZ_FILL.join(names + rest)
+    # the third line carries the SURNAME and the given name only — the
+    # office prints no patronymic there
+    names = [to_latin(p) for p in (data.surname, data.name)
+             if (p or "").strip()]
+    line3 = MRZ_FILL.join(names)
     line3 = (line3 + MRZ_FILL * MRZ_LEN)[:MRZ_LEN]
     return line1, line2, line3
 
@@ -265,6 +267,21 @@ def render(data: KartaData, inner: Path | str,
                 doc.insert_pdf(back)
         slots = placed(data.layout)
         texts = values(data)
+        # the strip must END where the expiry date above it ends — measure
+        # that line rather than trusting a fixed number, so moving the date
+        # in the layout editor keeps the two flush
+        right = MRZ_RIGHT
+        expiry_slot = slots.get("expiry")
+        if expiry_slot is not None and texts.get("expiry"):
+            family = FONT_BOLD if expiry_slot.bold else FONT_REGULAR
+            try:
+                measure = fitz.Font(fontfile=str(_font_file(family)))
+                page0 = doc[0]
+                grown = measure.text_length(
+                    texts["expiry"], expiry_slot.size * page0.rect.height)
+                right = expiry_slot.x + grown / page0.rect.width
+            except Exception:                     # noqa: BLE001
+                right = MRZ_RIGHT
         for key, text in texts.items():
             slot = slots.get(key)
             if slot is None or not text or slot.page > doc.page_count:
@@ -287,7 +304,7 @@ def render(data: KartaData, inner: Path | str,
                 tail = text[-1] if key == "mrz2" else ""
                 body = text[:-1] if tail else text
                 _write_mrz(page, body.rstrip(MRZ_FILL), slot, size, MRZ_LEFT,
-                           MRZ_RIGHT, fontfile=fontfile, fontname=fontname,
+                           right, fontfile=fontfile, fontname=fontname,
                            tail=tail)
                 continue
             page.insert_text((slot.x * width, slot.baseline * height), text,

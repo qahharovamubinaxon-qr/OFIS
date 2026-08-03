@@ -78,7 +78,10 @@ def test_the_machine_zone_follows_the_sample() -> None:
     assert line2[8:14] == "310520"        # expiry
     assert line2[15:18] == "UZB"          # nationality
     assert line2[6].isdigit() and line2[14].isdigit()   # ICAO check digits
+    # the third line carries the surname and the given name only — no
+    # patronymic, the office was explicit about it
     assert line3.startswith("MAMATOV<FAYZULLOKHON")
+    assert "MAMATOVIC" not in line3
 
 
 def test_a_woman_is_marked_female_everywhere() -> None:
@@ -100,26 +103,28 @@ def test_the_qr_carries_the_owners_own_wording() -> None:
     ]
 
 
-def test_the_machine_zone_fills_the_cards_whole_band(tmp_path) -> None:
-    """The office marked both edges: under the photo frame's left corner
-    and level with the expiry date. Normal spacing, the sample's letter
-    size, chevrons filling whatever is left."""
-    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT, MRZ_SIZE
+def test_the_machine_zone_ends_level_with_the_expiry_date(tmp_path) -> None:
+    """The office drew the line: the strip starts under the photo frame's
+    left corner and must not run past the expiry date printed above it."""
+    from src.pdf.karta_spec import MRZ_LEFT, MRZ_SIZE
 
     pdf = render(KartaData(**_WORKER), _blank(tmp_path, "inner"))
     with fitz.open("pdf", pdf) as doc:
         page = doc[0]
         wide, tall = page.rect.width, page.rect.height
-        lines = [s for b in page.get_text("dict")["blocks"]
+        spans = [s for b in page.get_text("dict")["blocks"]
                  for line in b.get("lines", []) for s in line["spans"]
-                 if "<" in s["text"]]
+                 if s["text"].strip()]
+    lines = [s for s in spans if "<" in s["text"]]
+    expiry = next(s for s in spans if s["text"].strip() == "20.05.2031")
+    edge = expiry["bbox"][2] / wide
     assert len(lines) == 3, "the three machine lines are not there"
     for span in lines:
         starts = span["bbox"][0] / wide
         ends = span["bbox"][2] / wide
         assert abs(starts - MRZ_LEFT) < 0.005, f"starts at {starts:.4f}"
-        assert MRZ_RIGHT - ends < 0.025, f"stops short at {ends:.4f}"
-        assert ends <= MRZ_RIGHT + 0.002, f"runs past at {ends:.4f}"
+        assert ends <= edge + 0.002, f"runs past the date at {ends:.4f}"
+        assert edge - ends < 0.030, f"stops short at {ends:.4f}"
         assert abs(span["size"] / tall - MRZ_SIZE) < 0.001
         assert span["text"].count("<") > 5, "no chevrons were added"
 
@@ -127,7 +132,7 @@ def test_the_machine_zone_fills_the_cards_whole_band(tmp_path) -> None:
 def test_a_saved_layout_never_shortens_the_machine_zone(tmp_path) -> None:
     """The office had already arranged the card — a saved x or size for a
     machine line must not shrink the strip; it is one fixed band."""
-    from src.pdf.karta_spec import MRZ_LEFT, MRZ_RIGHT
+    from src.pdf.karta_spec import MRZ_LEFT
 
     layout = {"fields": {"mrz1": [0.1700, 0.7155, 0.0450],
                          "mrz2": [0.1700, 0.7684, 0.0450],
@@ -143,7 +148,7 @@ def test_a_saved_layout_never_shortens_the_machine_zone(tmp_path) -> None:
     assert len(lines) == 3
     for span in lines:
         assert abs(span["bbox"][0] / wide - MRZ_LEFT) < 0.005
-        assert MRZ_RIGHT - span["bbox"][2] / wide < 0.025
+        assert span["bbox"][2] / wide > 0.78, "a saved layout cut the strip"
 
 
 def test_the_check_digit_stays_last_after_the_filling() -> None:
