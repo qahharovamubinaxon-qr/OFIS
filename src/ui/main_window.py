@@ -75,6 +75,8 @@ _NAV = [
      "🪪"),
     (None, "nav.qrreg", "КРКОД РЕГ",
      "QR кодли регистрация — подтверждение imgbb'га, QR орқасига", "🔳"),
+    (None, "nav.karta", "КАРТА ИН. ГРАЖДАНИНА",
+     "Иностранный карта — паспорт + расм → 2 томон PDF", "🪪"),
     (None, "nav.alpinist", "АЛПИНИСТ",
      "Промышленный альпинист удостоверенияси — расм, имзо, печать", "🧗"),
     (None, "nav.imgbb", "IMGBB",
@@ -267,6 +269,15 @@ class MainWindow(QMainWindow):
             return QrRegView(QrRegController(
                 self._container.resolve(OcrService),
                 QrRegService(self._settings),
+            ))
+        if key == "nav.karta":
+            from src.controllers.karta_controller import KartaController
+            from src.services.karta_service import KartaService
+            from src.ui.views.karta_view import KartaView
+
+            return KartaView(KartaController(
+                self._container.resolve(OcrService),
+                KartaService(self._settings),
             ))
         if key == "nav.alpinist":
             from src.controllers.alpinist_controller import AlpinistController

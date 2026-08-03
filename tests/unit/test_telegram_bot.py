@@ -134,6 +134,7 @@ _DESKTOP_TO_MODULE = {
     "nav.inn": "inn",
     "nav.chek": "chek",
     "nav.kukchek": "kukchek",
+    "nav.karta": "karta",
     "nav.beydjik": "beydjik",
     "nav.patent": "patent_card",
     "nav.razreshenie": "razreshenie",

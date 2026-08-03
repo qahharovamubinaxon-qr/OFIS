@@ -765,6 +765,28 @@ def _run_alpinist(ctx: RunContext, state: dict) -> list[Path]:
     return [result.saved]
 
 
+def _run_karta(ctx: RunContext, state: dict) -> list[Path]:
+    """КАРТА from the phone: passport + the worker's photo + the card code.
+
+    The signature pad only exists in the program, so a card made on the
+    phone simply leaves the signature strip empty.
+    """
+    ctl = ctx.ctl["karta"]
+    photos = state["photos"]
+    if len(photos) < 2:
+        raise OfisError("Иккита расм керак: паспорт ва ишчининг расми.")
+    worker = ctl.read_passport(photos[0])
+    ctx.note(f"Паспорт ўқилди: {worker.surname or ''} "
+             f"{worker.name or ''}".strip())
+    answers = state["answers"]
+    result = ctl.generate(
+        passport=worker, photo=photos[1], signature=None,
+        issued=answers.get("issued") or date.today(),
+        card_code=str(answers.get("card_code") or "").strip())
+    ctx.note(f"№ {result.card_number}")
+    return [result.saved]
+
+
 def _run_kukchek(ctx: RunContext, state: dict) -> list[Path]:
     """КУК ЧЕК from the phone: patent card + число + сумма."""
     ctl = ctx.ctl["kukchek"]
@@ -1070,6 +1092,16 @@ MODULES: tuple[Module, ...] = (
                      "ўзи +3 йил:", default_days=0),
                  Ask("ud_number", "УДОСТОВЕРЕНИЕ № (1-саҳифа):",
                      kind="text"))),
+    Module("karta", "🪪 КАРТА ИН.ГР.", _run_karta,
+           photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми",
+           photo_labels=("Паспорт", "Ишчи расми"), min_photos=2,
+           asks=(Ask("issued", "Берилган сана (КК.ОО.ЙЙЙЙ) — тугаши "
+                     "ўзи +5 йил:", default_days=0),
+                 Ask("card_code", "Карта рақами (масалан АВ1563244):",
+                     kind="text")),
+           ready=lambda c: (
+               "" if c["karta"].blank("inner")
+               else "Карта бланкаси йўқ — компютерда бўлимга юкланг.")),
     Module("kukchek", "🔵 КУК ЧЕК", _run_kukchek,
            photo_prompt="Патент картасининг расмини юборинг.",
            photo_labels=("Патент",),
@@ -1239,6 +1271,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.hostel_controller import HostelController
     from src.controllers.imgbb_controller import ImgbbController
     from src.controllers.inn_controller import InnController
+    from src.controllers.karta_controller import KartaController
     from src.controllers.kukchek_controller import KukChekController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
@@ -1269,6 +1302,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
     from src.services.inn_service import InnService
+    from src.services.karta_service import KartaService
     from src.services.kukchek_service import KukChekService
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
@@ -1308,6 +1342,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "alpinist": AlpinistController(
             ocr, AlpinistService(container.resolve(SettingsService))),
         "imgbb": ImgbbController(container.resolve(SettingsService)),
+        "karta": KartaController(
+            ocr, KartaService(container.resolve(SettingsService))),
         "kukchek": KukChekController(
             ocr, KukChekService(container.resolve(SettingsService))),
         "spr3": Spr3Controller(

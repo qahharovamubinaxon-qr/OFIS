@@ -29,6 +29,7 @@ PEN_WIDTH = 4
 class _Canvas(QWidget):
     def __init__(self) -> None:
         super().__init__()
+        self.ink = QColor(*INK_RGB)
         self.setFixedSize(PAD_W, PAD_H)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.image = QImage(PAD_W, PAD_H, QImage.Format.Format_ARGB32)
@@ -52,7 +53,7 @@ class _Canvas(QWidget):
             return
         painter = QPainter(self.image)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor(*INK_RGB), PEN_WIDTH,
+        painter.setPen(QPen(self.ink, PEN_WIDTH,
                             Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                             Qt.PenJoinStyle.RoundJoin))
         painter.drawLine(self._last, point)
@@ -96,6 +97,10 @@ class SignaturePad(QDialog):
         buttons.rejected.connect(self.reject)
         row.addWidget(buttons)
         root.addLayout(row)
+
+    def set_ink(self, rgb: tuple[int, int, int]) -> None:
+        """The card signs in black; the алпинист card in indigo."""
+        self._canvas.ink = QColor(*rgb)
 
     def signature_png(self) -> bytes | None:
         """The drawn ink, cropped to its own bounds — None if never touched."""
