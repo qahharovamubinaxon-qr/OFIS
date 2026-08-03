@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QColorDialog,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -61,6 +62,10 @@ class KukChekView(QWidget):
         arrange = QPushButton("📐 Матн ва печатни жойлаш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
+        style = QPushButton("🎨 Ранг ва қалинлик")
+        style.setToolTip("Ҳар матннинг рангини ва қалин/юпқалигини танлаш")
+        style.clicked.connect(self._style)
+        blank_row.addWidget(style)
         root.addLayout(blank_row)
 
         stamp_row = QHBoxLayout()
@@ -209,7 +214,7 @@ class KukChekView(QWidget):
         sample = values(KukChekData(
             fam="КАХХАРОВ", ism="КАХРАМОН", otch="АБДИСАТТОР УГЛИ",
             inn="540963187924", when=_date(2026, 7, 30),
-            at=_dt(2026, 7, 30, 10, 54, 53), rubles=23600, kopecks=0),
+            at=_dt(2026, 7, 30, 10, 54, 53), rubles=13578, kopecks=0),
             uip="10466146320086093007202611948663")
         moved = (self._c.layout(template) or {}).get("fields") or {}
         items = []
@@ -232,6 +237,45 @@ class KukChekView(QWidget):
             self._failed(error)
             return
         self._status.setText("✅ Матн ва печать жойлари сақланди.")
+
+    def _style(self) -> None:
+        """Colour and weight, per text — kept beside this blank."""
+        from PySide6.QtWidgets import QInputDialog
+
+        from src.pdf.kukchek_renderer import SLOTS, placed
+
+        template = self._template.currentData()
+        if not template:
+            self._warn("Аввал бланкани танланг ёки юкланг.")
+            return
+        template = Path(template)
+        picked, ok = QInputDialog.getItem(
+            self, "КУК ЧЕК", "Қайси матн?", list(SLOTS), 0, False)
+        if not ok:
+            return
+        colour = QColorDialog.getColor(parent=self, title="Матн ранги")
+        if not colour.isValid():
+            return
+        weight, ok = QInputDialog.getItem(
+            self, "КУК ЧЕК", "Қалинлиги", ["Қалин (жирний)", "Юпқа (оддий)"],
+            0, False)
+        if not ok:
+            return
+        kept = self._c.layout(template)
+        styles = dict(kept.get("styles") or {})
+        styles[picked] = {
+            "colour": [colour.redF(), colour.greenF(), colour.blueF()],
+            "bold": weight.startswith("Қалин")}
+        try:
+            self._c.save_layout(template, {"styles": styles})
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        was = placed(kept, SLOTS)[picked]
+        self._status.setText(
+            f"✅ «{picked}»: ранг ва қалинлик сақланди "
+            f"({'қалин' if styles[picked]['bold'] else 'юпқа'}; "
+            f"аввалгиси {'қалин' if was.bold else 'юпқа'}).")
 
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:

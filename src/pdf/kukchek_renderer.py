@@ -42,6 +42,9 @@ class Slot:
     x: float
     baseline: float
     size: float = TEXT_SIZE
+    #: the office may recolour any text and make it thin or thick
+    colour: tuple[float, float, float] = BLUE
+    bold: bool = True
 
 
 #: First-pass spots off the office's sample — every one draggable.
@@ -55,9 +58,18 @@ SLOTS: dict[str, Slot] = {
     "summa_platezha":  Slot(0.4200, 0.8200),
     "summa":           Slot(0.3340, 0.8550),
     "itogo":           Slot(0.3200, 0.8900),
-    "propis1":         Slot(0.2530, 0.9130),
-    "propis2":         Slot(0.2530, 0.9350),
+    # ONE line of words: it wraps to a second line only when the sum is
+    # long enough not to fit — see _write_propis
+    "propis":          Slot(0.2530, 0.9130),
 }
+
+#: How far the second line of the пропись sits below the first, and how
+#: many words stay on the first line when it has to wrap. The office was
+#: precise: «биринчи қаторга 4 сўз, қолгани иккинчи қаторга».
+PROPIS_STEP = 0.0220
+PROPIS_FIRST_WORDS = 4
+#: The чек's own right margin — a line may not pass it.
+RIGHT_EDGE = 0.9700
 
 #: The печать — x = left, baseline = bottom, size = height (like АЛПИНИСТ).
 IMG_SLOTS: dict[str, Slot] = {"img_stamp": Slot(0.5500, 0.9500, 0.1500)}
@@ -105,7 +117,6 @@ def values(data: KukChekData, uip: str | None = None) -> dict[str, str]:
     amount = _amount(data.rubles, data.kopecks)
     words = amount_to_words(data.rubles, data.kopecks)
     words = words[:1].upper() + words[1:]
-    parts = words.rsplit(" ", 2)
     inn = "".join(ch for ch in (data.inn or "") if ch.isdigit())
     return {
         "top_date": top,
@@ -119,18 +130,40 @@ def values(data: KukChekData, uip: str | None = None) -> dict[str, str]:
         "summa_platezha": amount,
         "summa": amount,
         "itogo": amount,
-        "propis1": parts[0] if parts else "",
-        "propis2": " ".join(parts[1:]) if len(parts) > 2 else "",
+        "propis": words,
     }
 
 
 def placed(layout: dict | None, base: dict[str, Slot]) -> dict[str, Slot]:
+    """The measured slots, with the office's own moves and styles on top."""
     out = dict(base)
     for key, moved in ((layout or {}).get("fields") or {}).items():
         if key in out and len(moved) == 3:
+            slot = out[key]
             x, baseline, size = (float(v) for v in moved)
-            out[key] = Slot(x, baseline, size)
+            out[key] = Slot(x, baseline, size, colour=slot.colour,
+                            bold=slot.bold)
+    for key, style in ((layout or {}).get("styles") or {}).items():
+        if key not in out:
+            continue
+        slot = out[key]
+        colour = style.get("colour")
+        out[key] = Slot(slot.x, slot.baseline, slot.size,
+                        colour=(tuple(float(c) for c in colour) if colour
+                                else slot.colour),
+                        bold=bool(style.get("bold", slot.bold)))
     return out
+
+
+def split_propis(words: str, room: float, measure, size: float) -> list[str]:
+    """One line when it fits; otherwise four words, then the rest."""
+    wide = (measure.text_length(words, size) if measure
+            else len(words) * size * 0.5)
+    if wide <= room:
+        return [words]
+    parts = words.split()
+    return [" ".join(parts[:PROPIS_FIRST_WORDS]),
+            " ".join(parts[PROPIS_FIRST_WORDS:])]
 
 
 def render(data: KukChekData, template: Path | str) -> bytes:
@@ -147,16 +180,28 @@ def render(data: KukChekData, template: Path | str) -> bytes:
         fontfile = str(_font_file(FONT))
         fontname = _fontname(FONT)
         slots = placed(data.layout, SLOTS)
+        try:
+            measure = fitz.Font(fontfile=fontfile)
+        except Exception:                         # noqa: BLE001
+            measure = None
         for key, text in values(data).items():
             slot = slots.get(key)
             if slot is None or not text:
                 continue
-            page.insert_text((slot.x * width, slot.baseline * height), text,
-                             fontsize=slot.size * height,
-                             fontfile=fontfile, fontname=fontname,
-                             color=BLUE, fill_opacity=TEXT_OPACITY,
-                             render_mode=2, stroke_opacity=TEXT_OPACITY,
-                             border_width=BOLD_STROKE)
+            size = slot.size * height
+            lines = [text]
+            if key == "propis":
+                room = (RIGHT_EDGE - slot.x) * width
+                lines = split_propis(text, room, measure, size)
+            for index, line in enumerate(lines):
+                baseline = (slot.baseline + index * PROPIS_STEP) * height
+                page.insert_text((slot.x * width, baseline), line,
+                                 fontsize=size, fontfile=fontfile,
+                                 fontname=fontname, color=slot.colour,
+                                 fill_opacity=TEXT_OPACITY,
+                                 render_mode=2 if slot.bold else 0,
+                                 stroke_opacity=TEXT_OPACITY,
+                                 border_width=BOLD_STROKE if slot.bold else 0)
         if data.stamp_png:
             slot = placed(data.layout, IMG_SLOTS)["img_stamp"]
             pix = fitz.Pixmap(data.stamp_png)

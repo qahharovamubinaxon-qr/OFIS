@@ -89,7 +89,9 @@ class KukChekService:
         return blank_layout.load(SECTION, template) if template else {}
 
     def save_layout(self, template: Path, layout: dict):
-        return blank_layout.save(SECTION, template, layout)
+        """Moves and styles live side by side — saving one keeps the other."""
+        kept = self.layout(template)
+        return blank_layout.save(SECTION, template, {**kept, **layout})
 
     # ---------------------------------------------------------- printing
     def generate(self, data: KukChekData,

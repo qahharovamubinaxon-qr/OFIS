@@ -54,8 +54,7 @@ def test_the_values_write_the_samples_manner() -> None:
     assert made["ipgu"] == IPGU_PREFIX + made["inn"]
     assert made["summa_platezha"] == made["summa"] == made["itogo"] \
         == "23 600.00"
-    assert made["propis1"] == "Двадцать три тысячи шестьсот рублей"
-    assert made["propis2"] == "00 копеек"
+    assert made["propis"] == "Двадцать три тысячи шестьсот рублей 00 копеек"
 
 
 def test_the_uip_carries_the_days_digits_inside() -> None:
@@ -92,6 +91,45 @@ def test_render_prints_bold_in_the_offices_indigo(tmp_path) -> None:
     assert np.abs(median - wanted).max() < 25,         f"ink {median} is not #3f1ba6 {wanted}"
     assert median[2] > median[0] > median[1], "not an indigo"
     assert BOLD_STROKE > 0, "the чек must print bold"
+
+
+def test_a_short_sum_stays_on_one_line_a_long_one_wraps(tmp_path) -> None:
+    """The office: «10000, 30000, 100000 — бир қаторга; 13578, 25470 —
+    биринчи қаторга 4 сўз, қолгани иккинчисига»."""
+
+    def _lines(rubles: int) -> list[str]:
+        data = KukChekData(**{**_WORKER, "rubles": rubles})
+        pdf = render(data, _blank(tmp_path))
+        with fitz.open("pdf", pdf) as doc:
+            return [sp["text"].strip()
+                    for b in doc[0].get_text("dict")["blocks"]
+                    for line in b.get("lines", []) for sp in line["spans"]
+                    if any(w in sp["text"] for w in
+                           ("рубл", "копеек", "тысяч", "дцать", "Сто"))]
+
+    assert _lines(30000) == ["Тридцать тысяч рублей 00 копеек"]
+    assert _lines(100000) == ["Сто тысяч рублей 00 копеек"]
+    long_one = _lines(13578)
+    assert len(long_one) == 2, f"a long sum must wrap: {long_one}"
+    assert long_one[0] == "Тринадцать тысяч пятьсот семьдесят"
+    assert long_one[0].count(" ") == 3, "the first line takes four words"
+    assert long_one[1] == "восемь рублей 00 копеек"
+
+
+def test_colour_and_weight_travel_in_the_layout(tmp_path) -> None:
+    from src.pdf.kukchek_renderer import SLOTS, placed
+    from src.services.kukchek_service import KukChekService
+
+    service = KukChekService()
+    blank = service.add_template("СФЕРА", _blank(tmp_path))
+    assert SLOTS["itogo"].bold is True
+    service.save_layout(blank, {"fields": {"itogo": [0.4, 0.5, 0.02]}})
+    service.save_layout(blank, {"styles": {"itogo": {
+        "colour": [1.0, 0.0, 0.0], "bold": False}}})
+    slot = placed(service.layout(blank), SLOTS)["itogo"]
+    assert slot.colour == (1.0, 0.0, 0.0) and slot.bold is False
+    # the move survived the style being saved after it
+    assert abs(slot.x - 0.4) < 1e-6 and abs(slot.baseline - 0.5) < 1e-6
 
 
 def test_the_service_keeps_the_stamp_and_prints(tmp_path) -> None:
