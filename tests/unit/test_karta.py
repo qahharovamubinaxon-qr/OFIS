@@ -126,6 +126,34 @@ def test_the_machine_zone_fills_the_cards_whole_band(tmp_path) -> None:
         assert abs(ends - MRZ_RIGHT) < 0.01, f"ends at {ends:.4f}"
 
 
+def test_a_saved_layout_never_shortens_the_machine_zone(tmp_path) -> None:
+    """The office had already arranged the card, so every MRZ key sat in
+    the saved layout — and the lines stopped half way. A saved layout may
+    move where a line STARTS; it may never cut how far it reaches."""
+    from src.pdf.karta_spec import MRZ_RIGHT
+
+    layout = {"fields": {"mrz1": [0.1700, 0.7080, 0.0330],
+                         "mrz2": [0.1700, 0.7590, 0.0330],
+                         "mrz3": [0.1700, 0.8100, 0.0330]}}
+    pdf = render(KartaData(**_WORKER, layout=layout),
+                 _blank(tmp_path, "inner"))
+    with fitz.open("pdf", pdf) as doc:
+        page = doc[0]
+        wide = page.rect.width
+        rows: dict[int, list] = {}
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    if span["text"].strip():
+                        rows.setdefault(round(span["origin"][1]), []).append(span)
+    long_rows = [r for r in rows.values() if len(r) > 5]
+    assert len(long_rows) == 3
+    for row in long_rows:
+        ends = max(s["bbox"][2] for s in row) / wide
+        assert abs(ends - MRZ_RIGHT) < 0.01, \
+            f"a saved layout cut the line at {ends:.4f}"
+
+
 def test_the_machine_zone_is_set_in_franklin_gothic() -> None:
     import os
 

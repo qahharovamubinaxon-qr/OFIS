@@ -269,10 +269,13 @@ def render(data: KartaData, inner: Path | str,
             fontfile = str(_font_file(family))
             fontname = _fontname(family)
             size = slot.size * height
-            if slot.mono and key not in moved:
-                # spread the 30 characters across the card's whole band, so
-                # the line ends where the office marked it, not half way
-                _spread(page, text, slot, size, MRZ_LEFT, MRZ_RIGHT,
+            if slot.mono:
+                # the machine zone ALWAYS spans the card's band — a saved
+                # layout moves where it starts, never how far it reaches
+                # (skipping this for dragged slots left the line half way,
+                # which is exactly what the office saw)
+                left = slot.x if key in moved else MRZ_LEFT
+                _spread(page, text, slot, size, left, MRZ_RIGHT,
                         fontfile=fontfile, fontname=fontname)
                 continue
             page.insert_text((slot.x * width, slot.baseline * height), text,

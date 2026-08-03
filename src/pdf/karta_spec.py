@@ -25,7 +25,8 @@ TEXT_OPACITY = 1.0
 #: MRZ_RIGHT, the 30 characters spread evenly in between — which is how a
 #: real card reads, and why the lines never stop half way.
 MRZ_LEFT = 0.1700
-MRZ_RIGHT = 0.8560
+#: nearly the card's own corner — the office marked it there
+MRZ_RIGHT = 0.8660
 
 BLACK = (0.0, 0.0, 0.0)
 #: The card runs five years to the day.
