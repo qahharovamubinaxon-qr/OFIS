@@ -56,6 +56,9 @@ _FONT_FAMILIES: dict[str, dict[str, object]] = {
     # Not a Windows font: it is installed per-user, where the system
     # lookup below cannot see it, so the bundled copy is what gets used.
     "OfisAkshar": {"nt": (), "bundled": "OfisAkshar-Regular.ttf"},
+    # Matricha — the dot-matrix face the СФЕРА payment чек is printed in.
+    # Bundled from the office's own font, so the EXE prints it anywhere.
+    "OfisMatricha": {"nt": (), "bundled": "OfisMatricha.ttf"},
 }
 
 # Internal PDF font name PyMuPDF registers each family under (must be unique).
@@ -67,6 +70,7 @@ _FONT_IDS = {
     "OfisArialBoldItalic": "ofis_arial_bi",
     "OfisMono": "ofis_mono",
     "OfisAkshar": "ofis_akshar",
+    "OfisMatricha": "ofis_matricha",
     "OfisSerif": "ofis_serif",
     "OfisSerifBold": "ofis_serif_b",
     "OfisSerifItalic": "ofis_serif_i",

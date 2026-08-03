@@ -133,6 +133,7 @@ _DESKTOP_TO_MODULE = {
     "nav.strahovka": "insurance",
     "nav.inn": "inn",
     "nav.chek": "chek",
+    "nav.kukchek": "kukchek",
     "nav.beydjik": "beydjik",
     "nav.patent": "patent_card",
     "nav.razreshenie": "razreshenie",

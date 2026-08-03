@@ -62,6 +62,8 @@ _NAV = [
     (None, "nav.patent", "ПАТЕНТ",
      "Патент картаси (77 / 50) — олд + орқа → PDF", "🩷"),
     (None, "nav.chek", "ЧЕК", "Премия чеки — патент + сумма → PDF", "🧾"),
+    (None, "nav.kukchek", "КУК ЧЕК",
+     "СФЕРА тўлов чеки — патент + число + сумма → PDF", "🔵"),
     (None, "nav.razreshenie", "РАЗРЕШЕНИЯ",
      "Ишчининг рухсатнома картаси — олд + орқа → PDF", "🟩"),
     (None, "nav.ppu", "ППУ",
@@ -274,6 +276,15 @@ class MainWindow(QMainWindow):
             return AlpinistView(AlpinistController(
                 self._container.resolve(OcrService),
                 AlpinistService(self._settings),
+            ))
+        if key == "nav.kukchek":
+            from src.controllers.kukchek_controller import KukChekController
+            from src.services.kukchek_service import KukChekService
+            from src.ui.views.kukchek_view import KukChekView
+
+            return KukChekView(KukChekController(
+                self._container.resolve(OcrService),
+                KukChekService(self._settings),
             ))
         if key == "nav.imgbb":
             from src.controllers.imgbb_controller import ImgbbController

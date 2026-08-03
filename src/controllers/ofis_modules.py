@@ -765,6 +765,20 @@ def _run_alpinist(ctx: RunContext, state: dict) -> list[Path]:
     return [result.saved]
 
 
+def _run_kukchek(ctx: RunContext, state: dict) -> list[Path]:
+    """КУК ЧЕК from the phone: patent card + число + сумма."""
+    ctl = ctx.ctl["kukchek"]
+    fields = ctl.read_patent(state["photos"][0])
+    ctx.note(f"Патент ўқилди: {fields.get('fam', '')} "
+             f"{fields.get('ism', '')}".strip())
+    answers = state["answers"]
+    result = ctl.generate(
+        template=(ctl.templates() or [None])[0],
+        fields=fields, when=answers.get("when") or date.today(),
+        amount_text=str(answers.get("amount") or "0"))
+    return [result.saved]
+
+
 def _run_imgbb(ctx: RunContext, state: dict) -> list[Path]:
     """IMGBB from the phone: the picture up, the direct link and its QR back."""
     from src.config import paths
@@ -1056,6 +1070,14 @@ MODULES: tuple[Module, ...] = (
                      "ўзи +3 йил:", default_days=0),
                  Ask("ud_number", "УДОСТОВЕРЕНИЕ № (1-саҳифа):",
                      kind="text"))),
+    Module("kukchek", "🔵 КУК ЧЕК", _run_kukchek,
+           photo_prompt="Патент картасининг расмини юборинг.",
+           photo_labels=("Патент",),
+           asks=(Ask("when", "Число (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("amount", "Сумма (рубл):", kind="text")),
+           ready=lambda c: (
+               "" if c["kukchek"].templates()
+               else "КУК ЧЕК бланкаси йўқ — компютерда бўлимга юкланг.")),
     Module("imgbb", "🖼 IMGBB", _run_imgbb,
            photo_prompt="Расмни юборинг — прямой ҳавола ва QR қайтади.",
            photo_labels=("Расм",),
@@ -1217,6 +1239,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.hostel_controller import HostelController
     from src.controllers.imgbb_controller import ImgbbController
     from src.controllers.inn_controller import InnController
+    from src.controllers.kukchek_controller import KukChekController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
     from src.controllers.osago_controller import OsagoController
@@ -1246,6 +1269,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.generation_service import GenerationService
     from src.services.hostel_service import HostelService
     from src.services.inn_service import InnService
+    from src.services.kukchek_service import KukChekService
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
     from src.services.osago_service import OsagoService
@@ -1284,6 +1308,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "alpinist": AlpinistController(
             ocr, AlpinistService(container.resolve(SettingsService))),
         "imgbb": ImgbbController(container.resolve(SettingsService)),
+        "kukchek": KukChekController(
+            ocr, KukChekService(container.resolve(SettingsService))),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(
