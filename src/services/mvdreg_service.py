@@ -279,6 +279,40 @@ class MvdRegService:
         return made
 
 
+def refresh_templates(addresses: list[RegistrationAddress]) -> int:
+    """Rebuild address templates older than the shared address map.
+
+    The office added addresses, then the map was corrected — every template
+    those addresses were printed with still carries the OLD cell positions.
+    Rather than asking the office to re-add each address, any template built
+    before the map's last change is quietly rebuilt from the same data.
+    Uploaded ready-made templates carry no address parts, so they are never
+    touched.
+    """
+    map_file = bundled_dir() / "address_mapping.v1.json"
+    if not map_file.exists():
+        return 0
+    stamp = map_file.stat().st_mtime
+    rebuilt = 0
+    builder = MvdRegTemplateBuilder()
+    for address in addresses:
+        template = Path(address.template_path)
+        if not (address.oblast or address.gorod or address.ulitsa):
+            continue
+        try:
+            if template.exists() and template.stat().st_mtime >= stamp:
+                continue
+            builder.build(template, address)
+            rebuilt += 1
+        except Exception as exc:                      # noqa: BLE001
+            log.warning("МВД РЕГ: «%s» шаблони янгиланмади: %s",
+                        address.label, exc)
+    if rebuilt:
+        log.info("МВД РЕГ: %d та адрес шаблони янги харитага қайта қурилди",
+                 rebuilt)
+    return rebuilt
+
+
 class MvdRegTemplateBuilder:
     """Print an address's fixed data onto the office's blank — once, when the
     address is added; every worker then prints on that ready template."""

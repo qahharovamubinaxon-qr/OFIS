@@ -21,14 +21,43 @@ DST = REPO / "templates" / "mvdreg"
 H = 842.03
 W = 595.28
 
-#: page-2 baselines measured off the blank (fractions of the page height)
-P2 = {
-    "surname": 0.1145, "name": 0.1396, "patronymic": 0.1641,
-    "org1": 0.1892, "org2": 0.2142, "registered_until": 0.2375,
+#: page-2 rows: (x0 of the first cell's CENTRE, pitch, baseline) — every
+#: number measured off the blank's own cell boxes, not carried from the
+#: hostel's (its cells are 16.08pt apart, this blank's are 16.9, which by
+#: the twelfth letter of ВЛАДИМИРОВНА is half a cell of drift).
+P2_GRID = {
+    "host.surname": (0.1732 * W, 16.9, 94.4),
+    "host.name": (0.1732 * W, 16.9, 115.6),
+    "host.patronymic": (0.3159 * W, 16.9, 136.2),
+    "host.org": (0.3443 * W, 16.9, 157.3),
+    "host.inn": (0.6294 * W, 16.8, 178.5),
+}
+ORG_WRAP = (0.0887 * W, 16.8, 178.5)
+P2 = {"registered_until": 0.2375}
+
+#: «Заявленный срок пребывания до» (page 1) — its own cells.
+STAY_UNTIL = {"d": (0.4471 * W, 16.9), "m": (0.5608 * W, 16.9),
+              "y": (0.6460 * W, 16.8)}
+STAY_UNTIL_Y = 504.5
+
+#: Page-1 date groups and the серия — first-cell centres measured off the
+#: blank (the hostel's expiry group is a whole slot left of this one's).
+PAGE1_GRID = {
+    "reg.passport.series": (0.4825 * W, 16.5),
+    "reg.birth.d": (0.2950 * W, 16.7),
+    "reg.birth.m": (0.4240 * W, 16.7),
+    "reg.birth.y": (0.5170 * W, 16.4),
+    "reg.passport.issue.d": (0.1530 * W, 15.7),
+    "reg.passport.issue.m": (0.2690 * W, 15.7),
+    "reg.passport.issue.y": (0.3440 * W, 16.7),
+    "reg.passport.expiry.d": (0.5350 * W, 16.7),
+    "reg.passport.expiry.m": (0.6490 * W, 16.4),
+    "reg.passport.expiry.y": (0.7185 * W, 16.5),
 }
 
-#: The ИНН cells sit half a cell right of the hostel blank's.
-INN_X0, INN_PITCH = 0.6294 * W, 16.8
+#: Пол — the two tick boxes' centres on the birth row.
+GENDER = {"reg.gender.male": 0.735 * W - 3.0,
+          "reg.gender.female": 0.870 * W - 3.0}
 
 #: «Поставлен на учет до» — its cells' centres, measured off the blank.
 UCHET = {"d": (0.3443 * W, 17.1), "m": (0.4586 * W, 16.9),
@@ -51,31 +80,41 @@ def main() -> None:
         raw = json.loads((SRC / name).read_text(encoding="utf-8"))
         raw["template"] = "mvdreg"
         for field in raw["fields"]:
+            key = field["id"].rsplit(".", 1)[-1]
             if field.get("page") == 1:
-                # this blank's cells sit half a cell right of the hostel's in
-                # three rows, and its street cells a row lower
-                if field["id"] in ("reg.passport.series", "reg.passport.number",
-                                   "reg.birth.m") and field.get("x0"):
+                # this blank's cells sit elsewhere than the hostel's in a
+                # number of rows; every corrected value was measured off the
+                # blank's own cell boxes
+                if field["id"] in PAGE1_GRID:
+                    x0, pitch = PAGE1_GRID[field["id"]]
+                    field["x0"] = round(x0, 1)
+                    field["pitch"] = pitch
+                elif field["id"] == "reg.passport.number" and field.get("x0"):
                     field["x0"] = round(field["x0"] + 8.3, 1)
+                elif field["id"] in GENDER:
+                    field["x"] = round(GENDER[field["id"]], 1)
                 if field["id"] == "host.addr.street":
                     _shift(field, 0.3320 * H)
+                if field["id"].startswith("reg.stay_until"):
+                    x0, pitch = STAY_UNTIL[key]
+                    field["x0"] = round(x0, 1)
+                    field["pitch"] = pitch
+                    _shift(field, STAY_UNTIL_Y)
                 continue
-            key = field["id"].rsplit(".", 1)[-1]
             if field["id"].startswith("reg.registered_until"):
                 x0, pitch = UCHET[key]
                 field["x0"] = round(x0, 1)
                 field["pitch"] = round(pitch, 2)
                 _shift(field, P2["registered_until"] * H)
-            elif key in ("surname", "name", "patronymic"):
-                _shift(field, P2[key] * H)
-            elif field["id"] == "host.org":
-                _shift(field, P2["org1"] * H)
+            elif field["id"] in P2_GRID:
+                x0, pitch, baseline = P2_GRID[field["id"]]
+                field["x0"] = round(x0, 1)
+                field["pitch"] = pitch
+                _shift(field, baseline)
                 for wrap in field.get("wrap") or []:
-                    wrap["y"] = round(P2["org2"] * H, 1)
-            elif field["id"] == "host.inn":
-                field["x0"] = round(INN_X0, 1)
-                field["pitch"] = INN_PITCH
-                _shift(field, P2["org2"] * H)
+                    wrap["x0"] = round(ORG_WRAP[0], 1)
+                    wrap["pitch"] = ORG_WRAP[1]
+                    wrap["y"] = ORG_WRAP[2]
             if field["id"] == "reg.stay_from":
                 field.update({
                     "type": "text", "x": round(STAMP_CENTRE_X - 123.1, 1),

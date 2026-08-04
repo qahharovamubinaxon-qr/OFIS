@@ -29,7 +29,9 @@ class MvdRegController:
         self._service = service
 
     def addresses(self) -> list[RegistrationAddress]:
-        return self._addresses.list(kind="mvdreg")
+        found = self._addresses.list(kind="mvdreg")
+        mvdreg_service.refresh_templates(found)
+        return found
 
     def add_address(self, address: RegistrationAddress,
                     template_source: Path | None) -> RegistrationAddress:
