@@ -14,13 +14,35 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from src.domain.enums import Gender
-from src.domain.passport_rules import issuer_in_russian, normalise_document
+from src.domain.passport_rules import (
+    in_russian_letters,
+    issuer_in_russian,
+    normalise_document,
+)
 
 _MODEL = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
 
 def _collapse(value: str) -> str:
+    """One line, no double spaces."""
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _russian(value: str) -> str:
+    """One line, and in RUSSIAN letters.
+
+    A Tajik document is printed in the Tajik alphabet (Хоҷа, Ғафуров,
+    Қӯрғонтеппа) and a Russian form has no such letters, so every name and
+    place is spelled the Russian way here — whichever road it came in by:
+    read off a photograph, taken out of the machine-readable zone, or typed
+    by the operator. See :func:`in_russian_letters`.
+
+    NOT applied to «кем выдан»: that field has a rule of its own
+    (:func:`issuer_in_russian`), which recognises the office by its Tajik
+    initials — «ХШБ ВКД ҶТ» — and would no longer know «ҶТ» once it had
+    been spelled out as «ДЖТ». Its own rule ends with the same letters.
+    """
+    return in_russian_letters(_collapse(value))
 
 
 class Passport(BaseModel):
@@ -46,9 +68,16 @@ class Passport(BaseModel):
     mrz_checked: bool = False
     mrz_warning: str | None = None
 
-    @field_validator("surname", "name", "patronymic", "nationality", "issued_by")
+    @field_validator("surname", "name", "patronymic", "nationality",
+                     "birth_place")
     @classmethod
     def _clean_text(cls, v: str | None) -> str | None:
+        return _russian(v) if v else v
+
+    @field_validator("issued_by")
+    @classmethod
+    def _clean_issuer(cls, v: str | None) -> str | None:
+        # left in its own alphabet here — issuer_in_russian reads it below
         return _collapse(v) if v else v
 
     @field_validator("number", "series")
@@ -95,7 +124,7 @@ class Patent(BaseModel):
                      "holder_patronymic", "holder_citizenship")
     @classmethod
     def _clean(cls, v: str | None) -> str | None:
-        return _collapse(v) if v else v
+        return _russian(v) if v else v
 
 
 class Registration(BaseModel):
@@ -110,7 +139,7 @@ class Registration(BaseModel):
     @field_validator("address")
     @classmethod
     def _clean(cls, v: str) -> str:
-        return _collapse(v)
+        return _russian(v)
 
 
 class MigrationCard(BaseModel):
@@ -119,3 +148,8 @@ class MigrationCard(BaseModel):
     number: str | None = None
     entry_date: date | None = None
     purpose: str | None = None
+
+    @field_validator("purpose")
+    @classmethod
+    def _clean(cls, v: str | None) -> str | None:
+        return _russian(v) if v else v

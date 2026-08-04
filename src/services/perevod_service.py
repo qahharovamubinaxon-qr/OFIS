@@ -35,6 +35,7 @@ from src.ai.text_client import ask
 from src.common.errors import OfisError, ValidationError
 from src.common.logging import get_logger
 from src.config import paths
+from src.domain.passport_rules import in_russian_letters
 from src.pdf import perevod_pasport
 from src.pdf.engine import _font_file
 from src.pdf.perevod_spec import (
@@ -438,6 +439,19 @@ def _forms() -> dict:
         return {}
 
 
+def _russian(field: dict) -> dict:
+    """One read field, spelled the way a Russian document spells it.
+
+    A Tajik document is translated by the reader but its own alphabet often
+    survives in a name or a place — Хоҷа, Ғафуров, Қӯрғонтеппа. A notarial
+    translation into Russian may not carry those letters, so the office's
+    rule applies here too: Ҷ ҷ are ДЖ дж, and the rest drop to their nearest
+    Russian letter.
+    """
+    return {"label": in_russian_letters(str(field.get("label", ""))),
+            "value": in_russian_letters(str(field.get("value", "") or ""))}
+
+
 def _order_fields(doc_type: str, fields: list[dict]) -> list[dict]:
     """Sort the AI's fields into the canonical order for this document type;
     anything unknown keeps its original position at the end."""
@@ -519,10 +533,12 @@ class PerevodService:
         title = str(data.get("title") or _forms().get(kind, {}).get("title") or "ДОКУМЕНТ")
         lang = str(data.get("source_language") or "иностранного")
         country = str(data.get("issuing_country") or "")
-        fields = _order_fields(kind, [f for f in data.get("fields", [])
+        fields = _order_fields(kind, [_russian(f) for f in data.get("fields", [])
                                       if isinstance(f, dict) and f.get("label")])
-        stamps = [str(s) for s in data.get("stamps", []) if str(s).strip()]
-        notes = [str(n) for n in data.get("notes", []) if str(n).strip()]
+        stamps = [in_russian_letters(str(s)) for s in data.get("stamps", [])
+                  if str(s).strip()]
+        notes = [in_russian_letters(str(n)) for n in data.get("notes", [])
+                 if str(n).strip()]
         crops = data.get("crops") if isinstance(data.get("crops"), list) else []
 
         folder = output_dir if output_dir is not None else paths.output_dir() / "perevod"
@@ -577,7 +593,9 @@ class PerevodService:
         _place_originals(_blank_page(doc, sheets[0]), originals, doc_type)
 
         # sheet 2 — the translation. A passport or an ID card is DRAWN, the
-        # way the office types it: the data page itself, in Russian. Anything
+        # way the office types it: an UZBEK one on the office's own sheet
+        # (that pattern is the Uzbek passport's and nobody else's), any
+        # other republic's as its own international data page. Anything
         # else is set as the «поле: значение» list below.
         page = _blank_page(doc, sheets[1])
         if doc_type in ("passport", "id_card"):
@@ -585,7 +603,10 @@ class PerevodService:
                 fields, lang=lang, country=country, title=title,
                 stamps=stamps, notes=notes, emblem=_emblem_bytes())
             if perevod_pasport.is_drawable(drawn):
-                perevod_pasport.draw(page, drawn)
+                if perevod_pasport.is_uzbek(drawn):
+                    perevod_pasport.draw(page, drawn)
+                else:
+                    perevod_pasport.draw_generic(page, drawn)
                 _blank_page(doc, sheets[2])
                 out.parent.mkdir(parents=True, exist_ok=True)
                 doc.save(str(out), garbage=4, deflate=True)

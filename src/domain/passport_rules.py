@@ -230,8 +230,19 @@ _COMPILED = tuple((re.compile(rf"\b{_either_alphabet(src)}\b", re.IGNORECASE), r
                   for src, ru in _PHRASES)
 
 
-def _in_russian_letters(text: str) -> str:
-    """Whatever no entry claimed, spelled the way Russian spells it."""
+def in_russian_letters(text: str) -> str:
+    """Any text, spelled the way Russian spells it.
+
+    The office's rule, in its own words: «Ҷ ҷ ҳарфлар русчасига Дж дж
+    шунака ёзилсин ҲАММА ЖОЙИДА». So this is not the «кем выдан» rule any
+    more — it is applied to every name, place and authority the program
+    writes, wherever it came from: read off a document, carried in from the
+    machine-readable zone, or typed by the operator.
+
+    Ҷумъа is Джума, Хоҷа is Ходжа, ТОҶИКИСТОН is ТОДЖИКИСТОН; ҳ қ ғ ӣ ӯ and
+    the Kyrgyz and Ukrainian letters drop to their nearest Russian one.
+    Text already in Russian comes back unchanged.
+    """
     out: list[str] = []
     for i, char in enumerate(text):
         if char in ("Ҷ", "ҷ"):
@@ -251,7 +262,7 @@ def issuer_in_russian(value: str | None) -> str:
     out = value or ""
     for pattern, russian in _COMPILED:
         out = pattern.sub(russian, out)
-    out = _in_russian_letters(out)
+    out = in_russian_letters(out)
     # «ХШБ ВКД ҶТ» is one office named twice over, not two — writing «МВД МВД»
     # would put a department on the form that does not exist
     out = re.sub(r"\b(\S+)(\s+\1\b)+", r"\1", out)

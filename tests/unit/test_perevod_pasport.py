@@ -221,9 +221,8 @@ def test_a_long_value_is_typed_smaller_never_past_the_frame() -> None:
     assert over == [], f"рамкадан чиқиб кетган: {over}"
 
 
-def test_another_republic_s_passport_is_drawn_the_same_way() -> None:
-    """The office's clients are Tajik as often as Uzbek."""
-    tajik = sheet.from_fields(
+def _tajik() -> sheet.Facsimile:
+    return sheet.from_fields(
         [{"label": "Фамилия", "value": "Абдулхаков"},
          {"label": "Имя", "value": "Сунатулло"},
          {"label": "Номер паспорта", "value": "402543058"},
@@ -234,11 +233,40 @@ def test_another_republic_s_passport_is_drawn_the_same_way() -> None:
          {"label": "Код государства", "value": "TJK"}],
         lang="таджикского", country="Республика Таджикистан",
         title="Паспорт")
-    text = _plain(_drawn(tajik))
+
+
+def test_the_office_s_sheet_serves_uzbek_documents_only() -> None:
+    """The office said it plainly: the uploaded pattern is the UZBEK
+    passport's — other passports are shaped differently."""
+    assert sheet.is_uzbek(_passport())
+    assert not sheet.is_uzbek(_tajik())
+
+
+def test_another_republic_s_passport_gets_its_own_data_page() -> None:
+    """A Tajik passport is drawn as ITS OWN page, not as the Uzbek sheet."""
+    tajik = _tajik()
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    sheet.draw_generic(page, tajik)
+    text = _plain(page)
     assert "Перевод ксерокопии с таджикского языка" in text
-    assert "РЕСПУБЛИКА ТАДЖИКИСТАН/РЕСПУБЛИКА ТАДЖИКИСТАН" in text
-    assert "TJK" in text and "402543058" in text and "М" in text
+    assert "РЕСПУБЛИКА ТАДЖИКИСТАН" in text
+    assert "TJK" in text and "402543058" in text
     assert "МВД 14505" in text
+    assert "ФАМИЛИЯ/SURNAME" in text and "АБДУЛХАКОВ" in text
+    assert "Машиносчитываемая запись" in text
+    # nothing of the Uzbek sheet's own furniture leaks in
+    assert "подпись владельца" not in text
+    assert "РЕСПУБЛИКА ТАДЖИКИСТАН/РЕСПУБЛИКА ТАДЖИКИСТАН" not in text
+    # rows that are empty (отчество, ПИНФЛ) leave no orphan label behind
+    assert "ОТЧЕСТВО" not in text and "ПЕРСОНАЛЬНЫЙ" not in text
+    # and everything INSIDE the frame stays inside it (the «Перевод
+    # ксерокопии…» heading stands above the frame, as on the office's sheet)
+    over = [span["text"] for span in _spans(page)
+            if sheet.G_BOX[1] < span["origin"][1] / page.rect.height
+            < sheet.G_BOX[3]
+            and span["bbox"][2] / page.rect.width > sheet.G_BOX[2] + 0.002]
+    assert over == [], f"рамкадан чиқиб кетган: {over}"
 
 
 def test_the_number_box_is_named_after_the_document() -> None:

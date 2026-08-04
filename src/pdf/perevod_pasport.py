@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 import fitz
 
+from src.domain.passport_rules import in_russian_letters
 from src.pdf.engine import _font_file, _fontname
 
 # --------------------------------------------------------------- the faces
@@ -213,14 +214,16 @@ def from_fields(fields: list[dict], *, lang: str, country: str,
                 notes: list[str] | None = None,
                 emblem: bytes | None = None) -> Facsimile:
     """The drawn sheet's values, out of what the reader returned."""
-    made = Facsimile(lang=lang or "иностранного",
-                     country=(country or "").upper() or "РЕСПУБЛИКА",
-                     title=(title or "ПАСПОРТ").upper(),
+    made = Facsimile(lang=in_russian_letters(lang or "иностранного"),
+                     country=in_russian_letters((country or "").upper())
+                     or "РЕСПУБЛИКА",
+                     title=in_russian_letters((title or "ПАСПОРТ").upper()),
                      stamps=list(stamps or ()), notes=list(notes or ()),
                      emblem=emblem)
     for item in fields:
         key = _slot_of(item.get("label", ""))
-        value = " ".join(str(item.get("value", "") or "").split())
+        value = in_russian_letters(
+            " ".join(str(item.get("value", "") or "").split()))
         if not key or not value or getattr(made, key):
             continue
         if key == "sex":
@@ -255,6 +258,19 @@ def rows_of(data: Facsimile) -> list[tuple[str, str, float, float]]:
 def is_drawable(data: Facsimile) -> bool:
     """Whether there is enough to draw the document rather than list it."""
     return bool(data.surname and (data.number or data.birth_date))
+
+
+def is_uzbek(data: Facsimile) -> bool:
+    """Whether this is the document the office's own sheet was made for.
+
+    The office said it in as many words: the uploaded pattern is the UZBEK
+    passport's — its shape, its boxes, where everything sits. Other
+    republics' passports are laid out differently, so they get their own
+    drawing (:func:`draw_generic`), never squeezed into this one.
+    """
+    return (data.code == "UZB"
+            or "УЗБЕКИСТАН" in (data.country or "").upper()
+            or "УЗБЕКИСТАН" in (data.citizenship or "").upper())
 
 
 #: A value never grows past its box: it is set smaller until it fits, down
@@ -315,7 +331,7 @@ def _rect(page, box: tuple[float, float, float, float]) -> None:
 UNDER_Y, UNDER_SIZE, UNDER_LEAD = 0.8130, 0.0110, 1.45
 
 
-def _under_frame(page, data: Facsimile) -> None:
+def _under_frame(page, data: Facsimile, start: float = UNDER_Y) -> None:
     """Visas, stamps and notes — under the drawing, never inside it."""
     lines: list[str] = []
     if data.stamps:
@@ -329,7 +345,7 @@ def _under_frame(page, data: Facsimile) -> None:
     font = fitz.Font(fontfile=str(_font_file(VALUE)))
     points = UNDER_SIZE * height
     room = (BOX[2] - BOX[0]) * width
-    y = UNDER_Y
+    y = start
     for line in lines:
         for row in _wrap(line, font, points, room) or [""]:
             if y > 0.97:
@@ -351,6 +367,91 @@ def _wrap(text: str, font, points: float, room: float) -> list[str]:
     if current:
         rows.append(current)
     return rows
+
+
+# ------------------------------------------------- other republics' passports
+#
+# The office's sheet is the UZBEK passport's and nothing else's. The other
+# republics' passports (Tajik, Kyrgyz, Kazakh …) are all built on the same
+# international data page — photograph lower-left, ТИП/КОД/НОМЕР across the
+# top, the holder's rows beside the photograph, the machine-readable zone
+# along the bottom — so THAT page is what is drawn for them, looking like
+# the document itself rather than like the Uzbek sheet.
+
+G_BOX = (0.1663, 0.1533, 0.8004, 0.5990)
+G_DIV_ROW = 0.2110                 # under тип / код / номер
+G_ROW_LABEL_Y, G_ROW_VALUE_Y = 0.1750, 0.2010
+G_PHOTO = (0.1788, 0.2300, 0.3098, 0.4260)
+G_DIV_MRZ = 0.5560                 # over the machine-readable band
+G_MRZ_Y = 0.5800
+G_TOP, G_BOTTOM = 0.2300, 0.5450   # the holder's rows live between these
+G_STAMPS_Y = 0.6300
+
+#: The rows of an international data page, in its own order.
+G_ROWS: tuple[tuple[str, str], ...] = (
+    ("ФАМИЛИЯ/SURNAME", "surname"),
+    ("ИМЯ/GIVEN NAMES", "name"),
+    ("ОТЧЕСТВО", "patronymic"),
+    ("ГРАЖДАНСТВО/NATIONALITY", "citizenship"),
+    ("ДАТА РОЖДЕНИЯ/DATE OF BIRTH", "birth_date"),
+    ("ПОЛ/SEX", "sex"),
+    ("МЕСТО РОЖДЕНИЯ/PLACE OF BIRTH", "birth_place"),
+    ("ДАТА ВЫДАЧИ/DATE OF ISSUE", "issue_date"),
+    ("ДАТА ОКОНЧАНИЯ СРОКА/DATE OF EXPIRY", "expiry_date"),
+    ("ОРГАН, ВЫДАВШИЙ ДОКУМЕНТ/AUTHORITY", "authority"),
+    ("ПЕРСОНАЛЬНЫЙ НОМЕР/PERSONAL No", "personal_number"),
+)
+
+
+def draw_generic(page, data: Facsimile) -> None:
+    """A non-Uzbek passport, drawn as its own data page."""
+    left, top, right, _bottom = G_BOX
+
+    _text(page, HEAD_X, HEAD_Y, f"Перевод ксерокопии с  {data.lang} языка",
+          HEAD_SIZE, LABEL)
+    _text(page, COUNTRY_X, COUNTRY_Y, data.country, HEAD_SMALL, LABEL,
+          fit_to=(COUNTRY_X, right))
+    _text(page, COUNTRY_X, TITLE_Y, data.title, HEAD_SMALL, LABEL)
+
+    _rect(page, G_BOX)
+    _line(page, left, G_DIV_ROW, right, G_DIV_ROW)
+    for x in (COL_KIND, COL_CODE, COL_NUMBER):
+        _line(page, x, top, x, G_DIV_ROW)
+    _line(page, left, G_DIV_MRZ, right, G_DIV_MRZ)
+
+    _text(page, KIND_X, G_ROW_LABEL_Y + 0.004, f"{data.title}/",
+          PHOTO_LABEL_SIZE, LABEL)
+    _text(page, KIND_X, G_ROW_VALUE_Y, data.title, PHOTO_LABEL_SIZE, LABEL)
+    columns = ((COL_KIND, COL_CODE, "ТИП/TYPE", data.kind),
+               (COL_CODE, COL_NUMBER, "КОД СТРАНЫ/CODE", data.code),
+               (COL_NUMBER, right,
+                f"{number_label(data.title)}/PASSPORT No", data.number))
+    for col_left, col_right, label, value in columns:
+        inside = (col_left + 0.004, col_right - 0.004)
+        _text(page, 0.0, G_ROW_LABEL_Y, label, ROW_LABEL_SIZE, LABEL,
+              centre_in=inside, fit_to=inside)
+        _text(page, 0.0, G_ROW_VALUE_Y, value, ROW_VALUE_SIZE, VALUE,
+              centre_in=inside, fit_to=inside)
+
+    _rect(page, G_PHOTO)
+    _text(page, 0.0, 0.3200, "Личная", PHOTO_LABEL_SIZE, LABEL_BOLD,
+          centre_in=(G_PHOTO[0], G_PHOTO[2]))
+    _text(page, 0.0, 0.3310, "Фотография", PHOTO_LABEL_SIZE, LABEL_BOLD,
+          centre_in=(G_PHOTO[0], G_PHOTO[2]))
+
+    rows = [(label, key) for label, key in G_ROWS if data.value(key)]
+    if rows:
+        pitch = (G_BOTTOM - G_TOP) / max(len(rows), 1)
+        room = (DATA_X, right - 0.006)
+        for index, (label, key) in enumerate(rows):
+            label_y = G_TOP + index * pitch
+            _text(page, DATA_X, label_y, label, LABEL_SIZE, LABEL)
+            _text(page, DATA_X, label_y + min(VALUE_GAP, pitch * 0.55),
+                  data.value(key), VALUE_SIZE, VALUE, fit_to=room)
+
+    _text(page, 0.0, G_MRZ_Y, MRZ_TEXT, MRZ_SIZE, LABEL,
+          centre_in=(left, right))
+    _under_frame(page, data, start=G_STAMPS_Y)
 
 
 def _authority(page, text: str, baseline: float, room_right: float) -> None:
