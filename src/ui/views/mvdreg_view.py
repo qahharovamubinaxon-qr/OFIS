@@ -356,38 +356,45 @@ class MvdRegView(QWidget):
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
-        mapping = FieldMapping.load(mvdreg_service.mapping_path())
-        width, height = mapping.page_size
         layout = blank_layout.load(mvdreg_service.SECTION, template)
         moved = layout.get("fields") or {}
         styles = layout.get("styles") or {}
         images = layout.get("images") or {}
 
         fields: list[Field] = []
+        opened: dict[str, tuple[float, float, float]] = {}
         catalogue = dict(mvdreg_service.CATALOGUE)
         samples = dict(mvdreg_service.SAMPLES)
         frozen: set[str] = set()
-        for item in mapping.fields:
-            tag = f"map:{item.id}"
-            frozen.add(tag)
-            catalogue[tag] = label_of(item)
-            samples[tag] = sample_of(item)
-            spot = moved.get(item.id)
-            if spot and len(spot) == 3:
-                x, baseline, size = (float(v) for v in spot)
-            else:
-                x = anchor_x(item) / width
-                baseline = float(item.y or 0.0) / height
-                size = float(item.size) / height
-            chosen = styles.get(item.id) or {}
-            colour = tuple(chosen.get("colour")
-                           or (item.model_extra or {}).get("colour")
-                           or (0.0, 0.0, 0.0))[:3]
-            fields.append(Field(
-                key=tag, page=int(item.page), x=x, baseline=baseline,
-                size=size, colour=colour,
-                font=chosen.get("font")
-                or _FACE_NAMES.get(item.font, "Times New Roman")))
+        # the worker's values AND the address's own texts — the owner asked
+        # to be able to drag the address, the host's name and the dates too
+        for source in (mvdreg_service.mapping_path(),
+                       mvdreg_service.bundled_dir() / "address_mapping.v1.json"):
+            mapping = FieldMapping.load(source)
+            width, height = mapping.page_size
+            for item in mapping.fields:
+                tag = f"map:{item.id}"
+                frozen.add(tag)
+                catalogue[tag] = label_of(item)
+                samples[tag] = sample_of(item)
+                spot = moved.get(item.id)
+                if spot and len(spot) == 3:
+                    x, baseline, size = (float(v) for v in spot)
+                else:
+                    x = anchor_x(item) / width
+                    baseline = float(item.y or 0.0) / height
+                    size = float(item.size) / height
+                opened[item.id] = (round(x, 5), round(baseline, 5),
+                                   round(size, 5))
+                chosen = styles.get(item.id) or {}
+                colour = tuple(chosen.get("colour")
+                               or (item.model_extra or {}).get("colour")
+                               or (0.0, 0.0, 0.0))[:3]
+                fields.append(Field(
+                    key=tag, page=int(item.page), x=x, baseline=baseline,
+                    size=size, colour=colour,
+                    font=chosen.get("font")
+                    or _FACE_NAMES.get(item.font, "Times New Roman")))
         for extra in layout.get("extra") or []:
             fields.append(Field.from_dict(extra))
         for key in mvdreg_service.IMG_KEYS:
@@ -413,8 +420,13 @@ class MvdRegView(QWidget):
         for made in dialog.fields():
             if made.key.startswith("map:"):
                 name = made.key[4:]
-                new_fields[name] = [round(made.x, 5), round(made.baseline, 5),
-                                    round(made.size, 5)]
+                spot = [round(made.x, 5), round(made.baseline, 5),
+                        round(made.size, 5)]
+                # only what the office actually MOVED is written down; a
+                # value left where the program put it keeps following the
+                # program — so a corrected map is never pinned to an old spot
+                if tuple(spot) != opened.get(name):
+                    new_fields[name] = spot
                 new_styles[name] = {"font": made.font,
                                     "colour": list(made.colour)}
             elif made.key in mvdreg_service.IMG_KEYS:
@@ -424,8 +436,17 @@ class MvdRegView(QWidget):
             else:
                 new_extra.append(made.as_dict())
         blank_layout.save(mvdreg_service.SECTION, template,
-                          {"fields": new_fields, "styles": new_styles,
-                           "extra": new_extra, "images": new_images})
+                          {"v": mvdreg_service.LAYOUT_V, "fields": new_fields,
+                           "styles": new_styles, "extra": new_extra,
+                           "images": new_images})
+        # the address's own texts are printed INTO the template when it is
+        # built, so a moved address/host/дата needs the template rebuilt
+        if any(name.startswith("host.") for name in new_fields):
+            try:
+                mvdreg_service.MvdRegTemplateBuilder().build(template, address)
+            except Exception as error:            # noqa: BLE001
+                self._failed(error)
+                return
         self._status.setText("✅ Ҳамма жой ва созламалар сақланди.")
 
     # ---------------------------------------------------------- printing

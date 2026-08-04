@@ -180,6 +180,58 @@ def test_meanings_cover_what_the_form_knows(tmp_path) -> None:
     assert texts["pass_full"] == "FB 0701509"
 
 
+def test_old_saved_layouts_are_cleared_once(tmp_path) -> None:
+    """The first editor pinned every value at the OLD wrong spots on OK —
+    those saved positions must not override the corrected map."""
+    from src.services import blank_layout
+    from src.services.mvdreg_service import (
+        LAYOUT_V,
+        SECTION,
+        refresh_templates,
+    )
+
+    address = _address(tmp_path)
+    blank_layout.save(SECTION, address.template_path, {
+        "fields": {"reg.surname": [0.5, 0.5, 0.02],
+                   "host.surname": [0.6, 0.6, 0.02]},
+        "extra": [{"key": "fio", "page": 1, "x": 0.1, "baseline": 0.9,
+                   "size": 0.012}],
+        "styles": {"reg.surname": {"colour": [1, 0, 0]}}})
+    refresh_templates([address])
+    kept = blank_layout.load(SECTION, address.template_path)
+    assert kept.get("v") == LAYOUT_V
+    assert not kept.get("fields"), "эски жойлар ўчмаган"
+    assert kept.get("extra") and kept.get("styles"), "эганики сақланиши керак"
+    # and never again: a layout the office saves NOW stays untouched
+    kept["fields"] = {"reg.surname": [0.4, 0.4, 0.02]}
+    blank_layout.save(SECTION, address.template_path, kept)
+    refresh_templates([address])
+    again = blank_layout.load(SECTION, address.template_path)
+    assert again.get("fields") == {"reg.surname": [0.4, 0.4, 0.02]}
+
+
+def test_a_moved_host_text_moves_on_the_rebuilt_template(tmp_path) -> None:
+    from src.services import blank_layout
+    from src.services.mvdreg_service import (
+        LAYOUT_V,
+        SECTION,
+        MvdRegTemplateBuilder,
+    )
+
+    address = _address(tmp_path)
+    blank_layout.save(SECTION, address.template_path, {
+        "v": LAYOUT_V,
+        "fields": {"host.surname": [0.30, 0.30, 0.0140]}})
+    MvdRegTemplateBuilder().build(address.template_path, address)
+    with fitz.open(str(address.template_path)) as doc:
+        spans = [s for b in doc[1].get_text("dict")["blocks"]
+                 for line in b.get("lines", []) for s in line["spans"]]
+    first = min((s for s in spans if s["text"] == "П"),
+                key=lambda s: s["origin"][1])
+    assert first["origin"][0] / 595.28 == pytest.approx(0.30, abs=0.02)
+    assert first["origin"][1] / 842.03 == pytest.approx(0.30, abs=0.01)
+
+
 def test_the_address_book_keeps_mvdreg_apart(tmp_path) -> None:
     from src.app import build_container
     from src.services.registration_address_service import (

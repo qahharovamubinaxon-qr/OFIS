@@ -33,6 +33,10 @@ log = get_logger(__name__)
 
 SECTION = "mvdreg"
 STAY_FROM = "reg.stay_from"
+#: The layout format's age. Layouts saved before the cell map was measured
+#: right carry the OLD wrong positions for every value (the editor used to
+#: write down everything it showed, moved or not) — those are dropped once.
+LAYOUT_V = 2
 
 #: The blue the МВД date stamp prints in, measured off the office's scan.
 STAMP_INK = (0.291, 0.676, 0.917)
@@ -279,6 +283,26 @@ class MvdRegService:
         return made
 
 
+def _drop_stale_layout(template: Path) -> bool:
+    """Old saved positions, cleared once — they pinned the WRONG cells.
+
+    The first editor wrote down every value's position on OK, moved or
+    not, and it opened with the uncorrected map — so those saved spots
+    keep overriding the corrected one. Everything the office really made
+    itself (extra texts, styles, the pictures) is kept.
+    """
+    from src.services import blank_layout
+
+    layout = blank_layout.load(SECTION, template)
+    if not layout or int(layout.get("v") or 1) >= LAYOUT_V:
+        return False
+    layout.pop("fields", None)
+    layout["v"] = LAYOUT_V
+    blank_layout.save(SECTION, template, layout)
+    log.info("МВД РЕГ: %s даги эски жойлашув тозаланди", Path(template).name)
+    return True
+
+
 def refresh_templates(addresses: list[RegistrationAddress]) -> int:
     """Rebuild address templates older than the shared address map.
 
@@ -297,10 +321,12 @@ def refresh_templates(addresses: list[RegistrationAddress]) -> int:
     builder = MvdRegTemplateBuilder()
     for address in addresses:
         template = Path(address.template_path)
+        forced = _drop_stale_layout(template)
         if not (address.oblast or address.gorod or address.ulitsa):
             continue
         try:
-            if template.exists() and template.stat().st_mtime >= stamp:
+            if (not forced and template.exists()
+                    and template.stat().st_mtime >= stamp):
                 continue
             builder.build(template, address)
             rebuilt += 1
@@ -322,7 +348,15 @@ class MvdRegTemplateBuilder:
             (bundled_dir() / "address_mapping.v1.json").exists()
 
     def build(self, out: Path, address: RegistrationAddress) -> Path:
-        mapping = FieldMapping.load(bundled_dir() / "address_mapping.v1.json")
+        from src.services import blank_layout
+
+        # the office may have dragged or restyled the address/host texts in
+        # «📐» — their saved spots and styles are laid over the shared map
+        # for THIS template
+        layout = blank_layout.load(SECTION, out)
+        mapping = _decorated(with_layout(
+            FieldMapping.load(bundled_dir() / "address_mapping.v1.json"),
+            layout), {"styles": layout.get("styles") or {}})
         fio = (address.host_fio or "").split()
         values = {
             "host.addr.subject": address.oblast or "",
