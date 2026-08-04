@@ -60,6 +60,8 @@ class Item:
     size: float
     colour: tuple[float, float, float] = (0.08, 0.08, 0.08)
     font_family: str = "Courier New"
+    #: shown as it prints — a section that never sets it is unaffected
+    bold: bool = False
 
 
 @dataclass
@@ -99,6 +101,7 @@ class _Canvas(QWidget):
     def _font(self, item: Item) -> QFont:
         font = QFont(item.font_family)
         font.setPixelSize(max(4, round(item.size * self._page.height())))
+        font.setBold(item.bold)
         return font
 
     def _rect_of(self, item: Item) -> QRect:

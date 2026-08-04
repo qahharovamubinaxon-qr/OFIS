@@ -120,7 +120,8 @@ class MultiPageLayoutEditor(QDialog):
             if moved:
                 item = Item(key=item.key, label=item.label, sample=item.sample,
                             x=moved[0], baseline=moved[1], size=moved[2],
-                            colour=item.colour, font_family=item.font_family)
+                            colour=item.colour, font_family=item.font_family,
+                            bold=item.bold)
             items.append(item)
         self._canvas = _Canvas(self._pixmaps[page - 1], items, [])
         self._scroll.setWidget(self._canvas)

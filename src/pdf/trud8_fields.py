@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.pdf.fonts import DEFAULT_FAMILY
+
 #: key → what the operator sees in the picker
 CATALOGUE: dict[str, str] = {
     "fio": "ФИО — тўлиқ (Фамилия Исм Отчество)",
@@ -29,7 +31,7 @@ CATALOGUE: dict[str, str] = {
     "pass_number": "Паспорт — номер",
     "pass_full": "Паспорт — серия ва номер бирга",
     "pass_issued": "Паспорт — берилган сана",
-    "pass_issued_by": "Паспорт — ким берган",
+    "pass_issued_by": "Паспорт — ким берган (кем выдан)",
     "pat_kind": "Патент тури (Патент ИГ (ЛБГ))",
     "pat_series": "Патент — серия",
     "pat_number": "Патент — номер",
@@ -38,6 +40,8 @@ CATALOGUE: dict[str, str] = {
     "pat_blank_number": "Патент — бланка номери",
     "pat_issued": "Патент — берилган сана",
     "pat_valid_to": "Патент — амал қилиш охири",
+    "pat_issued_by": "Патент — ким берган (кем выдан)",
+    "pat_region": "Патент — регион (серия бўйича)",
     "profession": "Профессия / должность",
     "deal_date": "Шартнома санаси (КК.ОО.ЙЙЙЙ)",
     "deal_day": "Шартнома санаси — куни",
@@ -59,12 +63,14 @@ SAMPLES: dict[str, str] = {
     "pass_kind": "Иностранный паспорт",
     "pass_series": "FA", "pass_number": "2533791",
     "pass_full": "FA 2533791", "pass_issued": "12.04.2021",
-    "pass_issued_by": "MIA OF UZBEKISTAN",
+    "pass_issued_by": "МВД 14505",
     "pat_kind": "Патент ИГ (ЛБГ)",
-    "pat_series": "77", "pat_number": "250695887",
-    "pat_full": "77 250695887",
+    "pat_series": "50", "pat_number": "250695887",
+    "pat_full": "50 250695887",
     "pat_blank_series": "ПР", "pat_blank_number": "5094937",
     "pat_issued": "01.07.2026", "pat_valid_to": "01.07.2027",
+    "pat_issued_by": "ГУ МВД России по Московской области",
+    "pat_region": "Московская область",
     "profession": "Разнорабочий",
     "deal_date": "02.08.2026", "deal_day": "02", "deal_month": "08",
     "deal_month_ru": "августа", "deal_year": "2026", "deal_year_short": "26",
@@ -88,7 +94,8 @@ class Field:
     baseline: float = DEFAULT_BASELINE
     size: float = DEFAULT_SIZE
     bold: bool = False
-    serif: bool = True
+    #: the face by the name the computer knows it by — «Arial», «Calibri»…
+    font: str = DEFAULT_FAMILY
     colour: tuple[float, float, float] = BLACK
 
     def label(self) -> str:
@@ -101,16 +108,19 @@ class Field:
         return {"key": self.key, "page": self.page, "x": round(self.x, 4),
                 "baseline": round(self.baseline, 4),
                 "size": round(self.size, 4), "bold": self.bold,
-                "serif": self.serif, "colour": list(self.colour)}
+                "font": self.font, "colour": list(self.colour)}
 
     @staticmethod
     def from_dict(raw: dict) -> Field:
         colour = raw.get("colour") or list(BLACK)
+        font = raw.get("font")
+        if not font:                 # maps saved before faces could be chosen
+            font = DEFAULT_FAMILY if raw.get("serif", True) else "Arial"
         return Field(key=str(raw.get("key") or ""),
                      page=int(raw.get("page") or 1),
                      x=float(raw.get("x", DEFAULT_X)),
                      baseline=float(raw.get("baseline", DEFAULT_BASELINE)),
                      size=float(raw.get("size", DEFAULT_SIZE)),
                      bold=bool(raw.get("bold", False)),
-                     serif=bool(raw.get("serif", True)),
+                     font=str(font),
                      colour=tuple(float(c) for c in colour[:3]))

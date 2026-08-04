@@ -1,10 +1,10 @@
 """ТРУДАВОЙ + УВЕДОМЛЕНИЕ — the office's own blanks, the office's own map.
 
 Nothing is built in. A firm is a name; the office uploads its EMPTY ТД and
-УВ PDFs, then adds each text one by one, saying from a list what that text
-means (ФИО, паспорт серия, шартнома санаси…), and drags it where it must
-print. Colour, weight and face are chosen per text. The worker's papers
-then come out on those very blanks.
+УВ PDFs, and everything else happens in ONE window — «📐 ТД» / «📐 УВ» —
+where a text is added, told what it means, dragged, sized, coloured, made
+bold or thin and given its face. The worker's papers then come out on those
+very blanks.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
-    QColorDialog,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -30,7 +29,6 @@ from PySide6.QtWidgets import (
 
 from src.common.threading import run_async
 from src.controllers.trud8_controller import Trud8Controller
-from src.pdf.trud8_fields import CATALOGUE
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
@@ -88,21 +86,14 @@ class Trud8View(QWidget):
 
         field_row = QHBoxLayout()
         field_row.addWidget(QLabel("Матнлар:"))
-        add_text = QPushButton("➕ Матн")
-        add_text.setToolTip("Бланкага матн қўшиш — рўйхатдан маъносини танлайсиз")
-        add_text.clicked.connect(self._add_field)
-        field_row.addWidget(add_text)
-        drop_text = QPushButton("🗑 Матн")
-        drop_text.clicked.connect(self._remove_field)
-        field_row.addWidget(drop_text)
-        style = QPushButton("🎨 Ранг ва қалинлик")
-        style.clicked.connect(self._style_field)
-        field_row.addWidget(style)
-        arrange_td = QPushButton("📐 ТД")
-        arrange_td.setToolTip("ТД матнларини суриш/катта-кичик қилиш — ҳар варақда")
+        arrange_td = QPushButton("📐 ТД матнлари")
+        arrange_td.setToolTip("Матн қўшиш, суриш, катта-кичик қилиш, ранг, "
+                              "қалинлик ва шрифт — ҳаммаси шу ойнада")
         arrange_td.clicked.connect(lambda: self._arrange("td"))
         field_row.addWidget(arrange_td)
-        arrange_uv = QPushButton("📐 УВ")
+        arrange_uv = QPushButton("📐 УВ матнлари")
+        arrange_uv.setToolTip("Матн қўшиш, суриш, катта-кичик қилиш, ранг, "
+                              "қалинлик ва шрифт — ҳаммаси шу ойнада")
         arrange_uv.clicked.connect(lambda: self._arrange("uv"))
         field_row.addWidget(arrange_uv)
         field_row.addStretch(1)
@@ -197,14 +188,6 @@ class Trud8View(QWidget):
             return None
         return Path(firm)
 
-    def _pick_kind(self, question: str) -> str | None:
-        labels = [label for label, _ in _KINDS]
-        picked, ok = QInputDialog.getItem(self, "ТРУДАВОЙ", question, labels,
-                                          0, False)
-        if not ok:
-            return None
-        return dict((label, kind) for label, kind in _KINDS)[picked]
-
     # ------------------------------------------------------------- firms
     def _add_firm(self) -> None:
         name, ok = QInputDialog.getText(self, "Янги фирма", "Фирма номи:")
@@ -255,113 +238,18 @@ class Trud8View(QWidget):
             "«➕ Матн» билан майдонларни қўйинг.")
 
     # ------------------------------------------------------------ fields
-    def _add_field(self) -> None:
-        firm = self._firm_now()
-        if firm is None:
-            return
-        kind = self._pick_kind("Қайси бланкага?")
-        if kind is None:
-            return
-        pages = self._c.pages(firm, kind)
-        if pages == 0:
-            self._warn("Аввал шу бланканинг PDF ини юкланг.")
-            return
-        page = 1
-        if pages > 1:
-            page, ok = QInputDialog.getInt(self, "Саҳифа",
-                                           f"Нечанчи варақ? (1—{pages})",
-                                           1, 1, pages)
-            if not ok:
-                return
-        labels = list(CATALOGUE.values())
-        picked, ok = QInputDialog.getItem(
-            self, "Матн маъноси", "Бу матн ишчининг қайси маълумоти?",
-            labels, 0, False)
-        if not ok:
-            return
-        key = [k for k, v in CATALOGUE.items() if v == picked][0]
-        try:
-            self._c.add_field(firm, kind, key, page)
-        except Exception as error:                # noqa: BLE001
-            self._failed(error)
-            return
-        self._show_state()
-        self._status.setText(
-            f"✅ «{picked}» {page}-варақга қўшилди — «📐» билан жойига суринг.")
-
-    def _pick_field(self, firm: Path, kind: str, question: str) -> int | None:
-        fields = self._c.fields(firm, kind)
-        if not fields:
-            self._warn("Бу бланкада ҳали матн йўқ — «➕ Матн» билан қўшинг.")
-            return None
-        labels = [f"{i + 1}. {f.label()} ({f.page}-варақ)"
-                  for i, f in enumerate(fields)]
-        picked, ok = QInputDialog.getItem(self, "ТРУДАВОЙ", question, labels,
-                                          0, False)
-        if not ok:
-            return None
-        return labels.index(picked)
-
-    def _remove_field(self) -> None:
-        firm = self._firm_now()
-        if firm is None:
-            return
-        kind = self._pick_kind("Қайси бланкадан?")
-        if kind is None:
-            return
-        index = self._pick_field(firm, kind, "Қайси матн ўчирилсин?")
-        if index is None:
-            return
-        self._c.remove_field(firm, kind, index)
-        self._show_state()
-        self._status.setText("✅ Матн ўчирилди.")
-
-    def _style_field(self) -> None:
-        firm = self._firm_now()
-        if firm is None:
-            return
-        kind = self._pick_kind("Қайси бланкада?")
-        if kind is None:
-            return
-        index = self._pick_field(firm, kind, "Қайси матн?")
-        if index is None:
-            return
-        colour = QColorDialog.getColor(parent=self, title="Матн ранги")
-        if not colour.isValid():
-            return
-        weight, ok = QInputDialog.getItem(
-            self, "Қалинлиги", "Матн қалинлиги:",
-            ["Юпқа (оддий)", "Қалин (жирний)"], 0, False)
-        if not ok:
-            return
-        face, ok = QInputDialog.getItem(
-            self, "Шрифт", "Шрифт тури:",
-            ["Times New Roman (сериф)", "Arial / Calibri (сансериф)"], 0, False)
-        if not ok:
-            return
-        self._c.restyle_field(
-            firm, kind, index,
-            colour=(colour.redF(), colour.greenF(), colour.blueF()),
-            bold=weight.startswith("Қалин"), serif=face.startswith("Times"))
-        self._status.setText("✅ Матннинг ранги, қалинлиги ва шрифти сақланди.")
-
-    # ----------------------------------------------------------- arrange
     def _arrange(self, kind: str) -> None:
+        """One window: add, place, colour, weight, face — then save."""
         firm = self._firm_now()
         if firm is None:
             return
         import fitz
 
-        from src.ui.widgets.layout_editor import Item
-        from src.ui.widgets.multipage_layout_editor import MultiPageLayoutEditor
+        from src.ui.widgets.field_editor import FieldEditor
 
         blank = self._c.blank(firm, kind)
         if blank is None:
             self._warn("Бу фирмада бундай бланка йўқ — аввал PDF ини юкланг.")
-            return
-        fields = self._c.fields(firm, kind)
-        if not fields:
-            self._warn("Бу бланкада ҳали матн йўқ — «➕ Матн» билан қўшинг.")
             return
         try:
             pages = []
@@ -372,30 +260,19 @@ class Trud8View(QWidget):
             self._failed(error)
             return
 
-        items_by_page: dict[int, list[Item]] = {}
-        for index, item in enumerate(fields):
-            if item.page > len(pages):
-                continue
-            items_by_page.setdefault(item.page, []).append(
-                Item(key=f"{item.key}#{index}", label=item.label(),
-                     sample=item.sample(), x=item.x, baseline=item.baseline,
-                     size=item.size, colour=item.colour,
-                     font_family=("Times New Roman" if item.serif
-                                  else "Arial")))
-        if not items_by_page:
-            self._warn("Матнлар бу бланкада йўқ варақларга қўйилган.")
-            return
         tag = "ТД" if kind == "td" else "УВ"
-        dialog = MultiPageLayoutEditor(pages, items_by_page,
-                                       title=f"ТРУД {tag}", parent=self)
+        dialog = FieldEditor(pages, self._c.fields(firm, kind),
+                             title=f"{firm.name} — {tag}", parent=self)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         try:
-            self._c.move_fields(firm, kind, dialog.result().items)
+            kept = dialog.fields()
+            self._c.save_fields(firm, kind, kept)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
-        self._status.setText(f"✅ {tag} матнларининг жойи сақланди.")
+        self._show_state()
+        self._status.setText(f"✅ {tag}: {len(kept)} та матн сақланди.")
 
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:

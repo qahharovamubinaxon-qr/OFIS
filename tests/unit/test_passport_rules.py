@@ -92,14 +92,20 @@ def test_the_rule_survives_being_applied_twice() -> None:
 
 
 @pytest.mark.parametrize("tajik, russian", [
-    ("ХШБ ВКД ҶТ", "ПРС МВД РТ"),       # the office's own workers' passports
-    ("ХШБ ВКД ЧТ", "ПРС МВД РТ"),       # ҶТ typed as ЧТ
-    ("ХШБ РВКД ҶТ", "ПРС УМВД РТ"),
+    # A Tajik passport prints «MIA 14505»; the office writes «МВД 14505».
+    # However that same office is spelled out on the page, it is that one
+    # ministry — and the office NUMBER beside it must survive untouched.
+    ("MIA 14505", "МВД 14505"),
+    ("ХШБ ВКД ҶТ", "МВД РТ"),           # the office's own workers' passports
+    ("ХШБ ВКД ЧТ", "МВД РТ"),           # ҶТ typed as ЧТ
+    ("ХШБ РВКД ҶТ", "МВД РТ"),
     ("ВКД ҶТ", "МВД РТ"),
-    ("ШВКД дар Хуҷанд", "ОМВД в Худжанд"),
-    ("ХШБ дар ш. Душанбе", "ПРС в ш. Душанбе"),
-    ("ХШБ ФР", "ПРС РФ"),
-    ("Хадамоти Шиносномавию Бақайдгирии Вазорати Корҳои Дохилӣ", "ПРС МВД"),
+    ("ХШБ РВКД 14505", "МВД 14505"),
+    ("ПРС УМВД 14505", "МВД 14505"),    # what an over-eager reader hands back
+    ("ШВКД дар Хуҷанд", "МВД в Худжанд"),
+    ("ХШБ дар ш. Душанбе", "МВД в ш. Душанбе"),
+    ("ХШБ ФР", "МВД РФ"),
+    ("Хадамоти Шиносномавию Бақайдгирии Вазорати Корҳои Дохилӣ", "МВД"),
     ("Вазорати корҳои дохилии Ҷумҳурии Тоҷикистон", "МВД РТ"),
 ])
 def test_the_issuing_office_is_written_in_russian(tajik, russian) -> None:
@@ -128,7 +134,7 @@ def test_the_other_republics_are_written_by_their_initials(printed,
     """The office's own reference table, one row at a time.
 
     A Russian form names an authority by its initials, so that is what goes in
-    — «ХШБ ВКД» is «ПРС МВД», not the four words it stands for.
+    — «MIA 14505» is «МВД 14505», not the words it stands for.
     """
     assert issuer_in_russian(printed) == russian
 
@@ -189,7 +195,7 @@ def test_a_passport_typed_by_hand_obeys_the_same_rules() -> None:
     }, uuid4(), contract_date=date(2026, 7, 29))
     assert employee.passport.series is None
     assert employee.passport.number == "406576690"
-    assert employee.passport.issued_by == "ПРС МВД РТ"
+    assert employee.passport.issued_by == "МВД РТ"
 
 
 def test_the_machine_readable_zone_cannot_put_the_code_back() -> None:
@@ -231,7 +237,7 @@ def test_the_mvd_form_gets_a_blank_series_and_a_bare_number() -> None:
                           reg_number=1)
     assert values.get("employee.passport.series", "") == ""
     assert values["employee.passport.number"] == "406576690"
-    assert values["employee.passport.issued_by"] == "ПРС МВД РТ"
+    assert values["employee.passport.issued_by"] == "МВД РТ"
     assert "TJK" not in " ".join(values.values())
 
 

@@ -158,22 +158,33 @@ _TWINS = {
 #: still comes through here readable and in Russian letters, never invented.
 _PHRASES: tuple[tuple[str, str], ...] = (
     # ---- Тоҷикистон
+    #
+    # A Tajik passport prints its issuing office in Latin as «MIA 14505» —
+    # the ministry and the office's own number. That is what the office
+    # writes on its forms: «МВД 14505». Whatever the page spells the same
+    # office out as (ХШБ ВКД, the full Tajik phrase, the passport service
+    # by name) is that one office, so it comes out «МВД» too and the number
+    # beside it survives untouched. The duplicate-word rule at the end of
+    # :func:`issuer_in_russian` collapses «МВД МВД» back to one.
     ("ХАДАМОТИ ШИНОСНОМАВИЮ БАКАЙДГИРИИ РАЕСАТИ ВАЗОРАТИ КОРХОИ ДОХИЛИ",
-     "ПРС УМВД"),
-    ("ХАДАМОТИ ШИНОСНОМАВИЮ БАКАЙДГИРИИ ВАЗОРАТИ КОРХОИ ДОХИЛИ", "ПРС МВД"),
-    ("ХАДАМОТИ ШИНОСНОМАВИЮ БАКАЙДГИРИИ", "ПРС"),
-    ("ШУЪБАИ ВАЗОРАТИ КОРХОИ ДОХИЛИ", "ОМВД"),
+     "МВД"),
+    ("ХАДАМОТИ ШИНОСНОМАВИЮ БАКАЙДГИРИИ ВАЗОРАТИ КОРХОИ ДОХИЛИ", "МВД"),
+    ("ХАДАМОТИ ШИНОСНОМАВИЮ БАКАЙДГИРИИ", "МВД"),
+    ("ШУЪБАИ ВАЗОРАТИ КОРХОИ ДОХИЛИ", "МВД"),
     ("ВАЗОРАТИ КОРХОИ ДОХИЛИИ", "МВД"),
     ("ВАЗОРАТИ КОРХОИ ДОХИЛИ", "МВД"),
     ("ЧУМХУРИИ ТОЧИКИСТОН", "РТ"),
     ("ФЕДЕРАТСИЯИ РУСИЯ", "РФ"),
     ("ФЕДЕРАТСИЯИ РОССИЯ", "РФ"),
     ("ТОЧИКИСТОН", "ТАДЖИКИСТАН"),
-    ("ХШБ РВКД", "ПРС УМВД"),
-    ("ХШБ ВКД", "ПРС МВД"),
-    ("ШВКД", "ОМВД"),
-    ("ХШБ", "ПРС"),
+    ("ХШБ РВКД", "МВД"),
+    ("ХШБ ВКД", "МВД"),
+    ("ШВКД", "МВД"),
+    ("ХШБ", "МВД"),
     ("ВКД", "МВД"),
+    ("ПРС УМВД", "МВД"),
+    ("ПРС МВД", "МВД"),
+    ("ПРС", "МВД"),
     ("ЧТ", "РТ"),
     ("ФР", "РФ"),
     ("ДАР", "в"),          # «ХШБ дар Душанбе» → «ПРС в Душанбе»

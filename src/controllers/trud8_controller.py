@@ -52,18 +52,8 @@ class Trud8Controller:
     def fields(self, firm: Path, kind: str) -> list[Field]:
         return self._service.fields(firm, kind)
 
-    def add_field(self, firm: Path, kind: str, key: str,
-                  page: int = 1) -> Field:
-        return self._service.add_field(firm, kind, key, page)
-
-    def remove_field(self, firm: Path, kind: str, index: int) -> None:
-        self._service.remove_field(firm, kind, index)
-
-    def restyle_field(self, firm: Path, kind: str, index: int, **style) -> None:
-        self._service.restyle_field(firm, kind, index, **style)
-
-    def move_fields(self, firm: Path, kind: str, moved: dict) -> None:
-        self._service.move_fields(firm, kind, moved)
+    def save_fields(self, firm: Path, kind: str, fields: list[Field]) -> Path:
+        return self._service.save_fields(firm, kind, fields)
 
     # ------------------------------------------------------------ reading
     def read_documents(self, passport_image: bytes, patent_front: bytes,
@@ -102,5 +92,6 @@ class Trud8Controller:
             pat_blank_number=patent.blank_number or "",
             pat_issued=patent.issue_date,
             pat_valid_to=patent.valid_to,
+            pat_issued_by=patent.issued_by or "",
             profession=profession or (patent.profession or ""),
             deal_date=deal_date)

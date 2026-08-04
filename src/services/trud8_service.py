@@ -135,60 +135,19 @@ class Trud8Service:
 
     def save_fields(self, firm: Path, kind: str,
                     fields: list[Field]) -> Path:
+        """The whole map, as the editor left it — nothing else can be saved."""
+        if kind not in KINDS:
+            raise ValidationError("Бланка тури нотўғри")
+        for item in fields:
+            if item.key not in CATALOGUE:
+                raise ValidationError(
+                    f"«{item.key}» — бундай маълумот рўйхатда йўқ")
         path = self._fields_path(firm, kind)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps({"fields": [f.as_dict() for f in fields]},
                        ensure_ascii=False, indent=1), encoding="utf-8")
         return path
-
-    def add_field(self, firm: Path, kind: str, key: str,
-                  page: int = 1) -> Field:
-        if key not in CATALOGUE:
-            raise ValidationError("Бундай маълумот рўйхатда йўқ")
-        made = Field(key=key, page=max(1, page))
-        kept = self.fields(firm, kind)
-        kept.append(made)
-        self.save_fields(firm, kind, kept)
-        return made
-
-    def remove_field(self, firm: Path, kind: str, index: int) -> None:
-        kept = self.fields(firm, kind)
-        if 0 <= index < len(kept):
-            kept.pop(index)
-            self.save_fields(firm, kind, kept)
-
-    def restyle_field(self, firm: Path, kind: str, index: int, *,
-                      colour: tuple[float, float, float] | None = None,
-                      bold: bool | None = None,
-                      serif: bool | None = None) -> None:
-        kept = self.fields(firm, kind)
-        if not (0 <= index < len(kept)):
-            return
-        old = kept[index]
-        kept[index] = Field(
-            key=old.key, page=old.page, x=old.x, baseline=old.baseline,
-            size=old.size,
-            bold=old.bold if bold is None else bold,
-            serif=old.serif if serif is None else serif,
-            colour=old.colour if colour is None else colour)
-        self.save_fields(firm, kind, kept)
-
-    def move_fields(self, firm: Path, kind: str, moved: dict) -> None:
-        """What the drag editor handed back: «key#index» → x, baseline, size."""
-        kept = self.fields(firm, kind)
-        for tag, place in (moved or {}).items():
-            if len(place) != 3 or "#" not in tag:
-                continue
-            index = int(tag.rsplit("#", 1)[1])
-            if not (0 <= index < len(kept)):
-                continue
-            old = kept[index]
-            x, baseline, size = (float(v) for v in place)
-            kept[index] = Field(key=old.key, page=old.page, x=x,
-                                baseline=baseline, size=size, bold=old.bold,
-                                serif=old.serif, colour=old.colour)
-        self.save_fields(firm, kind, kept)
 
     # ----------------------------------------------------------- printing
     def generate(self, data: Trud8Data, firm: Path | None,

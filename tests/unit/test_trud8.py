@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -28,11 +29,13 @@ _WORKER = dict(
     surname="АБДУЛХАКОВ", name="СУНАТУЛЛО", patronymic="ИБОДУЛЛОЕВИЧ",
     gender="male", citizenship="ТАДЖИКИСТАН", birth_date=date(1990, 12, 8),
     pass_series="P", pass_number="402543058", pass_issued=date(2019, 3, 5),
-    pass_issued_by="DIA IN KULOB", pat_series="50",
+    pass_issued_by="МВД 14505", pat_series="50",
     pat_number="2600164027", pat_blank_series="ПР",
     pat_blank_number="7805409", pat_issued=date(2026, 5, 28),
-    pat_valid_to=date(2027, 5, 27), profession="Разнорабочий",
-    deal_date=date(2026, 8, 2), work_address="г. Москва, ул. Мира, д. 1")
+    pat_valid_to=date(2027, 5, 27),
+    pat_issued_by="ГУ МВД России по Московской области",
+    profession="Разнорабочий", deal_date=date(2026, 8, 2),
+    work_address="г. Москва, ул. Мира, д. 1")
 
 
 def _blank(pages: int = 2) -> Path:
@@ -75,20 +78,37 @@ def test_values_read_the_way_the_papers_are_typed() -> None:
     assert (made["birth_day"], made["birth_month"], made["birth_year"]) \
         == ("08", "12", "1990")
     assert made["pass_full"] == "P 402543058"
+    assert made["pass_issued_by"] == "МВД 14505"
     assert made["pat_full"] == "50 2600164027"
     assert made["pat_valid_to"] == "27.05.2027"
+    assert made["pat_issued_by"] == "ГУ МВД России по Московской области"
     assert made["deal_month_ru"] == "августа"
     assert made["deal_year_short"] == "26"
     assert output_stem(Trud8Data(**_WORKER)) == "АБДУЛХАКОВ_СУНАТУЛЛО"
 
 
+def test_the_region_is_read_off_the_patent_series() -> None:
+    """«50 2600164027» is a Moscow-region patent — nobody types that again."""
+    assert values(Trud8Data(**_WORKER))["pat_region"] == "Московская область"
+    assert values(Trud8Data(**dict(_WORKER, pat_series="77")))["pat_region"] \
+        == "г. Москва"
+    assert values(Trud8Data(**dict(_WORKER, pat_series="")))["pat_region"] == ""
+
+
 def test_a_field_survives_being_written_down() -> None:
     made = Field(key="fio", page=2, x=0.31, baseline=0.42, size=0.0155,
-                 bold=True, serif=False, colour=(1.0, 0.0, 0.0))
+                 bold=True, font="Calibri", colour=(1.0, 0.0, 0.0))
     again = Field.from_dict(made.as_dict())
     assert again == made
     assert again.label() == CATALOGUE["fio"]
     assert again.sample() == SAMPLES["fio"]
+
+
+def test_a_map_saved_before_faces_could_be_chosen_still_opens() -> None:
+    """Maps written when a text was only «serif or not»."""
+    assert Field.from_dict({"key": "fio", "serif": True}).font \
+        == "Times New Roman"
+    assert Field.from_dict({"key": "fio", "serif": False}).font == "Arial"
 
 
 # --------------------------------------------------------------- render
@@ -120,6 +140,22 @@ def test_colour_and_weight_are_the_office_s_choice() -> None:
     assert spans["Абдулхаков"]["font"] != spans["Сунатулло"]["font"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows fonts")
+def test_the_face_is_the_one_the_office_picked() -> None:
+    fields = [Field(key="surname", page=1, x=0.2, baseline=0.2, size=0.02,
+                    font="Times New Roman"),
+              Field(key="name", page=1, x=0.2, baseline=0.3, size=0.02,
+                    font="Arial"),
+              Field(key="patronymic", page=1, x=0.2, baseline=0.4, size=0.02,
+                    font="Courier New", bold=True)]
+    spans = {s["text"]: s["font"] for s in
+             _spans(render(Trud8Data(**_WORKER), _blank(1), fields))}
+    assert "Times" in spans["Абдулхаков"]
+    assert "Arial" in spans["Сунатулло"]
+    assert "Courier" in spans["Ибодуллоевич"]
+    assert "Bold" in spans["Ибодуллоевич"]
+
+
 def test_empty_values_and_missing_pages_print_nothing() -> None:
     quiet = dict(_WORKER, patronymic="")
     fields = [Field(key="patronymic", page=1, x=0.2, baseline=0.2, size=0.02),
@@ -142,18 +178,17 @@ def test_a_firm_is_a_name_two_blanks_and_its_own_map() -> None:
     service.set_blank(firm, "td", _blank(2))
     assert service.pages(firm, "td") == 2
 
-    service.add_field(firm, "td", "fio", page=1)
-    service.add_field(firm, "td", "pat_number", page=2)
-    assert [f.key for f in service.fields(firm, "td")] == ["fio", "pat_number"]
+    service.save_fields(firm, "td", [
+        Field(key="fio", page=1, x=0.31, baseline=0.44, size=0.017,
+              bold=True, font="Calibri", colour=(0.0, 0.0, 1.0)),
+        Field(key="pat_number", page=2)])
+    kept = service.fields(firm, "td")
+    assert [f.key for f in kept] == ["fio", "pat_number"]
+    assert (kept[0].x, kept[0].baseline, kept[0].size) == (0.31, 0.44, 0.017)
+    assert kept[0].colour == (0.0, 0.0, 1.0) and kept[0].bold
+    assert kept[0].font == "Calibri"
 
-    service.move_fields(firm, "td", {"fio#0": [0.31, 0.44, 0.017]})
-    service.restyle_field(firm, "td", 0, colour=(0.0, 0.0, 1.0), bold=True,
-                          serif=False)
-    kept = service.fields(firm, "td")[0]
-    assert (kept.x, kept.baseline, kept.size) == (0.31, 0.44, 0.017)
-    assert kept.colour == (0.0, 0.0, 1.0) and kept.bold and not kept.serif
-
-    service.remove_field(firm, "td", 0)
+    service.save_fields(firm, "td", kept[1:])
     assert [f.key for f in service.fields(firm, "td")] == ["pat_number"]
 
 
@@ -161,7 +196,7 @@ def test_only_meanings_from_the_list_can_be_placed() -> None:
     service = _service()
     firm = service.add_firm("АНЕФ")
     with pytest.raises(ValidationError):
-        service.add_field(firm, "td", "нима эди", page=1)
+        service.save_fields(firm, "td", [Field(key="нима эди")])
     with pytest.raises(ValidationError):
         service.set_blank(firm, "td", Path("yoq.pdf"))
 
@@ -171,8 +206,8 @@ def test_generate_prints_both_papers_from_the_office_s_blanks() -> None:
     firm = service.add_firm("ТУЛА СЕРВИС")
     service.set_blank(firm, "td", _blank(1))
     service.set_blank(firm, "uv", _blank(1))
-    service.add_field(firm, "td", "fio")
-    service.add_field(firm, "uv", "pat_number")
+    service.save_fields(firm, "td", [Field(key="fio")])
+    service.save_fields(firm, "uv", [Field(key="pat_number")])
 
     result = service.generate(Trud8Data(**_WORKER), firm)
     assert [p.name for p in result.saved] == \
@@ -216,3 +251,71 @@ def test_the_old_bundled_firms_are_thrown_away_once() -> None:
 
 def test_nothing_ships_with_the_program_any_more() -> None:
     assert not (paths.templates_dir() / "trud8").exists()
+
+
+# --------------------------------------------------------------- window
+@pytest.fixture()
+def editor_window(monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app
+    app.processEvents()
+
+
+def _png(pages: int = 2) -> list[bytes]:
+    with fitz.open(str(_blank(pages))) as doc:
+        return [page.get_pixmap(dpi=60).tobytes("png") for page in doc]
+
+
+def _answers(monkeypatch, *labels):
+    """The meaning picker, answered the way the operator would."""
+    from src.ui.widgets import field_editor
+
+    queue = list(labels)
+    monkeypatch.setattr(field_editor.QInputDialog, "getItem",
+                        staticmethod(lambda *a, **k: (queue.pop(0), True)))
+
+
+def test_one_window_adds_places_and_styles_every_text(
+        editor_window, monkeypatch) -> None:
+    """Everything the office does to a blank happens in this one dialog."""
+    from src.ui.widgets.field_editor import FieldEditor
+
+    dialog = FieldEditor(_png(2), [Field(key="fio", page=1)])
+    assert dialog._pick_item.count() == 1
+
+    # ➕ a second text on page 1, then drag it, size it, colour it, embolden it
+    _answers(monkeypatch, CATALOGUE["pass_full"])
+    dialog._add()
+    assert dialog._pick_item.count() == 2
+    dialog._canvas.move_picked(0.10, 0.20)
+    dialog._canvas.resize_picked(1)
+    dialog._restyle(bold=True, colour=(0.0, 0.0, 1.0), font="Arial")
+
+    # ➕ one on page 2 — page 1's work is not disturbed by going there
+    dialog._pick_page.setCurrentIndex(1)
+    _answers(monkeypatch, CATALOGUE["pat_number"])
+    dialog._add()
+
+    made = {f.key: f for f in dialog.fields()}
+    assert made["pass_full"].bold and made["pass_full"].font == "Arial"
+    assert made["pass_full"].colour == (0.0, 0.0, 1.0)
+    assert made["pass_full"].x > Field(key="x").x
+    assert made["pass_full"].size > Field(key="x").size
+    assert made["fio"].page == 1 and made["pat_number"].page == 2
+    assert made["fio"].x == Field(key="x").x, "жойидан қимирламаган матн"
+
+
+def test_deleting_a_text_in_the_window_keeps_the_others(editor_window) -> None:
+    from src.ui.widgets.field_editor import FieldEditor
+
+    dialog = FieldEditor(_png(1), [Field(key="fio", page=1),
+                                   Field(key="surname", page=1),
+                                   Field(key="name", page=1)])
+    dialog._pick_item.setCurrentIndex(1)          # «Фамилия»
+    dialog._drop()
+    assert [f.key for f in dialog.fields()] == ["fio", "name"]
+    assert dialog._pick_item.count() == 2

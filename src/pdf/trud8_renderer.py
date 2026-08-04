@@ -15,13 +15,13 @@ from pathlib import Path
 import fitz
 
 from src.common.errors import OfisError
-from src.pdf.engine import _font_file, _fontname
+from src.domain.patent_regions import region_of_series
+from src.pdf.fonts import font_file, font_id
 from src.pdf.trud8_fields import Field
 
 TEXT_OPACITY = 1.0
-
-_FACES = {(False, False): "OfisSansRegular", (False, True): "OfisSans",
-          (True, False): "OfisSerif", (True, True): "OfisSerifBold"}
+#: How thickly a one-weight face is stroked when bold was asked for.
+FAUX_BOLD = 0.03
 
 MONTHS_RU = ("января", "февраля", "марта", "апреля", "мая", "июня",
              "июля", "августа", "сентября", "октября", "ноября", "декабря")
@@ -45,6 +45,7 @@ class Trud8Data:
     pat_blank_number: str = ""
     pat_issued: date | None = None
     pat_valid_to: date | None = None
+    pat_issued_by: str = ""
     profession: str = ""
     deal_date: date | None = None
     work_address: str = ""
@@ -100,6 +101,8 @@ def values(data: Trud8Data) -> dict[str, str]:
         "pat_blank_number": (data.pat_blank_number or "").upper(),
         "pat_issued": _dots(data.pat_issued),
         "pat_valid_to": _dots(data.pat_valid_to),
+        "pat_issued_by": " ".join((data.pat_issued_by or "").split()),
+        "pat_region": region_of_series(data.pat_series),
         "profession": (data.profession or "").strip().capitalize(),
         "deal_date": _dots(deal),
         "deal_day": f"{deal.day:02d}" if deal else "",
@@ -128,12 +131,14 @@ def render(data: Trud8Data, template: Path,
                 continue
             page = doc[item.page - 1]
             pw, ph = page.rect.width, page.rect.height
-            family = _FACES[(bool(item.serif), bool(item.bold))]
+            face, faux = font_file(item.font, item.bold)
             page.insert_text((item.x * pw, item.baseline * ph), text,
-                             fontsize=item.size * ph,
-                             fontfile=str(_font_file(family)),
-                             fontname=_fontname(family),
-                             color=item.colour, fill_opacity=TEXT_OPACITY)
+                             fontsize=item.size * ph, fontfile=str(face),
+                             fontname=font_id(item.font, item.bold),
+                             color=item.colour, fill_opacity=TEXT_OPACITY,
+                             render_mode=2 if faux else 0,
+                             border_width=FAUX_BOLD if faux else 0.0,
+                             stroke_opacity=TEXT_OPACITY)
         return doc.tobytes()
 
 
