@@ -72,6 +72,21 @@ class PerevodView(QWidget):
             blanks.addWidget(self._blank_slot(index), stretch=1)
         root.addLayout(blanks)
 
+        emblem = QHBoxLayout()
+        self._emblem_label = QLabel()
+        self._emblem_label.setWordWrap(True)
+        emblem.addWidget(self._emblem_label, stretch=1)
+        load_emblem = QPushButton("➕ Герб расми")
+        load_emblem.setToolTip("Паспорт таржимаси варағининг тепасига "
+                               "қўйиладиган давлат герби — бир марта юкланади")
+        load_emblem.clicked.connect(self._load_emblem)
+        emblem.addWidget(load_emblem)
+        clear_emblem = QPushButton("✕")
+        clear_emblem.setFixedWidth(28)
+        clear_emblem.clicked.connect(self._clear_emblem)
+        emblem.addWidget(clear_emblem)
+        root.addLayout(emblem)
+
         row = QHBoxLayout()
         self._type = QComboBox()
         for _key, label in DOC_TYPES:
@@ -110,7 +125,10 @@ class PerevodView(QWidget):
             "саҳифа: 1 — ҳужжат нусхаси, рангсиз оқ-қора, ҲАҚИҚИЙ ЎЛЧАМИДА "
             "варақнинг марказида (паспорт 125×88 мм, пластик карта 85.6×54 мм); "
             "олди-орқаси бир варақда, устма-уст; 2 — таржима; 3 — бўш, нотариус "
-            "ўзи тўлдиради. Таржима Word бўлиб ҳам сақланади."
+            "ўзи тўлдиради. Таржима Word бўлиб ҳам сақланади.\n"
+            "ПАСПОРТ ва АЙДИ КАРТА таржимаси рўйхат эмас — ҳужжатнинг ўзи "
+            "чизилади: рамка, герб, (UZB) овали, имзо чизиғи ва катаклар — "
+            "офис намунасидек."
         )
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
@@ -157,6 +175,12 @@ class PerevodView(QWidget):
             else:
                 label.setText(f"✅ {role}\n{blank.name}")
                 label.setStyleSheet("color:#8a94a3;")
+        emblem = self._svc.emblem()
+        self._emblem_label.setText(
+            f"✅ Герб: {emblem.name}" if emblem is not None
+            else "⛔ Герб юкланмаган — паспорт таржимасининг тепаси бўш чиқади")
+        self._emblem_label.setStyleSheet(
+            "color:#8a94a3;" if emblem is not None else "color:#c08a3e;")
 
     def _load_blank(self, index: int) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -175,6 +199,25 @@ class PerevodView(QWidget):
         self._svc.clear_blank(index)
         self._refresh_blanks()
         self._status.setText(f"🗑 {index}-бланка олиб ташланди.")
+
+    # ----------------------------------------------------------- emblem
+    def _load_emblem(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Давлат герби расми", str(_desktop()), _BLANK_FILTER)
+        if not path:
+            return
+        try:
+            self._svc.set_emblem(Path(path))
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._refresh_blanks()
+        self._status.setText(f"✅ Герб юкланди: {Path(path).name}")
+
+    def _clear_emblem(self) -> None:
+        self._svc.clear_emblem()
+        self._refresh_blanks()
+        self._status.setText("🗑 Герб олиб ташланди.")
 
     # ------------------------------------------------------------------
     def _run_ai(self) -> None:

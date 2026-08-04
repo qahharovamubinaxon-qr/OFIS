@@ -197,6 +197,7 @@ def _valid_png() -> bytes:
 
 
 def test_translation_pdf_and_docx(monkeypatch) -> None:
+    """A passport comes out DRAWN — the data page itself, in Russian."""
     from src.services.perevod_service import PerevodService
 
     monkeypatch.setattr("src.services.perevod_service.ask",
@@ -214,9 +215,14 @@ def test_translation_pdf_and_docx(monkeypatch) -> None:
     # sheet 1 = the original, sheet 2 = the translation, sheet 3 = untouched
     assert len(doc) == 3
     translation = _plain(doc[1].get_text())
-    assert "ПЕРЕВОД С УЗБЕКСКОГО ЯЗЫКА НА РУССКИЙ ЯЗЫК" in translation
-    assert "ПАСПОРТ" in translation and "ИСАКОВ" in translation
-    assert "FA7822242" in translation and "Отдел внутренних дел" in translation
+    assert "Перевод ксерокопии с узбекского языка" in translation
+    assert "РЕСПУБЛИКА УЗБЕКИСТАН/РЕСПУБЛИКА УЗБЕКИСТАН" in translation
+    assert "ФАМИЛИЯ/ФАМИЛИЯ" in translation and "ИСАКОВ" in translation
+    assert "НОМЕР ПАСПОРТА/НОМЕР ПАСПОРТА" in translation
+    assert "FA7822242" in translation
+    assert "Машиносчитываемая запись" in translation
+    # stamps have no box on the passport page, so they are set under the frame
+    assert "Отдел внутренних дел" in translation
     # the translation page itself carries no translator name and no date —
     # those belong on the notary's own sheet, which he completes by hand
     assert "переводчик" not in translation.lower()
@@ -229,7 +235,7 @@ def test_the_original_is_on_sheet_one_and_the_translation_fits_one_sheet(
     sheet 2 whole, so the package is always exactly three sheets."""
     from src.services.perevod_service import PerevodService
 
-    long_answer = dict(_TRANSLATION)
+    long_answer = dict(_TRANSLATION, doc_type="other", title="ДОКУМЕНТ")
     long_answer["fields"] = _TRANSLATION["fields"] + [
         {"label": f"Дополнительное поле {i}",
          "value": "Отдел внутренних дел города Ташкента Республики Узбекистан"}
@@ -240,7 +246,7 @@ def test_the_original_is_on_sheet_one_and_the_translation_fits_one_sheet(
     monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
 
     svc = PerevodService(key_getter=lambda: "test-key")
-    result = svc.translate([_valid_png(), _valid_png()], doc_type="passport")
+    result = svc.translate([_valid_png(), _valid_png()], doc_type="other")
 
     doc = fitz.open(result.pdf_path)
     assert len(doc) == 3, "package must stay three sheets however long the text"
@@ -290,17 +296,10 @@ def test_blanks_are_kept_and_used_for_every_sheet(monkeypatch, tmp_path) -> None
 
 def test_fields_follow_the_standard_order(monkeypatch) -> None:
     """The bundled form template fixes the field order regardless of AI order."""
-    from src.services.perevod_service import PerevodService
+    from src.services.perevod_service import _order_fields
 
-    monkeypatch.setattr("src.services.perevod_service.ask",
-                        lambda *a, **k: json.dumps(_TRANSLATION))
-    monkeypatch.setattr("src.ocr.preprocess.prepare_image", lambda b: b)
-
-    svc = PerevodService(key_getter=lambda: "test-key")
-    result = svc.translate([b"x"], doc_type="passport", form_date=date(2026, 7, 26))
-
-    text = _plain("".join(p.get_text() for p in fitz.open(result.pdf_path)))
+    ordered = [f["label"] for f in
+               _order_fields("passport", list(_TRANSLATION["fields"]))]
     # Номер паспорта precedes Фамилия, which precedes Имя, which precedes
     # Дата рождения — the canonical passport order, not the AI's order.
-    assert (text.index("Номер паспорта") < text.index("Фамилия")
-            < text.index("Имя") < text.index("Дата рождения"))
+    assert ordered == ["Номер паспорта", "Фамилия", "Имя", "Дата рождения"]

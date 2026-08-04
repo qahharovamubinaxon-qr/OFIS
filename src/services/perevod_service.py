@@ -35,6 +35,7 @@ from src.ai.text_client import ask
 from src.common.errors import OfisError, ValidationError
 from src.common.logging import get_logger
 from src.config import paths
+from src.pdf import perevod_pasport
 from src.pdf.engine import _font_file
 from src.pdf.perevod_spec import (
     A4_LONG,
@@ -60,6 +61,7 @@ log = get_logger(__name__)
 DOC_TYPES = [
     ("auto", "Авто (программа ўзи аниқлайди)"),
     ("passport", "Паспорт"),
+    ("id_card", "АЙДИ карта (шахсга далолатнома)"),
     ("driver_license", "Ҳайдовчилик гувоҳномаси"),
     ("birth_certificate", "Туғилганлик ҳақида гувоҳнома"),
     ("marriage_certificate", "Никоҳ гувоҳномаси"),
@@ -92,8 +94,8 @@ _PROMPT = """Ты — присяжный переводчик, готовишь 
 
 Верни СТРОГО JSON:
 {{
- "doc_type": "<passport|driver_license|birth_certificate|marriage_certificate|\
-diploma|attestat|migration_card|other>",
+ "doc_type": "<passport|id_card|driver_license|birth_certificate|\
+marriage_certificate|diploma|attestat|migration_card|other>",
  "source_language": "<язык оригинала в родительном падеже, напр. узбекского>",
  "title": "<название документа по-русски заглавными, напр. ПАСПОРТ>",
  "issuing_country": "<государство, выдавшее документ>",
@@ -102,6 +104,15 @@ diploma|attestat|migration_card|other>",
  "notes": ["<примечания переводчика, если нужны>"],
  "crops": [{{"x0": <число>, "y0": <число>, "x1": <число>, "y1": <число>}}]
 }}
+
+Если это ПАСПОРТ или ID-карта, поля должны называться РОВНО так: "Тип", \
+"Код государства", "Номер паспорта", "Фамилия", "Имя", "Отчество", \
+"Гражданство", "Дата рождения", "Место рождения", "Пол", "Дата выдачи", \
+"Действителен до", "Орган, выдавший документ" (у ID-карты ещё "ПИНФЛ"). \
+"Пол" — одна буква: "Ж" или "М". "Место рождения" — по-русски \
+(SURKHANDARYA REGION → СУРХАНДАРЬИНСКАЯ ОБЛАСТЬ). "Орган, выдавший \
+документ" КОПИРУЕТСЯ как напечатано, только русскими буквами, вместе с \
+номером отделения: "MIA 22204" → "МВД 22204"; не расшифровывай его.
 
 Поле "crops" — по одному элементу на КАЖДУЮ присланную фотографию, в том же \
 порядке. Это границы самого документа на фото (без стола, кровати, пальцев и \
@@ -171,6 +182,51 @@ def clear_blank(index: int) -> None:
     existing = blank_path(index)
     if existing is not None:
         existing.unlink(missing_ok=True)
+
+
+# ------------------------------------------------------------- the emblem
+
+
+def emblem_path() -> Path | None:
+    """The state emblem the drawn sheet puts at the head of the frame.
+
+    Uploaded once by the office (the same picture stands at the top of every
+    Uzbek passport), kept in AppData beside the blanks. Without it the frame
+    is drawn all the same — only that window stays empty.
+    """
+    for suffix in BLANK_SUFFIXES:
+        candidate = blanks_dir() / f"emblem{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def set_emblem(source: Path) -> Path:
+    source = Path(source)
+    if source.suffix.lower() not in BLANK_SUFFIXES:
+        raise ValidationError("Герб расм бўлиши керак (png, jpg)",
+                              context={"path": str(source)})
+    if not source.exists():
+        raise ValidationError("Герб файли топилмади", context={"path": str(source)})
+    clear_emblem()
+    dest = blanks_dir() / f"emblem{source.suffix.lower()}"
+    shutil.copyfile(source, dest)
+    log.info("ПЕРЕВОД: герб юкланди — %s", dest.name)
+    return dest
+
+
+def clear_emblem() -> None:
+    existing = emblem_path()
+    if existing is not None:
+        existing.unlink(missing_ok=True)
+
+
+def _emblem_bytes() -> bytes | None:
+    found = emblem_path()
+    try:
+        return found.read_bytes() if found is not None else None
+    except OSError:
+        return None
 
 
 # ------------------------------------------------------------ the original
@@ -421,6 +477,18 @@ class PerevodService:
     def clear_blank(index: int) -> None:
         clear_blank(index)
 
+    @staticmethod
+    def emblem() -> Path | None:
+        return emblem_path()
+
+    @staticmethod
+    def set_emblem(source: Path) -> Path:
+        return set_emblem(source)
+
+    @staticmethod
+    def clear_emblem() -> None:
+        clear_emblem()
+
     # ----------------------------------------------------------- printing
     def translate(
         self,
@@ -508,8 +576,23 @@ class PerevodService:
         # sheet 1 — the original, black-and-white, centred on the blank
         _place_originals(_blank_page(doc, sheets[0]), originals, doc_type)
 
-        # sheet 2 — the translation, set to fit the blank in ONE page
+        # sheet 2 — the translation. A passport or an ID card is DRAWN, the
+        # way the office types it: the data page itself, in Russian. Anything
+        # else is set as the «поле: значение» list below.
         page = _blank_page(doc, sheets[1])
+        if doc_type in ("passport", "id_card"):
+            drawn = perevod_pasport.from_fields(
+                fields, lang=lang, country=country, title=title,
+                stamps=stamps, notes=notes, emblem=_emblem_bytes())
+            if perevod_pasport.is_drawable(drawn):
+                perevod_pasport.draw(page, drawn)
+                _blank_page(doc, sheets[2])
+                out.parent.mkdir(parents=True, exist_ok=True)
+                doc.save(str(out), garbage=4, deflate=True)
+                doc.close()
+                return out
+            log.warning("ПЕРЕВОД: %s ўқилмади — рўйхат кўринишида чиқарилди",
+                        doc_type)
         rect = page.rect
         x0 = TEXT_BOX[0] * rect.width
         width = (TEXT_BOX[2] - TEXT_BOX[0]) * rect.width

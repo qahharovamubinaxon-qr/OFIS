@@ -60,6 +60,7 @@ A4_MM = (297.0, 210.0)
 
 REAL_MM: dict[str, tuple[float, float]] = {
     "passport": PASSPORT_PAGE_MM,
+    "id_card": ID1_MM,
     "driver_license": ID1_MM,
     "migration_card": (148.0, 105.0),
     "birth_certificate": A5_MM,
