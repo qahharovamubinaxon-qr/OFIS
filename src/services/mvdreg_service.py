@@ -33,10 +33,11 @@ log = get_logger(__name__)
 
 SECTION = "mvdreg"
 STAY_FROM = "reg.stay_from"
-#: The layout format's age. Layouts saved before the cell map was measured
-#: right carry the OLD wrong positions for every value (the editor used to
-#: write down everything it showed, moved or not) — those are dropped once.
-LAYOUT_V = 2
+#: The layout format's age. Bumped whenever saved positions stop being
+#: trustworthy: v2 dropped the spots the first editor pinned wholesale;
+#: v3 dropped drags made against the FIRST blank, which the office then
+#: replaced with the hostel-identical print (its cells sit elsewhere).
+LAYOUT_V = 3
 
 #: The blue the МВД date stamp prints in, measured off the office's scan.
 STAMP_INK = (0.291, 0.676, 0.917)
@@ -80,10 +81,11 @@ SAMPLES: dict[str, str] = {
 IMG_KEYS = ("img_sign", "img_stamp")
 IMG_LABELS = {"img_sign": "✍ ИМЗО (қўл қўйиш)", "img_stamp": "⬤ ПЕЧАТЬ"}
 #: x = left edge, baseline = bottom edge, size = height — page fractions.
-#: The signature starts inside the «Подпись принимающей стороны» box, the
-#: stamp inside «Печать организации»; the office drags both from there.
-IMG_DEFAULTS = {"img_sign": (2, 0.16, 0.372, 0.035),
-                "img_stamp": (2, 0.10, 0.615, 0.105)}
+#: The signature starts inside the «Подпись принимающей стороны» box
+#: (measured 0.091–0.464 × 0.308–0.413 on this blank), the stamp inside
+#: «Печать организации» below it; the office drags both from there.
+IMG_DEFAULTS = {"img_sign": (2, 0.15, 0.400, 0.055),
+                "img_stamp": (2, 0.13, 0.600, 0.130)}
 
 
 def bundled_dir() -> Path:

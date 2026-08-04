@@ -110,10 +110,10 @@ def test_the_start_date_is_a_blue_stamp_in_the_box(tmp_path) -> None:
     r = (span["color"] >> 16) & 255
     b = span["color"] & 255
     assert b > 150 and b > r, f"штамп кўк эмас: #{span['color']:06x}"
-    # inside the «Отметка о подтверждении» box
+    # inside the «Отметка о подтверждении» box (upper-right of the back)
     x = span["origin"][0] / 595.28
-    y = span["origin"][1] / 842.03
-    assert 0.60 < x < 0.78 and 0.35 < y < 0.42
+    y = span["origin"][1] / 841.79
+    assert 0.55 < x < 0.85 and 0.18 < y < 0.33
 
 
 def test_signature_and_stamp_print_once_uploaded(tmp_path) -> None:
