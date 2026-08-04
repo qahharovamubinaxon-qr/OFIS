@@ -59,6 +59,44 @@ class RegistrationAddressService:
         log.info("Hostel address created: %s (%s)", address.label, address.internal_code)
         return address
 
+    def create_mvdreg(
+        self,
+        address: RegistrationAddress,
+        template_source: Path | None = None,
+    ) -> RegistrationAddress:
+        """Register an МВД РЕГИСТРАЦИЯ address (kind='mvdreg').
+
+        Same road as a hostel's: a ready template PDF, or the office's own
+        МВД blank with the address + host + organisation printed on."""
+        if self._repo.by_internal_code(address.internal_code):
+            raise ValidationError(
+                "Internal code already exists", context={"code": address.internal_code}
+            )
+        address = address.model_copy(update={"kind": "mvdreg"})
+        dest = self._mvdreg_dest(address)
+        if template_source is not None:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template_source, dest)
+            address = address.model_copy(update={"template_path": dest})
+        else:
+            from src.services.mvdreg_service import MvdRegTemplateBuilder
+
+            built = MvdRegTemplateBuilder().build(dest, address)
+            address = address.model_copy(update={"template_path": built})
+        if not address.template_path.exists():
+            raise ValidationError(
+                "Template file not found", context={"path": str(address.template_path)}
+            )
+        self._repo.upsert(address)
+        log.info("MvdReg address created: %s (%s)", address.label,
+                 address.internal_code)
+        return address
+
+    @staticmethod
+    def _mvdreg_dest(address: RegistrationAddress) -> Path:
+        return (paths.user_templates_dir()
+                / f"mvdreg_{address.internal_code.lower()}" / "template.pdf")
+
     def set_stay_from(self, address_id: UUID,
                       spot: tuple[float, float] | None) -> RegistrationAddress:
         """Remember where this hostel wants the stay-start date printed.

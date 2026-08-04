@@ -128,6 +128,7 @@ _DESKTOP_TO_MODULE = {
     "nav.process": "patent",
     "nav.registration": "reg",
     "nav.hostel": "hostel",
+    "nav.mvdreg": "mvdreg",
     "nav.trud": "trud",
     "nav.dms": "dms",
     "nav.strahovka": "insurance",

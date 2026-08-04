@@ -92,6 +92,16 @@ def _date_long_g(v: object) -> str:
     return f"{d.day:02d} {_MONTHS_GEN[d.month - 1]} {d.year:04d} г." if d else ""
 
 
+_MONTHS_STAMP = ("ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
+                 "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК")
+
+
+def _date_stamp_ru(v: object) -> str:
+    """10 АВГ 2026 — the way a Russian date stamp prints it."""
+    d = _parse_date(v)
+    return f"{d.day:02d} {_MONTHS_STAMP[d.month - 1]} {d.year:04d}" if d else ""
+
+
 FORMATTERS: dict[str, Callable[[object], str]] = {
     "date_dd": _date_dd,
     "date_mm": _date_mm,
@@ -100,6 +110,7 @@ FORMATTERS: dict[str, Callable[[object], str]] = {
     "date_dmy_g": _date_dmy_g,
     "date_dmy_t00": _date_dmy_t00,
     "date_long_g": _date_long_g,
+    "date_stamp_ru": _date_stamp_ru,
 }
 
 

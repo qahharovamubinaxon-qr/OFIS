@@ -83,11 +83,28 @@ _FONT_IDS = {
 
 def _fontname(family: str) -> str:
     """The internal PDF font name PyMuPDF registers this family under."""
-    return _FONT_IDS.get(family, "ofis_sans")
+    known = _FONT_IDS.get(family)
+    if known is not None:
+        return known
+    if family in _FONT_FAMILIES:
+        return "ofis_sans"
+    # a face named by the computer's own name («Eskal Font4You») — the МВД
+    # РЕГИСТРАЦИЯ office picks any installed font for the texts it adds
+    from src.pdf.fonts import font_id
+
+    return font_id(family)
 
 
 def _font_file(family: str) -> "Path":
-    spec = _FONT_FAMILIES.get(family, _FONT_FAMILIES[_DEFAULT_FAMILY])
+    spec = _FONT_FAMILIES.get(family)
+    if spec is None:
+        # not one of the bundled families: look the name up among the fonts
+        # installed on THIS computer, the way the font picker offered it
+        from src.pdf.fonts import font_file, installed
+
+        if family in installed():
+            return font_file(family)[0]
+        spec = _FONT_FAMILIES[_DEFAULT_FAMILY]
     if _os.name == "nt":
         for name in spec["nt"]:  # type: ignore[union-attr]
             candidate = Path(_os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / name

@@ -153,6 +153,16 @@ def _run_hostel(ctx: RunContext, state: dict) -> list[Path]:
     return [r.pdf_path]
 
 
+def _run_mvdreg(ctx: RunContext, state: dict) -> list[Path]:
+    """МВД РЕГИСТРАЦИЯ — the same road as the hostel's, on the office's blank."""
+    passport, patent, back = _trio(state)
+    r = ctx.ctl["mvdreg"].generate_from_images(
+        state["target"], passport, patent, back,
+        registration_expiry=state["answers"]["expiry"],
+        registration_start=state["answers"]["start"])
+    return [r.pdf_path]
+
+
 def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     """ТД + УВ off the firm's own mapped samples."""
     passport_img, patent_img, back = _trio(state)
@@ -970,6 +980,12 @@ MODULES: tuple[Module, ...] = (
            photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
            asks=(Ask("start", "Яшаш БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("expiry", "Яшаш ТУГАШ санаси (КК.ОО.ЙЙЙЙ):", default_days=90))),
+    Module("mvdreg", "🏛️ МВД РЕГИСТРАЦИЯ", _run_mvdreg,
+           targets=lambda c: c["mvdreg"].addresses(),
+           target_prompt="Адресни танланг:",
+           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
+           asks=(Ask("start", "БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("expiry", "ТУГАШ санаси (КК.ОО.ЙЙЙЙ):", default_days=90))),
     Module("trud", "📑 Трудовой", _run_trud,
            targets=lambda c: c["trud"].firms(),
            target_prompt="Фирмани танланг:",
@@ -1275,6 +1291,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.kukchek_controller import KukChekController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
+    from src.controllers.mvdreg_controller import MvdRegController
     from src.controllers.osago_controller import OsagoController
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
@@ -1306,6 +1323,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.kukchek_service import KukChekService
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
+    from src.services.mvdreg_service import MvdRegService
     from src.services.osago_service import OsagoService
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
@@ -1363,6 +1381,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         # view builds it the same way).
         "hostel": HostelController(
             container.resolve(RegistrationAddressService), ocr, HostelService()),
+        "mvdreg": MvdRegController(
+            container.resolve(RegistrationAddressService), ocr, MvdRegService()),
         "trud": Trud8Controller(
             ocr, Trud8Service(container.resolve(SettingsService))),
         "svera": SveraController(

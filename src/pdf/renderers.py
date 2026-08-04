@@ -19,6 +19,20 @@ def _fit_size(text: str, max_width: float, size: float, font: fitz.Font) -> floa
     return size
 
 
+def _ink(field: Field_) -> tuple[float, float, float]:
+    """The field's own colour, black unless the mapping says otherwise.
+
+    ``colour`` = [r, g, b] in 0..1 — the МВД РЕГИСТРАЦИЯ date stamp is BLUE,
+    and the office may colour any text it adds itself.
+    """
+    raw = (field.model_extra or {}).get("colour")
+    try:
+        r, g, b = (float(c) for c in raw)
+        return (r, g, b)
+    except (TypeError, ValueError):
+        return (0.0, 0.0, 0.0)
+
+
 def _wrap_words(text: str, capacities: list[int]) -> list[str]:
     """Distribute ``text`` across rows of the given cell capacities, breaking on
     spaces so words are not split. A word longer than a row is hard-split.
@@ -56,11 +70,13 @@ def _wrap_words(text: str, capacities: list[int]) -> list[str]:
     return lines
 
 
-def _draw_row(page, x0, y, pitch, chars, font, fontname, size) -> None:
+def _draw_row(page, x0, y, pitch, chars, font, fontname, size,
+              colour=(0.0, 0.0, 0.0)) -> None:
     for i, ch in enumerate(chars):
         cx = x0 + i * pitch
         w = font.text_length(ch, fontsize=size)
-        page.insert_text((cx - w / 2, y), ch, fontname=fontname, fontsize=size)
+        page.insert_text((cx - w / 2, y), ch, fontname=fontname, fontsize=size,
+                         color=colour)
 
 
 def render_grid(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str) -> None:
@@ -75,12 +91,13 @@ def render_grid(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
 
     if not wrap:
         _draw_row(page, field.x0, field.y, field.pitch, value[: field.max_cells or len(value)],
-                  font, fontname, field.size)
+                  font, fontname, field.size, _ink(field))
         return
 
     lines = _wrap_words(value, [r[3] for r in rows])
     for (x0, y, pitch, cap), line in zip(rows, lines, strict=False):
-        _draw_row(page, x0, y, pitch, line[:cap], font, fontname, field.size)
+        _draw_row(page, x0, y, pitch, line[:cap], font, fontname, field.size,
+                  _ink(field))
 
 
 def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str) -> None:
@@ -102,7 +119,8 @@ def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
     if field.align in ("center", "right") and field.width:
         w = font.text_length(value, fontsize=size)
         x = x + (field.width - w) / 2 if field.align == "center" else x + field.width - w
-    page.insert_text((x, field.y), value, fontname=fontname, fontsize=size)
+    page.insert_text((x, field.y), value, fontname=fontname, fontsize=size,
+                     color=_ink(field))
 
 
 def _render_paragraph(
@@ -132,7 +150,8 @@ def _render_paragraph(
         if field.align in ("center", "right"):
             lw = font.text_length(line, fontsize=size)
             x = x0 + (width - lw) / 2 if field.align == "center" else x0 + width - lw
-        page.insert_text((x, y), line, fontname=fontname, fontsize=size)
+        page.insert_text((x, y), line, fontname=fontname, fontsize=size,
+                         color=_ink(field))
         y += line_h
 
 
@@ -168,4 +187,5 @@ def render_mark(page: fitz.Page, field: Field_, fontname: str) -> None:
     x = field.x if field.x is not None else field.x0
     if x is None or field.y is None:
         return
-    page.insert_text((x, field.y), field.glyph, fontname=fontname, fontsize=field.size)
+    page.insert_text((x, field.y), field.glyph, fontname=fontname,
+                     fontsize=field.size, color=_ink(field))

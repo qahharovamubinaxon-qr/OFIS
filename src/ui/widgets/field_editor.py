@@ -49,21 +49,27 @@ class _Draft:
 
     field: Field
 
-    def item(self, tag: str) -> Item:
-        f = self.field
-        return Item(key=tag, label=f.label(), sample=f.sample(), x=f.x,
-                    baseline=f.baseline, size=f.size, colour=f.colour,
-                    font_family=f.font, bold=f.bold)
-
 
 class FieldEditor(QDialog):
-    """«📐» — the blank, its texts, and every setting they have."""
+    """«📐» — the blank, its texts, and every setting they have.
+
+    Born for ТРУДАВОЙ, but any section may hand it its own ``catalogue``
+    (key → picker label) and ``samples`` (key → drag-time preview); keys in
+    ``frozen`` may be moved and styled but never deleted (a form's own
+    printed values, the signature, the stamp).
+    """
 
     def __init__(self, pages: list[bytes], fields: list[Field],
-                 title: str = "Бланка", parent=None) -> None:
+                 title: str = "Бланка", parent=None, *,
+                 catalogue: dict[str, str] | None = None,
+                 samples: dict[str, str] | None = None,
+                 frozen: frozenset[str] | set[str] = frozenset()) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{title} — матнларни қўйиш ва созлаш")
         self.setMinimumSize(1000, 820)
+        self._cat = CATALOGUE if catalogue is None else catalogue
+        self._samples = {} if samples is None else samples
+        self._frozen = set(frozen)
 
         self._pixmaps: list[QPixmap] = []
         for png in pages:
@@ -180,11 +186,25 @@ class FieldEditor(QDialog):
                     self._drafts[index].field, x=round(item.x, 5),
                     baseline=round(item.baseline, 5), size=round(item.size, 5))
 
+    def _label_of(self, field: Field) -> str:
+        return self._cat.get(field.key) or field.label()
+
+    def _sample_of(self, field: Field) -> str:
+        return self._samples.get(field.key) or field.sample()
+
+    def _item_of(self, field: Field, tag: str) -> Item:
+        return Item(key=tag, label=self._label_of(field),
+                    sample=self._sample_of(field), x=field.x,
+                    baseline=field.baseline, size=field.size,
+                    colour=field.colour, font_family=field.font,
+                    bold=field.bold)
+
     def _show_page(self, page: int, keep: int | None = None) -> None:
         self._harvest()
         self._page = page
         mine = self._on_this_page()
-        items = [self._drafts[i].item(f"{self._drafts[i].field.key}#{i}")
+        items = [self._item_of(self._drafts[i].field,
+                               f"{self._drafts[i].field.key}#{i}")
                  for i in mine]
         canvas = _PickCanvas(self._pixmaps[page - 1], items, [])
         canvas.picked_key.connect(self._on_canvas_pick)
@@ -195,7 +215,7 @@ class FieldEditor(QDialog):
         self._pick_item.clear()
         for index in mine:
             field = self._drafts[index].field
-            self._pick_item.addItem(f"{field.label()}", index)
+            self._pick_item.addItem(self._label_of(field), index)
         self._filling = False
         if self._pick_item.count():
             wanted = self._pick_item.findData(keep if keep is not None
@@ -279,13 +299,14 @@ class FieldEditor(QDialog):
             self._restyle(font=self._font.currentText())
 
     def _add(self) -> None:
-        labels = list(CATALOGUE.values())
+        offered = {k: v for k, v in self._cat.items() if k not in self._frozen}
+        labels = list(offered.values())
         picked, ok = QInputDialog.getItem(
             self, "Матн маъноси", "Бу матн ишчининг қайси маълумоти?",
             labels, 0, False)
         if not ok:
             return
-        key = [k for k, v in CATALOGUE.items() if v == picked][0]
+        key = [k for k, v in offered.items() if v == picked][0]
         model = self._drafts[self._picked()].field if self._picked() is not None \
             else None
         made = Field(key=key, page=self._page)
@@ -301,6 +322,8 @@ class FieldEditor(QDialog):
         index = self._picked()
         if index is None:
             return
+        if self._drafts[index].field.key in self._frozen:
+            return                      # a form's own value is never deleted
         self._harvest()
         self._drafts.pop(index)
         self._show_page(self._page)

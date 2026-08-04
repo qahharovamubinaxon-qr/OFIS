@@ -53,6 +53,8 @@ _NAV = [
      "Upload documents → OCR → verify → PDF", "🛂"),
     (None, "nav.registration", "Registration", "Уведомление о прибытии → PDF", "🏠"),
     (None, "nav.hostel", "ХОСТЕЛ", "Хостел уведомление о прибытии → PDF", "🛏️"),
+    (None, "nav.mvdreg", "МВД РЕГИСТРАЦИЯ",
+     "Рўйхатга қўйиш бланкаси → электрон PDF", "🏛️"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -191,6 +193,16 @@ class MainWindow(QMainWindow):
                 self._container.resolve(RegistrationAddressService),
                 self._container.resolve(OcrService),
                 HostelService(),
+            ))
+        if key == "nav.mvdreg":
+            from src.controllers.mvdreg_controller import MvdRegController
+            from src.services.mvdreg_service import MvdRegService
+            from src.ui.views.mvdreg_view import MvdRegView
+
+            return MvdRegView(MvdRegController(
+                self._container.resolve(RegistrationAddressService),
+                self._container.resolve(OcrService),
+                MvdRegService(),
             ))
         if key == "nav.chek":
             from src.controllers.chek_controller import ChekController
