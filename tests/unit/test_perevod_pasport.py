@@ -203,6 +203,44 @@ def test_a_card_gets_its_own_row_and_still_fits_the_frame() -> None:
             assert span["origin"][1] / page.rect.height < sheet.DIV_MRZ
 
 
+def test_a_long_value_is_typed_smaller_never_past_the_frame() -> None:
+    """A notarial sheet may not lose a letter — nor run off the box."""
+    long = _passport(
+        birth_place="КАШКАДАРЬИНСКАЯ ОБЛАСТЬ, КАРШИНСКИЙ РАЙОН, КИШЛАК ЯНГИОБОД",
+        authority="ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ",
+        surname="АБДУРАХМАНОВ-ТУРСУНБАЕВ")
+    page = _drawn(long)
+    text = _plain(page)
+    for whole in ("КАШКАДАРЬИНСКАЯ ОБЛАСТЬ, КАРШИНСКИЙ РАЙОН, КИШЛАК ЯНГИОБОД",
+                  "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ",
+                  "АБДУРАХМАНОВ-ТУРСУНБАЕВ"):
+        assert whole in text, f"«{whole}» бутун ёзилмаган"
+    over = [span["text"] for span in _spans(page)
+            if span["origin"][1] / page.rect.height > sheet.DIV_ROW
+            and span["bbox"][2] / page.rect.width > sheet.BOX[2] + 0.002]
+    assert over == [], f"рамкадан чиқиб кетган: {over}"
+
+
+def test_another_republic_s_passport_is_drawn_the_same_way() -> None:
+    """The office's clients are Tajik as often as Uzbek."""
+    tajik = sheet.from_fields(
+        [{"label": "Фамилия", "value": "Абдулхаков"},
+         {"label": "Имя", "value": "Сунатулло"},
+         {"label": "Номер паспорта", "value": "402543058"},
+         {"label": "Гражданство", "value": "Таджикистан"},
+         {"label": "Дата рождения", "value": "08.12.1990"},
+         {"label": "Пол", "value": "мужской"},
+         {"label": "Орган, выдавший документ", "value": "МВД 14505"},
+         {"label": "Код государства", "value": "TJK"}],
+        lang="таджикского", country="Республика Таджикистан",
+        title="Паспорт")
+    text = _plain(_drawn(tajik))
+    assert "Перевод ксерокопии с таджикского языка" in text
+    assert "РЕСПУБЛИКА ТАДЖИКИСТАН/РЕСПУБЛИКА ТАДЖИКИСТАН" in text
+    assert "TJK" in text and "402543058" in text and "М" in text
+    assert "МВД 14505" in text
+
+
 def test_the_number_box_is_named_after_the_document() -> None:
     assert sheet.number_label("ПАСПОРТ") == "НОМЕР ПАСПОРТА"
     assert sheet.number_label("ID-КАРТА") == "НОМЕР ID-КАРТЫ"

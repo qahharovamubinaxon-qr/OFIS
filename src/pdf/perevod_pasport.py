@@ -96,6 +96,9 @@ PLACE_X = 0.4400
 #: measured from the LAST row's own baselines so the block follows the grid.
 ORGAN_X, ORGAN_VALUE_X = 0.6000, 0.6300
 ORGAN_LIFT1, ORGAN_LIFT2, ORGAN_VALUE_LIFT = 0.0134, 0.0039, 0.0016
+#: «ГУ МВД России по Московской области» does not fit that narrow box on one
+#: line, so it is set on two, a little smaller — never cut, never overflowing.
+AUTH_SMALL, AUTH_FLOOR, AUTH_UP, AUTH_DOWN = 0.0102, 0.0062, 0.0078, 0.0036
 
 MRZ_Y, MRZ_SIZE = 0.7766, 0.0152
 MRZ_TEXT = "«««««« Машиносчитываемая запись »»»»»»"
@@ -128,8 +131,10 @@ class Facsimile:
     lang: str = "узбекского"
     country: str = "РЕСПУБЛИКА УЗБЕКИСТАН"
     title: str = "ПАСПОРТ"
-    code: str = "UZB"
-    kind: str = "P"
+    #: left empty on purpose — filled from the document being read, never
+    #: assumed, or every Tajik passport would come out stamped UZB
+    code: str = ""
+    kind: str = ""
     number: str = ""
     surname: str = ""
     name: str = ""
@@ -176,6 +181,24 @@ _WHERE: tuple[tuple[str, str], ...] = (
 _SEX = {"женский": "Ж", "жен": "Ж", "ж": "Ж", "f": "Ж", "female": "Ж",
         "мужской": "М", "муж": "М", "м": "М", "m": "М", "male": "М"}
 
+#: The three letters in the oval, when the document itself did not say them.
+_CODES: tuple[tuple[str, str], ...] = (
+    ("УЗБЕКИСТАН", "UZB"), ("ТАДЖИКИСТАН", "TJK"), ("ТОДЖИКИСТОН", "TJK"),
+    ("КИРГИЗ", "KGZ"), ("КЫРГЫЗ", "KGZ"), ("КАЗАХСТАН", "KAZ"),
+    ("ТУРКМЕНИСТАН", "TKM"), ("АЗЕРБАЙДЖАН", "AZE"), ("АРМЕНИЯ", "ARM"),
+    ("ГРУЗИЯ", "GEO"), ("МОЛДОВА", "MDA"), ("МОЛДАВИЯ", "MDA"),
+    ("УКРАИНА", "UKR"), ("БЕЛАРУС", "BLR"), ("РОССИ", "RUS"),
+)
+
+
+def code_of(country: str) -> str:
+    """«РЕСПУБЛИКА ТАДЖИКИСТАН» → «TJK». Unknown → empty."""
+    upper = (country or "").upper()
+    for name, code in _CODES:
+        if name in upper:
+            return code
+    return ""
+
 
 def _slot_of(label: str) -> str:
     low = " ".join(str(label or "").split()).lower().strip(" .:")
@@ -208,6 +231,8 @@ def from_fields(fields: list[dict], *, lang: str, country: str,
         setattr(made, key, value)
     if not made.kind:
         made.kind = "I" if made.personal_number else "P"
+    if not made.code:
+        made.code = code_of(made.citizenship) or code_of(made.country)
     return made
 
 
@@ -232,14 +257,36 @@ def is_drawable(data: Facsimile) -> bool:
     return bool(data.surname and (data.number or data.birth_date))
 
 
+#: A value never grows past its box: it is set smaller until it fits, down
+#: to this share of its normal size. A notarial sheet may not lose a letter,
+#: so nothing is ever cut short — «КАШКАДАРЬИНСКАЯ ОБЛАСТЬ, КАРШИНСКИЙ
+#: РАЙОН» is simply typed smaller, the way a typist would.
+MIN_FIT = 0.45
+
+
+def _fit(text: str, family: str, points: float, room: float) -> float:
+    """The type size this text can be set at without leaving its box."""
+    if not text or room <= 0:
+        return points
+    font = fitz.Font(fontfile=str(_font_file(family)))
+    floor = points * MIN_FIT
+    while points > floor and font.text_length(text, fontsize=points) > room:
+        points -= max(0.15, points * 0.03)
+    return points
+
+
 def _text(page, x: float, y: float, text: str, size: float, family: str,
           *, centre_in: tuple[float, float] | None = None,
+          fit_to: tuple[float, float] | None = None,
           opacity: float = 1.0) -> None:
     """One line, placed by shares of the page."""
     if not text:
         return
     width, height = page.rect.width, page.rect.height
     points = size * height
+    if fit_to is not None:
+        points = _fit(text, family, points,
+                      (fit_to[1] - fit_to[0]) * width)
     if centre_in is not None:
         font = fitz.Font(fontfile=str(_font_file(family)))
         span = font.text_length(text, fontsize=points)
@@ -306,6 +353,29 @@ def _wrap(text: str, font, points: float, room: float) -> list[str]:
     return rows
 
 
+def _authority(page, text: str, baseline: float, room_right: float) -> None:
+    """«Кем выдан» — one line if it fits that narrow box, two if it does not."""
+    if not text:
+        return
+    width, height = page.rect.width, page.rect.height
+    room = (room_right - ORGAN_VALUE_X) * width
+    font = fitz.Font(fontfile=str(_font_file(VALUE)))
+    if font.text_length(text, fontsize=VALUE_SIZE * height) <= room:
+        _text(page, ORGAN_VALUE_X, baseline, text, VALUE_SIZE, VALUE)
+        return
+    size = AUTH_SMALL
+    rows = _wrap(text, font, size * height, room)
+    while len(rows) > 2 and size > AUTH_FLOOR:
+        size -= 0.0004
+        rows = _wrap(text, font, size * height, room)
+    if len(rows) > 2:                      # still long: the tail shares line 2
+        rows = [rows[0], " ".join(rows[1:])]
+    for index, row in enumerate(rows):
+        y = baseline - AUTH_UP if index == 0 else baseline + AUTH_DOWN
+        _text(page, ORGAN_VALUE_X, y, row, size, VALUE,
+              fit_to=(ORGAN_VALUE_X, room_right))
+
+
 def draw(page, data: Facsimile) -> None:
     """The whole sheet, drawn onto ``page`` exactly as the office types it."""
     width, height = page.rect.width, page.rect.height
@@ -342,7 +412,7 @@ def draw(page, data: Facsimile) -> None:
                           EMBLEM[2] * width, EMBLEM[3] * height),
                 stream=data.emblem, keep_proportion=True)
     _text(page, 0.0, BIG_COUNTRY_Y, data.country, BIG_COUNTRY_SIZE, LABEL_BOLD,
-          centre_in=(left, right))
+          centre_in=(left, right), fit_to=(left + 0.02, right - 0.02))
     page.draw_oval(fitz.Rect(OVAL[0] * width, OVAL[1] * height,
                              OVAL[2] * width, OVAL[3] * height),
                    color=INK, width=RULE)
@@ -357,7 +427,8 @@ def draw(page, data: Facsimile) -> None:
     _text(page, 0.0, SIGN_LABEL_Y, "подпись владельца", HEAD_SMALL, LABEL,
           centre_in=(left, right))
     _text(page, 0.0, STATE_LINE_Y, f"{data.country}/{data.country}",
-          STATE_LINE_SIZE, LABEL, centre_in=(left, right))
+          STATE_LINE_SIZE, LABEL, centre_in=(left, right),
+          fit_to=(left + 0.006, right - 0.006))
 
     # ---- тип / код страны / номер
     _text(page, KIND_X, KIND_Y1, f"{data.title}/", PHOTO_LABEL_SIZE, LABEL)
@@ -368,10 +439,11 @@ def draw(page, data: Facsimile) -> None:
                 f"{number_label(data.title)}/{number_label(data.title)}",
                 data.number))
     for col_left, col_right, label, value in columns:
+        inside = (col_left + 0.004, col_right - 0.004)
         _text(page, 0.0, ROW_LABEL_Y, label, ROW_LABEL_SIZE, LABEL,
-              centre_in=(col_left, col_right))
+              centre_in=inside, fit_to=inside)
         _text(page, 0.0, ROW_VALUE_Y, value, ROW_VALUE_SIZE, VALUE,
-              centre_in=(col_left, col_right))
+              centre_in=inside, fit_to=inside)
 
     # ---- the photograph's window
     _rect(page, PHOTO)
@@ -380,19 +452,22 @@ def draw(page, data: Facsimile) -> None:
     _text(page, 0.0, 0.6500, "Фотография", PHOTO_LABEL_SIZE, LABEL_BOLD,
           centre_in=(PHOTO[0], PHOTO[2]))
 
-    # ---- the worker's own values
+    # ---- the worker's own values, each kept inside its own box
     for label, key, label_y, value_y in rows:
+        # «Пол» shares its line with «Место рождения» and stops before it
+        room = (DATA_X, PLACE_X - 0.004 if key == "sex" else right - 0.006)
         _text(page, DATA_X, label_y, label, LABEL_SIZE, LABEL)
-        _text(page, DATA_X, value_y, data.value(key), VALUE_SIZE, VALUE)
+        _text(page, DATA_X, value_y, data.value(key), VALUE_SIZE, VALUE,
+              fit_to=room)
     _text(page, PLACE_X, place_label_y, "МЕСТО РОЖДЕНИЯ / МЕСТО РОЖДЕНИЯ",
           LABEL_SIZE, LABEL)
-    _text(page, PLACE_X, place_value_y, data.birth_place, VALUE_SIZE, VALUE)
+    _text(page, PLACE_X, place_value_y, data.birth_place, VALUE_SIZE, VALUE,
+          fit_to=(PLACE_X, right - 0.006))
     _text(page, ORGAN_X, organ_y1, "ОРГАН, ВЫДАВШИЙ ДОКУМЕНТ /", LABEL_SIZE,
           LABEL)
     _text(page, ORGAN_X, organ_y2, "ОРГАН, ВЫДАВШИЙ ДОКУМЕНТ", LABEL_SIZE,
           LABEL)
-    _text(page, ORGAN_VALUE_X, organ_value_y, data.authority, VALUE_SIZE,
-          VALUE)
+    _authority(page, data.authority, organ_value_y, right - 0.006)
 
     # ---- the machine-readable zone, named rather than copied
     _text(page, 0.0, MRZ_Y, MRZ_TEXT, MRZ_SIZE, LABEL, centre_in=(left, right))
