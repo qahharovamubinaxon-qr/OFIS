@@ -62,6 +62,14 @@ class Item:
     font_family: str = "Courier New"
     #: shown as it prints — a section that never sets it is unaffected
     bold: bool = False
+    #: a PICTURE item (the real печать/имзо, not a word standing in for
+    #: it): the PNG itself; ``size`` is its height, width follows the
+    #: picture's own shape
+    image: bytes | None = None
+    #: a letter-cell row: distance between cell centres as a share of the
+    #: page WIDTH; ``x`` is then the FIRST CELL'S CENTRE and every letter
+    #: is drawn in its own cell — exactly the way it prints
+    pitch: float | None = None
 
 
 @dataclass
@@ -94,6 +102,7 @@ class _Canvas(QWidget):
         self.rule_order = [r.key for r in rules]
         self.picked: tuple[str, str] | None = None
         self._grab = QPoint()
+        self._pixmaps: dict[str, QPixmap] = {}
         self.setMinimumSize(page.size())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -104,10 +113,31 @@ class _Canvas(QWidget):
         font.setBold(item.bold)
         return font
 
+    def _pixmap_of(self, item: Item) -> QPixmap | None:
+        cached = self._pixmaps.get(item.key)
+        if cached is None and item.image:
+            cached = QPixmap()
+            cached.loadFromData(item.image)
+            self._pixmaps[item.key] = cached
+        return cached
+
     def _rect_of(self, item: Item) -> QRect:
-        metrics = QFontMetrics(self._font(item))
         left = round(item.x * self._page.width())
         bottom = round(item.baseline * self._page.height())
+        picture = self._pixmap_of(item)
+        if picture is not None and picture.height():
+            height = max(6, round(item.size * self._page.height()))
+            width = max(6, round(height * picture.width() / picture.height()))
+            return QRect(left, bottom - height, width, height)
+        metrics = QFontMetrics(self._font(item))
+        if item.pitch:
+            # letters live in cells: from half a cell left of the first
+            # cell's centre to half a cell right of the last one's
+            pitch = item.pitch * self._page.width()
+            count = max(1, len(item.sample))
+            return QRect(round(left - pitch / 2), bottom - metrics.ascent(),
+                         round(pitch * count),
+                         metrics.ascent() + metrics.descent())
         return QRect(left, bottom - metrics.ascent(),
                      max(6, metrics.horizontalAdvance(item.sample)),
                      metrics.ascent() + metrics.descent())
@@ -120,11 +150,25 @@ class _Canvas(QWidget):
             item = self.items[key]
             rect = self._rect_of(item)
             chosen = self.picked == ("item", key)
-            painter.setFont(self._font(item))
-            painter.setPen(QPen(QColor(*(int(c * 255) for c in item.colour))))
-            painter.drawText(
-                QPoint(rect.left(), round(item.baseline * self._page.height())),
-                item.sample)
+            picture = self._pixmap_of(item)
+            baseline = round(item.baseline * self._page.height())
+            if picture is not None:
+                painter.drawPixmap(rect, picture)
+            else:
+                painter.setFont(self._font(item))
+                painter.setPen(QPen(QColor(*(int(c * 255)
+                                             for c in item.colour))))
+                if item.pitch:
+                    metrics = QFontMetrics(self._font(item))
+                    pitch = item.pitch * self._page.width()
+                    for i, ch in enumerate(item.sample):
+                        cx = item.x * self._page.width() + i * pitch
+                        painter.drawText(
+                            QPoint(round(cx - metrics.horizontalAdvance(ch)
+                                         / 2), baseline), ch)
+                else:
+                    painter.drawText(QPoint(rect.left(), baseline),
+                                     item.sample)
             painter.setPen(QPen(_PICKED if chosen else _GHOST,
                                 2 if chosen else 1, Qt.PenStyle.DashLine))
             painter.drawRect(rect.adjusted(-2, -2, 2, 2))

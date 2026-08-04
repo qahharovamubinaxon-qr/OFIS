@@ -139,11 +139,10 @@ def test_without_them_nothing_extra_is_printed(tmp_path) -> None:
 
 
 def test_the_office_s_own_texts_fonts_and_colours(tmp_path) -> None:
-    from src.services import blank_layout
-    from src.services.mvdreg_service import SECTION
+    from src.services.mvdreg_service import save_layout
 
     address = _address(tmp_path)
-    blank_layout.save(SECTION, address.template_path, {
+    save_layout(address.template_path, {
         "fields": {}, "images": {},
         "styles": {"reg.surname": {"colour": [1.0, 0.0, 0.0]}},
         "extra": [{"key": "host_fio", "page": 1, "x": 0.10,
@@ -183,43 +182,42 @@ def test_meanings_cover_what_the_form_knows(tmp_path) -> None:
 def test_old_saved_layouts_are_cleared_once(tmp_path) -> None:
     """The first editor pinned every value at the OLD wrong spots on OK —
     those saved positions must not override the corrected map."""
-    from src.services import blank_layout
     from src.services.mvdreg_service import (
         LAYOUT_V,
-        SECTION,
+        load_layout,
         refresh_templates,
+        save_layout,
     )
 
     address = _address(tmp_path)
-    blank_layout.save(SECTION, address.template_path, {
+    save_layout(address.template_path, {
         "fields": {"reg.surname": [0.5, 0.5, 0.02],
                    "host.surname": [0.6, 0.6, 0.02]},
         "extra": [{"key": "fio", "page": 1, "x": 0.1, "baseline": 0.9,
                    "size": 0.012}],
         "styles": {"reg.surname": {"colour": [1, 0, 0]}}})
     refresh_templates([address])
-    kept = blank_layout.load(SECTION, address.template_path)
+    kept = load_layout(address.template_path)
     assert kept.get("v") == LAYOUT_V
     assert not kept.get("fields"), "эски жойлар ўчмаган"
     assert kept.get("extra") and kept.get("styles"), "эганики сақланиши керак"
     # and never again: a layout the office saves NOW stays untouched
     kept["fields"] = {"reg.surname": [0.4, 0.4, 0.02]}
-    blank_layout.save(SECTION, address.template_path, kept)
+    save_layout(address.template_path, kept)
     refresh_templates([address])
-    again = blank_layout.load(SECTION, address.template_path)
+    again = load_layout(address.template_path)
     assert again.get("fields") == {"reg.surname": [0.4, 0.4, 0.02]}
 
 
 def test_a_moved_host_text_moves_on_the_rebuilt_template(tmp_path) -> None:
-    from src.services import blank_layout
     from src.services.mvdreg_service import (
         LAYOUT_V,
-        SECTION,
         MvdRegTemplateBuilder,
+        save_layout,
     )
 
     address = _address(tmp_path)
-    blank_layout.save(SECTION, address.template_path, {
+    save_layout(address.template_path, {
         "v": LAYOUT_V,
         "fields": {"host.surname": [0.30, 0.30, 0.0140]}})
     MvdRegTemplateBuilder().build(address.template_path, address)
@@ -230,6 +228,27 @@ def test_a_moved_host_text_moves_on_the_rebuilt_template(tmp_path) -> None:
                 key=lambda s: s["origin"][1])
     assert first["origin"][0] / 595.28 == pytest.approx(0.30, abs=0.02)
     assert first["origin"][1] / 842.03 == pytest.approx(0.30, abs=0.01)
+
+
+def test_every_address_keeps_its_own_arrangement(tmp_path) -> None:
+    """«Битта адресни созласам ҳаммасиники ўзгаряпти» — every template is
+    a file called template.pdf, so every address used to share ONE layout
+    file. Now each address is keyed by its own folder."""
+    from src.services.mvdreg_service import (
+        layout_key,
+        load_layout,
+        save_layout,
+    )
+
+    one = _address(tmp_path / "mvdreg_bir")
+    two = _address(tmp_path / "mvdreg_ikki")
+    assert layout_key(one.template_path) != layout_key(two.template_path)
+
+    save_layout(one.template_path, {"v": 3, "fields": {
+        "reg.surname": [0.5, 0.5, 0.02]}})
+    assert load_layout(two.template_path) == {}, \
+        "бир адреснинг настройкаси бошқасига ўтган"
+    assert load_layout(one.template_path).get("fields")
 
 
 def test_the_address_book_keeps_mvdreg_apart(tmp_path) -> None:
@@ -267,22 +286,21 @@ def test_adding_a_second_address_never_fails_on_the_code(tmp_path) -> None:
 def test_a_new_address_inherits_the_newest_arrangement(tmp_path) -> None:
     """One настройка, then every new address starts from it."""
     from src.app import build_container
-    from src.services import blank_layout
-    from src.services.mvdreg_service import LAYOUT_V, SECTION
+    from src.services.mvdreg_service import LAYOUT_V, load_layout, save_layout
     from src.services.registration_address_service import (
         RegistrationAddressService,
     )
 
     service = build_container().resolve(RegistrationAddressService)
     first = service.create_mvdreg(_address(tmp_path))
-    blank_layout.save(SECTION, first.template_path, {
+    save_layout(first.template_path, {
         "v": LAYOUT_V, "fields": {"host.surname": [0.30, 0.30, 0.0140]},
         "extra": [{"key": "free1", "page": 1, "x": 0.1, "baseline": 0.9,
                    "size": 0.012}],
         "images": {"img_stamp": [2, 0.2, 0.5, 0.1]}})
 
     second = service.create_mvdreg(_address(tmp_path))
-    inherited = blank_layout.load(SECTION, second.template_path)
+    inherited = load_layout(second.template_path)
     assert inherited.get("images") == {"img_stamp": [2, 0.2, 0.5, 0.1]}
     assert inherited.get("extra"), "қўшимча матн мерос ўтмаган"
     # the inherited host position is already printed into the new template

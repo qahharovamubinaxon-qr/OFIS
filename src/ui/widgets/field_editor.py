@@ -63,13 +63,19 @@ class FieldEditor(QDialog):
                  title: str = "Бланка", parent=None, *,
                  catalogue: dict[str, str] | None = None,
                  samples: dict[str, str] | None = None,
-                 frozen: frozenset[str] | set[str] = frozenset()) -> None:
+                 frozen: frozenset[str] | set[str] = frozenset(),
+                 images: dict[str, bytes] | None = None,
+                 pitches: dict[str, float] | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{title} — матнларни қўйиш ва созлаш")
         self.setMinimumSize(1000, 820)
         self._cat = CATALOGUE if catalogue is None else catalogue
         self._samples = {} if samples is None else samples
         self._frozen = set(frozen)
+        #: key → the real PNG shown in place of a word (печать, имзо)
+        self._images = images or {}
+        #: key → cell pitch (share of page width) for letter-cell rows
+        self._pitches = pitches or {}
 
         self._pixmaps: list[QPixmap] = []
         for png in pages:
@@ -197,7 +203,8 @@ class FieldEditor(QDialog):
                     sample=self._sample_of(field), x=field.x,
                     baseline=field.baseline, size=field.size,
                     colour=field.colour, font_family=field.font,
-                    bold=field.bold)
+                    bold=field.bold, image=self._images.get(field.key),
+                    pitch=self._pitches.get(field.key))
 
     def _show_page(self, page: int, keep: int | None = None) -> None:
         self._harvest()

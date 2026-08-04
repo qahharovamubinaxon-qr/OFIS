@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 from src.common.threading import run_async
 from src.controllers.mvdreg_controller import MvdRegController
 from src.domain.registration_address import RegistrationAddress
-from src.services import blank_layout, mvdreg_service
+from src.services import mvdreg_service
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
@@ -89,6 +89,21 @@ class AddMvdRegDialog(QDialog):
         pick.addWidget(btn)
         outer.addLayout(pick)
 
+        # печать ва имзо шу ернинг ўзида — адрес билан бирга сақланади
+        self.stamp_path: Path | None = None
+        self.sign_png: bytes | None = None
+        assets = QHBoxLayout()
+        self._asset_label = QLabel("Печать/имзо: кейин ҳам қўшса бўлади")
+        self._asset_label.setStyleSheet("color:#8a94a3;")
+        assets.addWidget(self._asset_label, stretch=1)
+        stamp_btn = QPushButton("⚙ Печать танлаш…")
+        stamp_btn.clicked.connect(self._pick_stamp)
+        assets.addWidget(stamp_btn)
+        sign_btn = QPushButton("✍ Имзо чизиш…")
+        sign_btn.clicked.connect(self._draw_sign)
+        assets.addWidget(sign_btn)
+        outer.addLayout(assets)
+
         from PySide6.QtWidgets import QDialogButtonBox
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
@@ -103,6 +118,32 @@ class AddMvdRegDialog(QDialog):
         if path:
             self._template = Path(path)
             self._tpl_label.setText(f"✓ {Path(path).name}")
+
+    def _pick_stamp(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Печать расми", "", "Расм (*.png *.jpg *.jpeg)")
+        if path:
+            self.stamp_path = Path(path)
+            self._show_assets()
+
+    def _draw_sign(self) -> None:
+        from src.services.mvdreg_service import SIGN_INK
+        from src.ui.widgets.signature_pad import SignaturePad
+
+        pad = SignaturePad(self)
+        pad.set_ink(tuple(int(c * 255) for c in SIGN_INK))
+        if pad.exec() == QDialog.DialogCode.Accepted:
+            self.sign_png = pad.signature_png()
+            self._show_assets()
+
+    def _show_assets(self) -> None:
+        parts = []
+        if self.stamp_path is not None:
+            parts.append(f"печать ✓ {self.stamp_path.name}")
+        if self.sign_png:
+            parts.append("имзо ✓")
+        self._asset_label.setText(
+            " · ".join(parts) or "Печать/имзо: кейин ҳам қўшса бўлади")
 
     def build(self) -> tuple[RegistrationAddress, Path | None]:
         v = {k: e.text().strip() for k, e in self._edits.items()}
@@ -279,13 +320,23 @@ class MvdRegView(QWidget):
             return
         try:
             address, template = dialog.build()
-            self._c.add_address(address, template)
+            made = self._c.add_address(address, template)
+            if dialog.stamp_path is not None:
+                self._c.set_stamp(dialog.stamp_path, made.template_path)
+            if dialog.sign_png:
+                self._c.set_signature(dialog.sign_png, made.template_path)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
         self._reload()
-        self._status.setText(f"✅ «{address.label}» қўшилди — «📐 Созлаш» "
-                             "билан текшириб чиқинг.")
+        index = self._address.findData(str(made.id))
+        if index >= 0:
+            self._address.setCurrentIndex(index)
+        self._status.setText(f"✅ «{made.label}» қўшилди — жойларини "
+                             "текшириб чиқинг.")
+        # straight into the one window: печать, имзо ва матнлар шу ерда
+        # жойлаштирилади ва ФАҚАТ шу адрес учун сақланади
+        self._arrange()
 
     def _remove(self) -> None:
         address = self._selected()
@@ -381,16 +432,26 @@ class MvdRegView(QWidget):
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
-        layout = blank_layout.load(mvdreg_service.SECTION, template)
+        layout = mvdreg_service.load_layout(template)
         moved = layout.get("fields") or {}
         styles = layout.get("styles") or {}
         images = layout.get("images") or {}
+
+        import fitz as _fitz
+
+        from src.pdf.engine import _font_file
 
         fields: list[Field] = []
         opened: dict[str, tuple[float, float, float]] = {}
         catalogue = dict(mvdreg_service.CATALOGUE)
         samples = dict(mvdreg_service.SAMPLES)
         frozen: set[str] = set()
+        pitches: dict[str, float] = {}
+        #: tag → half the gap between the box's width and the printed
+        #: text's, as a share of the page — a centred value (the blue date)
+        #: is SHOWN where its letters really start, and the anchor is put
+        #: back on save, so the screen and the print are the same place
+        centre_shift: dict[str, float] = {}
         # the worker's values AND the address's own texts — the owner asked
         # to be able to drag the address, the host's name and the dates too
         for source in (mvdreg_service.mapping_path(),
@@ -401,7 +462,20 @@ class MvdRegView(QWidget):
                 tag = f"map:{item.id}"
                 frozen.add(tag)
                 catalogue[tag] = label_of(item)
-                samples[tag] = sample_of(item)
+                sample = sample_of(item)
+                samples[tag] = sample
+                if item.type == "grid" and item.pitch:
+                    pitches[tag] = float(item.pitch) / width
+                elif (item.type == "text" and item.width
+                      and item.align == "center"):
+                    try:
+                        face = _fitz.Font(fontfile=str(_font_file(item.font)))
+                        text_w = face.text_length(sample,
+                                                  fontsize=float(item.size))
+                    except Exception:             # noqa: BLE001
+                        text_w = 0.0
+                    centre_shift[tag] = (float(item.width) - text_w) \
+                        / 2.0 / width
                 spot = moved.get(item.id)
                 if spot and len(spot) == 3:
                     x, baseline, size = (float(v) for v in spot)
@@ -416,7 +490,8 @@ class MvdRegView(QWidget):
                                or (item.model_extra or {}).get("colour")
                                or (0.0, 0.0, 0.0))[:3]
                 fields.append(Field(
-                    key=tag, page=int(item.page), x=x, baseline=baseline,
+                    key=tag, page=int(item.page),
+                    x=x + centre_shift.get(tag, 0.0), baseline=baseline,
                     size=size, colour=colour,
                     font=chosen.get("font")
                     or _FACE_NAMES.get(item.font, "Times New Roman")))
@@ -432,10 +507,18 @@ class MvdRegView(QWidget):
                 or mvdreg_service.IMG_DEFAULTS[key]
             fields.append(Field(key=key, page=int(page), x=float(x),
                                 baseline=float(bottom), size=float(h)))
+        # the real pictures — the office drags ITS печать and ITS имзо,
+        # at their true size, not a word standing in for them
+        pictures = {}
+        for key in mvdreg_service.IMG_KEYS:
+            found = self._c.asset(key.removeprefix("img_"), template)
+            if found is not None:
+                pictures[key] = found.read_bytes()
 
         dialog = FieldEditor(pages, fields, title=f"{address.label}",
                              parent=self, catalogue=catalogue,
-                             samples=samples, frozen=frozen)
+                             samples=samples, frozen=frozen,
+                             images=pictures, pitches=pitches)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         new_fields: dict[str, list[float]] = {}
@@ -445,8 +528,8 @@ class MvdRegView(QWidget):
         for made in dialog.fields():
             if made.key.startswith("map:"):
                 name = made.key[4:]
-                spot = [round(made.x, 5), round(made.baseline, 5),
-                        round(made.size, 5)]
+                spot = [round(made.x - centre_shift.get(made.key, 0.0), 5),
+                        round(made.baseline, 5), round(made.size, 5)]
                 # only what the office actually MOVED is written down; a
                 # value left where the program put it keeps following the
                 # program — so a corrected map is never pinned to an old spot
@@ -460,7 +543,7 @@ class MvdRegView(QWidget):
                                         round(made.size, 5)]
             else:
                 new_extra.append(made.as_dict())
-        blank_layout.save(mvdreg_service.SECTION, template,
+        mvdreg_service.save_layout(template,
                           {"v": mvdreg_service.LAYOUT_V, "fields": new_fields,
                            "styles": new_styles, "extra": new_extra,
                            "images": new_images})

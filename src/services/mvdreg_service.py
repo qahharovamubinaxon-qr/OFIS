@@ -82,10 +82,10 @@ IMG_KEYS = ("img_sign", "img_stamp")
 IMG_LABELS = {"img_sign": "✍ ИМЗО (қўл қўйиш)", "img_stamp": "⬤ ПЕЧАТЬ"}
 #: x = left edge, baseline = bottom edge, size = height — page fractions.
 #: The signature starts inside the «Подпись принимающей стороны» box
-#: (measured 0.091–0.464 × 0.308–0.413 on this blank), the stamp inside
-#: «Печать организации» below it; the office drags both from there.
-IMG_DEFAULTS = {"img_sign": (2, 0.15, 0.400, 0.055),
-                "img_stamp": (2, 0.13, 0.600, 0.130)}
+#: (0.205–0.238 on this blank), the stamp inside «Печать организации»
+#: (0.308–0.413); the office drags both from there.
+IMG_DEFAULTS = {"img_sign": (2, 0.14, 0.2355, 0.026),
+                "img_stamp": (2, 0.12, 0.4080, 0.098)}
 
 
 def bundled_dir() -> Path:
@@ -116,6 +116,34 @@ def set_blank(source: Path) -> Path:
 
 def mapping_path() -> Path:
     return bundled_dir() / "mapping.v1.json"
+
+
+def layout_key(template: Path | str) -> str:
+    """What THIS address's arrangement is filed under.
+
+    Every address's template is a file called ``template.pdf`` inside its
+    own folder, and :mod:`blank_layout` names the saved file after the
+    template's stem — so every address was writing to the SAME
+    ``template.json`` and one address's настройка became everybody's.
+    The folder name (``mvdreg_<code>``) is the part that is unique, so
+    that is the key.
+    """
+    template = Path(template)
+    if template.stem.lower() == "template":
+        return template.parent.name or template.stem
+    return template.stem
+
+
+def load_layout(template: Path | str) -> dict:
+    from src.services import blank_layout
+
+    return blank_layout.load(SECTION, layout_key(template))
+
+
+def save_layout(template: Path | str, layout: dict) -> None:
+    from src.services import blank_layout
+
+    blank_layout.save(SECTION, layout_key(template), layout)
 
 
 def _asset_dir(template: Path | None) -> Path:
@@ -178,11 +206,14 @@ def seed_layout(template: Path) -> bool:
     """
     from src.services import blank_layout
 
-    own = blank_layout.layout_file(SECTION, template)
+    own = blank_layout.layout_file(SECTION, layout_key(template))
     if own.exists():
         return False
     folder = own.parent
-    others = [p for p in folder.glob("*.json") if p != own]
+    # template.json is the pre-fix SHARED file every address used to write
+    # to — nobody inherits that mess
+    others = [p for p in folder.glob("*.json")
+              if p != own and p.name != "template.json"]
     if not others:
         return False
     newest = max(others, key=lambda p: p.stat().st_mtime)
@@ -291,8 +322,6 @@ class MvdRegService:
         registration_start: date | None = None,
         output_dir: Path | None = None,
     ) -> MvdRegResult:
-        from src.services import blank_layout
-
         start = registration_start or date.today()
         values: dict[str, object] = build_registration_values(
             passport, patent, registration_expiry=registration_expiry)
@@ -303,7 +332,7 @@ class MvdRegService:
                 values[key] = str(found)
         # the office's own texts print whatever their meaning stands for
         texts = texts_of(passport, address, start, registration_expiry)
-        layout = blank_layout.load(SECTION, address.template_path)
+        layout = load_layout(address.template_path)
         for index, extra in enumerate(layout.get("extra") or []):
             key = str(extra.get("key") or "free1")
             values[f"extra.{key}#{index}"] = texts.get(key, "")
@@ -341,14 +370,12 @@ def _drop_stale_layout(template: Path) -> bool:
     keep overriding the corrected one. Everything the office really made
     itself (extra texts, styles, the pictures) is kept.
     """
-    from src.services import blank_layout
-
-    layout = blank_layout.load(SECTION, template)
+    layout = load_layout(template)
     if not layout or int(layout.get("v") or 1) >= LAYOUT_V:
         return False
     layout.pop("fields", None)
     layout["v"] = LAYOUT_V
-    blank_layout.save(SECTION, template, layout)
+    save_layout(template, layout)
     log.info("МВД РЕГ: %s даги эски жойлашув тозаланди", Path(template).name)
     return True
 
@@ -398,12 +425,10 @@ class MvdRegTemplateBuilder:
             (bundled_dir() / "address_mapping.v1.json").exists()
 
     def build(self, out: Path, address: RegistrationAddress) -> Path:
-        from src.services import blank_layout
-
         # the office may have dragged or restyled the address/host texts in
         # «📐» — their saved spots and styles are laid over the shared map
         # for THIS template
-        layout = blank_layout.load(SECTION, out)
+        layout = load_layout(out)
         mapping = _decorated(with_layout(
             FieldMapping.load(bundled_dir() / "address_mapping.v1.json"),
             layout), {"styles": layout.get("styles") or {}})
