@@ -67,21 +67,28 @@ class RegistrationAddressService:
         """Register an МВД РЕГИСТРАЦИЯ address (kind='mvdreg').
 
         Same road as a hostel's: a ready template PDF, or the office's own
-        МВД blank with the address + host + organisation printed on."""
-        if self._repo.by_internal_code(address.internal_code):
-            raise ValidationError(
-                "Internal code already exists", context={"code": address.internal_code}
-            )
-        address = address.model_copy(update={"kind": "mvdreg"})
+        МВД blank with the address + host + organisation printed on. A
+        taken internal code is quietly suffixed rather than refused — the
+        office types a label, not codes — and the newest saved arrangement
+        (печать/имзо spots, added texts, colours) is inherited so a second
+        address starts where the first was left."""
+        base = address.internal_code or "adres"
+        code, attempt = base, 2
+        while self._repo.by_internal_code(code):
+            code = f"{base}-{attempt}"
+            attempt += 1
+        address = address.model_copy(update={"kind": "mvdreg",
+                                             "internal_code": code})
         dest = self._mvdreg_dest(address)
+        from src.services import mvdreg_service
+
+        mvdreg_service.seed_layout(dest)
         if template_source is not None:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(template_source, dest)
             address = address.model_copy(update={"template_path": dest})
         else:
-            from src.services.mvdreg_service import MvdRegTemplateBuilder
-
-            built = MvdRegTemplateBuilder().build(dest, address)
+            built = mvdreg_service.MvdRegTemplateBuilder().build(dest, address)
             address = address.model_copy(update={"template_path": built})
         if not address.template_path.exists():
             raise ValidationError(

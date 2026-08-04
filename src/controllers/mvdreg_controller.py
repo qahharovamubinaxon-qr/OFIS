@@ -57,17 +57,17 @@ class MvdRegController:
         return mvdreg_service.set_blank(source)
 
     # ------------------------------------------------------------ assets
-    def set_signature(self, png: bytes) -> Path:
-        return mvdreg_service.set_signature(png)
+    def set_signature(self, png: bytes, template: Path | None = None) -> Path:
+        return mvdreg_service.set_signature(png, template)
 
-    def set_stamp(self, source: Path) -> Path:
-        return mvdreg_service.set_stamp(source)
+    def set_stamp(self, source: Path, template: Path | None = None) -> Path:
+        return mvdreg_service.set_stamp(source, template)
 
-    def asset(self, name: str) -> Path | None:
-        return mvdreg_service.asset(name)
+    def asset(self, name: str, template: Path | None = None) -> Path | None:
+        return mvdreg_service.asset(name, template)
 
-    def clear_asset(self, name: str) -> None:
-        mvdreg_service.clear_asset(name)
+    def clear_asset(self, name: str, template: Path | None = None) -> None:
+        mvdreg_service.clear_asset(name, template)
 
     # ---------------------------------------------------------- printing
     def generate_from_images(

@@ -243,3 +243,73 @@ def test_the_address_book_keeps_mvdreg_apart(tmp_path) -> None:
     assert made.kind == "mvdreg"
     assert [a.id for a in service.list(kind="mvdreg")] == [made.id]
     assert all(a.kind != "mvdreg" for a in service.list(kind="hostel"))
+
+
+def test_adding_a_second_address_never_fails_on_the_code(tmp_path) -> None:
+    """«Адрес қўшиб бўлмаяпти» — the second address with the same (or an
+    empty) internal code used to be refused. Now it gets its own."""
+    from src.app import build_container
+    from src.services.registration_address_service import (
+        RegistrationAddressService,
+    )
+
+    service = build_container().resolve(RegistrationAddressService)
+    first = service.create_mvdreg(_address(tmp_path))
+    second = service.create_mvdreg(_address(tmp_path))
+    third = service.create_mvdreg(_address(tmp_path))
+    codes = {first.internal_code, second.internal_code, third.internal_code}
+    assert len(codes) == 3, "коды такрорланган"
+    assert len(service.list(kind="mvdreg")) == 3
+    for made in (second, third):
+        assert made.template_path.exists()
+
+
+def test_a_new_address_inherits_the_newest_arrangement(tmp_path) -> None:
+    """One настройка, then every new address starts from it."""
+    from src.app import build_container
+    from src.services import blank_layout
+    from src.services.mvdreg_service import LAYOUT_V, SECTION
+    from src.services.registration_address_service import (
+        RegistrationAddressService,
+    )
+
+    service = build_container().resolve(RegistrationAddressService)
+    first = service.create_mvdreg(_address(tmp_path))
+    blank_layout.save(SECTION, first.template_path, {
+        "v": LAYOUT_V, "fields": {"host.surname": [0.30, 0.30, 0.0140]},
+        "extra": [{"key": "free1", "page": 1, "x": 0.1, "baseline": 0.9,
+                   "size": 0.012}],
+        "images": {"img_stamp": [2, 0.2, 0.5, 0.1]}})
+
+    second = service.create_mvdreg(_address(tmp_path))
+    inherited = blank_layout.load(SECTION, second.template_path)
+    assert inherited.get("images") == {"img_stamp": [2, 0.2, 0.5, 0.1]}
+    assert inherited.get("extra"), "қўшимча матн мерос ўтмаган"
+    # the inherited host position is already printed into the new template
+    with fitz.open(str(second.template_path)) as doc:
+        spans = [s for b in doc[1].get_text("dict")["blocks"]
+                 for line in b.get("lines", []) for s in line["spans"]]
+    first_letter = min((s for s in spans if s["text"] == "П"),
+                       key=lambda s: s["origin"][1])
+    assert first_letter["origin"][1] / 841.79 == pytest.approx(0.30, abs=0.01)
+
+
+def test_each_address_keeps_its_own_stamp(tmp_path) -> None:
+    from src.services.mvdreg_service import MvdRegService, asset, set_stamp
+
+    one = _address(tmp_path / "a")
+    two = _address(tmp_path / "b")
+    picture = fitz.open()
+    page = picture.new_page(width=80, height=80)
+    page.draw_circle((40, 40), 30, color=(0, 0, 0.6), width=3)
+    png = tmp_path / "stamp.png"
+    page.get_pixmap().save(str(png))
+    set_stamp(png, one.template_path)
+
+    assert asset("stamp", one.template_path) is not None
+    assert asset("stamp", two.template_path) is None, "печать бошқасига ўтган"
+    made = MvdRegService().generate(
+        _passport(), None, one, registration_expiry=date(2026, 11, 8),
+        registration_start=date(2026, 8, 10), output_dir=tmp_path / "out")
+    with fitz.open(str(made.pdf_path)) as doc:
+        assert len(doc[1].get_images()) >= 2

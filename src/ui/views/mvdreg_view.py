@@ -112,9 +112,12 @@ class AddMvdRegDialog(QDialog):
             f"к. {v['korpus']}" if v["korpus"] else "",
             f"стр. {v['stroenie']}" if v["stroenie"] else "",
             f"кв. {v['kvartira']}" if v["kvartira"] else "") if x)
+        label = v["label"] or summary or "Адрес"
+        slug = "".join(c.lower() if c.isalnum() else "-" for c in label)
+        slug = "-".join(p for p in slug.split("-") if p)[:40]
         address = RegistrationAddress(
-            label=v["label"] or summary or "Адрес",
-            internal_code=v["internal_code"] or "mvdreg",
+            label=label,
+            internal_code=v["internal_code"] or slug or "adres",
             address_text=summary or "-", host_fio=v["host_fio"] or "-",
             kind="mvdreg",
             oblast=v["oblast"] or None, raion=v["raion"] or None,
@@ -152,6 +155,8 @@ class MvdRegView(QWidget):
         addr_row = QHBoxLayout()
         addr_row.addWidget(QLabel("Адрес:"))
         self._address = QComboBox()
+        self._address.currentIndexChanged.connect(
+            lambda _: self._refresh_state())
         addr_row.addWidget(self._address, stretch=1)
         add = QPushButton("➕ Адрес")
         add.clicked.connect(self._add)
@@ -233,6 +238,7 @@ class MvdRegView(QWidget):
     # ------------------------------------------------------------- state
     def _reload(self) -> None:
         current = self._address.currentData()
+        self._address.blockSignals(True)
         self._address.clear()
         for address in self._c.addresses():
             self._address.addItem(address.label, str(address.id))
@@ -242,10 +248,19 @@ class MvdRegView(QWidget):
             index = self._address.findData(current)
             if index >= 0:
                 self._address.setCurrentIndex(index)
+        self._address.blockSignals(False)
+        self._refresh_state()
+
+    def _refresh_state(self) -> None:
+        chosen = self._selected()
+        template = chosen.template_path if chosen else None
         parts = [f"Бланка: {self._c.blank().name}"]
-        parts.append("Имзо: бор ✅" if self._c.asset("sign") else "Имзо: йўқ")
-        parts.append("Печать: бор ✅" if self._c.asset("stamp")
+        parts.append("Имзо: бор ✅" if self._c.asset("sign", template)
+                     else "Имзо: йўқ")
+        parts.append("Печать: бор ✅" if self._c.asset("stamp", template)
                      else "Печать: йўқ")
+        if chosen:
+            parts.append(f"(«{chosen.label}» учун)")
         self._state.setText(" · ".join(parts))
 
     def _selected(self) -> RegistrationAddress | None:
@@ -308,29 +323,39 @@ class MvdRegView(QWidget):
             return
         png = pad.signature_png()
         if png:
-            self._c.set_signature(png)
+            chosen = self._selected()
+            self._c.set_signature(
+                png, chosen.template_path if chosen else None)
             self._reload()
-            self._status.setText("✅ Имзо сақланди — жойини «📐» да суринг.")
+            self._status.setText(
+                f"✅ Имзо {'«' + chosen.label + '» учун ' if chosen else ''}"
+                "сақланди — жойини «📐» да суринг.")
 
     def _set_stamp(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Печать расми", "", "Расм (*.png *.jpg *.jpeg)")
         if not path:
             return
+        chosen = self._selected()
         try:
-            self._c.set_stamp(Path(path))
+            self._c.set_stamp(Path(path),
+                              chosen.template_path if chosen else None)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
         self._reload()
-        self._status.setText("✅ Печать сақланди — жойини «📐» да суринг.")
+        self._status.setText(
+            f"✅ Печать {'«' + chosen.label + '» учун ' if chosen else ''}"
+            "сақланди — жойини «📐» да суринг.")
 
     def _clear_assets(self) -> None:
         picked, ok = QInputDialog.getItem(
             self, "Ўчириш", "Нимани ўчирамиз?", ["Имзо", "Печать"], 0, False)
         if not ok:
             return
-        self._c.clear_asset("sign" if picked == "Имзо" else "stamp")
+        chosen = self._selected()
+        self._c.clear_asset("sign" if picked == "Имзо" else "stamp",
+                            chosen.template_path if chosen else None)
         self._reload()
 
     # ----------------------------------------------------------- arrange
@@ -398,7 +423,7 @@ class MvdRegView(QWidget):
         for extra in layout.get("extra") or []:
             fields.append(Field.from_dict(extra))
         for key in mvdreg_service.IMG_KEYS:
-            if self._c.asset(key.removeprefix("img_")) is None:
+            if self._c.asset(key.removeprefix("img_"), template) is None:
                 continue
             frozen.add(key)
             catalogue[key] = mvdreg_service.IMG_LABELS[key]

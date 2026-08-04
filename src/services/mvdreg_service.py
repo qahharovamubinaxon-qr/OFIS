@@ -118,32 +118,77 @@ def mapping_path() -> Path:
     return bundled_dir() / "mapping.v1.json"
 
 
-def _asset(name: str) -> Path:
-    return store_dir() / name
+def _asset_dir(template: Path | None) -> Path:
+    """Where an address keeps ITS pictures — beside its own template."""
+    if template is not None:
+        return Path(template).parent
+    return store_dir()
 
 
-def set_signature(png: bytes) -> Path:
-    _asset("sign.png").write_bytes(png)
-    return _asset("sign.png")
+def set_signature(png: bytes, template: Path | None = None) -> Path:
+    dest = _asset_dir(template) / "sign.png"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(png)
+    return dest
 
 
-def set_stamp(source: Path) -> Path:
+def set_stamp(source: Path, template: Path | None = None) -> Path:
     from src.services.alpinist_service import ink_only
 
     source = Path(source)
     if not source.exists():
         raise ValidationError("Печать расми топилмади")
-    _asset("stamp.png").write_bytes(ink_only(source.read_bytes()))
-    return _asset("stamp.png")
+    dest = _asset_dir(template) / "stamp.png"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(ink_only(source.read_bytes()))
+    return dest
 
 
-def asset(name: str) -> Path | None:
-    found = _asset(f"{name}.png")
-    return found if found.exists() else None
+def asset(name: str, template: Path | None = None) -> Path | None:
+    """The address's own picture; the office-wide one when it has none.
+
+    So one uploaded печать serves every address until an address is given
+    its own — «адресни қўшганда унга печать ва имзо қўшиш» — and each
+    address then always prints with what IT was given.
+    """
+    if template is not None:
+        own = Path(template).parent / f"{name}.png"
+        if own.exists():
+            return own
+    shared = store_dir() / f"{name}.png"
+    return shared if shared.exists() else None
 
 
-def clear_asset(name: str) -> None:
-    _asset(f"{name}.png").unlink(missing_ok=True)
+def clear_asset(name: str, template: Path | None = None) -> None:
+    if template is not None:
+        own = Path(template).parent / f"{name}.png"
+        if own.exists():
+            own.unlink()
+            return
+    (store_dir() / f"{name}.png").unlink(missing_ok=True)
+
+
+def seed_layout(template: Path) -> bool:
+    """A new address starts with the office's newest arrangement.
+
+    «Битта настройка қилганимда кейинги адресларимга ўша настройкада
+    автоматик қўяди» — the most recently saved layout (moved texts, added
+    texts, colours, печать/имзо spots) is copied for the new template, and
+    the office adjusts from there if it wants.
+    """
+    from src.services import blank_layout
+
+    own = blank_layout.layout_file(SECTION, template)
+    if own.exists():
+        return False
+    folder = own.parent
+    others = [p for p in folder.glob("*.json") if p != own]
+    if not others:
+        return False
+    newest = max(others, key=lambda p: p.stat().st_mtime)
+    own.write_text(newest.read_text(encoding="utf-8"), encoding="utf-8")
+    log.info("МВД РЕГ: янги адрес «%s» настройкасини мерос олди", newest.stem)
+    return True
 
 
 @dataclass(frozen=True)
@@ -184,12 +229,14 @@ def texts_of(passport: Passport, address: RegistrationAddress | None,
     }
 
 
-def _decorated(mapping: FieldMapping, layout: dict) -> FieldMapping:
+def _decorated(mapping: FieldMapping, layout: dict,
+               template: Path | None = None) -> FieldMapping:
     """The shared mapping, wearing everything the office arranged.
 
     ``styles``  — per printed value: its font, colour, weight.
     ``extra``   — the office's own added texts (trud8-style dicts).
-    ``images``  — where the signature and the stamp go.
+    ``images``  — where the signature and the stamp go; ``template`` says
+    whose own pictures to look beside first.
     """
     width, height = mapping.page_size
     styles = layout.get("styles") or {}
@@ -221,7 +268,7 @@ def _decorated(mapping: FieldMapping, layout: dict) -> FieldMapping:
 
     images = layout.get("images") or {}
     for key in IMG_KEYS:
-        if asset(key.removeprefix("img_")) is None:
+        if asset(key.removeprefix("img_"), template) is None:
             continue
         page, x, bottom, h = images.get(key) or IMG_DEFAULTS[key]
         fields.append(Field_.model_validate({
@@ -251,7 +298,7 @@ class MvdRegService:
             passport, patent, registration_expiry=registration_expiry)
         values[STAY_FROM] = start.isoformat()
         for key in IMG_KEYS:
-            found = asset(key.removeprefix("img_"))
+            found = asset(key.removeprefix("img_"), address.template_path)
             if found is not None:
                 values[key] = str(found)
         # the office's own texts print whatever their meaning stands for
@@ -262,7 +309,8 @@ class MvdRegService:
             values[f"extra.{key}#{index}"] = texts.get(key, "")
 
         mapping = _decorated(
-            with_layout(FieldMapping.load(mapping_path()), layout), layout)
+            with_layout(FieldMapping.load(mapping_path()), layout), layout,
+            address.template_path)
         out = self._unique_path(address, passport, output_dir)
         fill(address.template_path, mapping, values, out)
         log.info("МВД РЕГ: %s — %s", passport.surname, address.label)
