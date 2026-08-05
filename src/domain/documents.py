@@ -18,6 +18,7 @@ from src.domain.passport_rules import (
     in_russian_letters,
     issuer_in_russian,
     normalise_document,
+    split_son_of,
 )
 
 _MODEL = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -61,11 +62,17 @@ class Passport(BaseModel):
     expiry_date: date | None = None  # Срок действия — needed by the registration form
     issued_by: str | None = None
 
-    @field_validator("surname", "name", "patronymic", "nationality",
-                     "birth_place")
+    @field_validator("surname", "name", "nationality", "birth_place")
     @classmethod
     def _clean_text(cls, v: str | None) -> str | None:
         return _russian(v) if v else v
+
+    @field_validator("patronymic")
+    @classmethod
+    def _clean_patronymic(cls, v: str | None) -> str | None:
+        # «ЖУРАМУРОДУГЛИ» is a reading that ran two words together — the
+        # father's name and «ўғли» are separate words on every document
+        return split_son_of(_russian(v)) if v else v
 
     @field_validator("issued_by")
     @classmethod
@@ -114,10 +121,15 @@ class Patent(BaseModel):
     holder_citizenship: str | None = None
 
     @field_validator("profession", "issued_by", "holder_surname", "holder_name",
-                     "holder_patronymic", "holder_citizenship")
+                     "holder_citizenship")
     @classmethod
     def _clean(cls, v: str | None) -> str | None:
         return _russian(v) if v else v
+
+    @field_validator("holder_patronymic")
+    @classmethod
+    def _clean_patronymic(cls, v: str | None) -> str | None:
+        return split_son_of(_russian(v)) if v else v
 
 
 class Registration(BaseModel):

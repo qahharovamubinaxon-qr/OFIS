@@ -273,6 +273,37 @@ def in_russian_letters(text: str) -> str:
     return "".join(out)
 
 
+#: «ЎҒЛИ» / «ҚИЗИ» — «son of» and «daughter of». An Uzbek patronymic is
+#: the father's name followed by one of these, printed as a SEPARATE word
+#: on both the passport and the patent: «JURAMUROD UGLI», «Журамурод
+#: Угли». A reader that runs the two together — «JURAMURODUGLI» — is the
+#: commonest way an отчество comes out wrong, and the МВД form then carries
+#: a word that exists nowhere.
+_SON_OF = ("ЎҒЛИ", "УҒЛИ", "ЎГЛИ", "УГЛИ", "ОГЛИ", "ОҒЛИ",
+           "ҚИЗИ", "КИЗИ", "QIZI", "KIZI",
+           "OʻGʻLI", "O'G'LI", "OGLI", "UGLI")
+#: Nothing shorter is split: a father's name is a name, not two letters.
+_STEM_LEAST = 4
+
+
+def split_son_of(value: str | None) -> str:
+    """«ЖУРАМУРОДУГЛИ» → «ЖУРАМУРОД УГЛИ»; «Журамурод Угли» unchanged.
+
+    Only ever inserts a space, and only between a father's name of real
+    length and the suffix that follows it — so a name that merely happens
+    to end in those letters is left alone.
+    """
+    text = (value or "").strip()
+    if not text or " " in text:
+        return text
+    upper = text.upper()
+    for suffix in sorted(_SON_OF, key=len, reverse=True):
+        if upper.endswith(suffix) and len(text) - len(suffix) >= _STEM_LEAST:
+            cut = len(text) - len(suffix)
+            return f"{text[:cut]} {text[cut:]}"
+    return text
+
+
 def issuer_in_russian(value: str | None) -> str:
     """«ХШБ ВКД ҶТ» → «МВД РТ». Text already in Russian comes back unchanged."""
     out = value or ""

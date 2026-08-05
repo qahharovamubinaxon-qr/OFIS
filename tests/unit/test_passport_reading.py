@@ -109,6 +109,32 @@ def test_the_citizenship_still_decides_the_one_letter_that_depends_on_it() -> No
     assert tajik.name == "ДЖАМШЕД"
 
 
+def test_the_fathers_name_and_ugli_stay_two_words() -> None:
+    """The office's own output carried «ЖУРАМУРОДУГЛИ»: the reader ran the
+    father's name and «ўғли» together. They are two words on the passport,
+    two on the patent, and two on the form."""
+    from src.domain.documents import Passport, Patent
+    from src.domain.passport_rules import split_son_of
+
+    assert split_son_of("ЖУРАМУРОДУГЛИ") == "ЖУРАМУРОД УГЛИ"
+    assert split_son_of("JURAMURODUGLI") == "JURAMUROD UGLI"
+    assert split_son_of("АНВАРОВНАКИЗИ") == "АНВАРОВНА КИЗИ"
+    # already right, or not a patronymic at all — left exactly as it stands
+    assert split_son_of("ЖУРАМУРОД УГЛИ") == "ЖУРАМУРОД УГЛИ"
+    assert split_son_of("АНВАРОВИЧ") == "АНВАРОВИЧ"
+    assert split_son_of("") == ""
+
+    # and it holds however the name reached the form
+    read = _service({**KAKHOROV, "patronymic": "",
+                     "patronymic_latin": "JURAMURODUGLI"}).read_passport(b"x")
+    assert read.patronymic == "ЖУРАМУРОД УГЛИ"
+    assert Passport(surname="К", name="А", patronymic="ЖУРАМУРОДУГЛИ",
+                    number="1").patronymic == "ЖУРАМУРОД УГЛИ"
+    assert Patent(number="1", profession="П",
+                  holder_patronymic="ЖУРАМУРОДУГЛИ"
+                  ).holder_patronymic == "ЖУРАМУРОД УГЛИ"
+
+
 def test_the_patent_still_outranks_the_passport_for_the_name() -> None:
     """The office's own order: the patent prints the ФИО in Russian, so
     when there is one it is the name — the passport supplies the rest."""

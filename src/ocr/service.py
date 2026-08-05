@@ -374,6 +374,14 @@ class OcrService:
         """
         passport = self.read_passport(passport_image)
         patent = self.read_patent(patent_front, patent_back) if patent_front else None
+        # written down every time: when a ФИО comes out wrong the office's
+        # log has to say WHICH document it came off, and whether the two
+        # documents agreed — otherwise the reading cannot be argued with
+        log.info("ФИО — паспорт: «%s %s %s» | патент: «%s %s %s»",
+                 passport.surname, passport.name, passport.patronymic or "—",
+                 getattr(patent, "holder_surname", None) or "—",
+                 getattr(patent, "holder_name", None) or "—",
+                 getattr(patent, "holder_patronymic", None) or "—")
         if patent is not None and patent.holder_surname:
             passport = passport.model_copy(
                 update={
