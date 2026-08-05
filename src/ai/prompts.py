@@ -5,24 +5,35 @@ traceable. Field keys match what :mod:`src.ocr.service` maps into the models.
 
 from __future__ import annotations
 
+from src.ai.russian import RUSSIAN_RULES
 from src.domain.enums import DocType
 
-_COMMON = (
+_COMMON = RUSSIAN_RULES + (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
-    "Use empty string for anything you cannot read. Dates as YYYY-MM-DD. "
-    "IMPORTANT: output every NAME, PLACE and AUTHORITY in RUSSIAN CYRILLIC, "
-    "uppercased. If the document is printed in Latin (e.g. KHUDAYBERDIEV JASUR), "
-    "TRANSLITERATE to Cyrillic (ХУДАЙБЕРДИЕВ ЖАСУР; UZBEKISTAN→УЗБЕКИСТАН, KH→Х, "
-    "ZH/J→Ж, SH→Ш, CH→Ч, YU→Ю, YA→Я). Never output Latin letters in a name, a "
-    "place or an authority field.\n"
-    "IMPORTANT — this NEVER applies to identifiers. A document series, a "
-    "number, a VIN, a plate code, an ИНН: COPY THEM CHARACTER FOR CHARACTER AS "
-    "PRINTED and never transliterate them. A passport series printed in Latin "
-    "stays Latin — FA is FA, never ФА; FB is FB; C is C.\n"
+    "Use empty string for anything you cannot read. Dates as YYYY-MM-DD.\n"
 )
 
 _PASSPORT = _COMMON + (
+    'THE PAGE YOU ARE READING, and where everything lives on it. A CIS '
+    'passport data page is laid out the international way: the photograph '
+    'at the LEFT; at the TOP the type (P), the country code (UZB/TJK/KGZ) '
+    'and the passport number; then the holder\'s rows top to bottom — '
+    'surname (Familiyasi/Surname), given name (Ismi/Given names), '
+    'father\'s name (Otasining ismi/Father\'s name — Uzbek passports print '
+    'it as a separate row), nationality (Fuqaroligi), birth date '
+    '(Tug\'ilgan sanasi), sex (Jinsi: F/AYOL=female, M/ERKAK=male), birth '
+    'place (Tug\'ilgan joyi), issue date (Berilgan sanasi), expiry date '
+    '(Amal qilish muddati), authority (Kim tomonidan berilgan). The two '
+    '«<<<» lines at the bottom are the machine-readable zone; use them to '
+    'CHECK the number and the names, but take the printed rows as the '
+    'source for anything the zone lacks.\n'
+    'THE NUMBER STANDARDS — check what you read against them: an Uzbek '
+    'passport is TWO Latin letters + SEVEN digits (FB 0701509 — series FB, '
+    'number 0701509; the same figures repeat punched down the page edge). '
+    'A Tajik passport is NINE digits beginning with 4 and has NO series. '
+    'A Kyrgyz one is two letters (ID, AC, PE) + seven digits. If what you '
+    'read does not fit the pattern, look again before answering.\n'
     'IMPORTANT — read the WHOLE data page, not only the machine-readable zone '
     'at the bottom. The MRZ often has NO patronymic (a Tajik passport never '
     'prints it there), while the printed fields above DO — «Номи падар / '
@@ -141,7 +152,7 @@ def patent_back_prompt() -> str:
 #: back somebody else's number: a patent is covered in figures — its own
 #: series and number, the issuing office's ИНН and ОГРН — and only the
 #: twelve-digit one belongs to the person.
-_INN_ONLY = (
+_INN_ONLY = RUSSIAN_RULES + (
     "You are an OCR extraction engine. Look at this Russian migration document "
     "(a патент, an ИНН certificate, or another form) and find the INDIVIDUAL'S "
     "ИНН — идентификационный номер налогоплательщика. Return ONLY a JSON "
@@ -179,7 +190,7 @@ def inn_prompt() -> str:
 #: the ППУ pair. Everything the pair needs is already on it, including the day
 #: the stay runs to, which is the one value the operator would otherwise have
 #: to copy by hand and is therefore the one most worth reading.
-_REGISTRATION = (
+_REGISTRATION = RUSSIAN_RULES + (
     "You are an OCR extraction engine. This is a Russian «Уведомление о "
     "прибытии иностранного гражданина в место пребывания» (регистрация). "
     "Return ONLY a JSON object, no explanation, no markdown.\n"

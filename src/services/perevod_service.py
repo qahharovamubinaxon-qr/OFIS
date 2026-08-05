@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from src.ai.russian import RUSSIAN_RULES
 from src.ai.text_client import ask
 from src.common.errors import OfisError, ValidationError
 from src.common.logging import get_logger
@@ -76,7 +77,7 @@ DOC_TYPES = [
 #: of it as a picture.
 BLANK_SUFFIXES = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
-_PROMPT = """Ты — присяжный переводчик, готовишь НОТАРИАЛЬНЫЙ перевод документа \
+_PROMPT = RUSSIAN_RULES + """Ты — присяжный переводчик, готовишь НОТАРИАЛЬНЫЙ перевод документа \
 на русский язык.
 
 На фотографиях один документ (может быть несколько сторон одного документа).

@@ -16,20 +16,31 @@ from __future__ import annotations
 
 from src.domain.passport_rules import in_russian_letters, issuer_in_russian
 
-# Longest sequences first so digraphs win over single letters.
+# Longest sequences first so digraphs win over single letters. These are
+# the practical-transcription rules a Russian form uses for Uzbek Latin:
+# the same ones the patents print the worker's name by, so the passport
+# and the patent come out as ONE name.
 _DIGRAPHS: tuple[tuple[str, str], ...] = (
     ("SHCH", "Щ"), ("SCH", "Щ"),
+    ("YO'", "Ю"),                 # YO'LDOSHEV → ЮЛДОШЕВ, the patents' way
     ("KH", "Х"), ("ZH", "Ж"), ("CH", "Ч"), ("SH", "Ш"), ("TS", "Ц"),
     ("YO", "Ё"), ("YU", "Ю"), ("YA", "Я"), ("YE", "Е"),
-    ("O'", "О"), ("G'", "Г"),
+    # Uzbek Oʻ is the Cyrillic Ў, and Russian writes Ў as У: OʻG'LI is
+    # УГЛИ (never ОГЛИ), OʻKTAM is УКТАМ, OʻZBEKISTON is УЗБЕКИСТОН
+    ("O'", "У"), ("G'", "Г"),
 )
 
 _SINGLE: dict[str, str] = {
     "A": "А", "B": "Б", "C": "К", "D": "Д", "E": "Е", "F": "Ф", "G": "Г",
     "H": "Х", "I": "И", "J": "Ж", "K": "К", "L": "Л", "M": "М", "N": "Н",
     "O": "О", "P": "П", "Q": "К", "R": "Р", "S": "С", "T": "Т", "U": "У",
-    "V": "В", "W": "В", "X": "Х", "Y": "Й", "Z": "З", "'": "", "`": "", "ʼ": "",
+    "V": "В", "W": "В", "X": "Х", "Y": "Й", "Z": "З", "'": "", "`": "",
 }
+
+#: Every apostrophe an Uzbek document may carry — the official okina ʻ,
+#: the typewriter ', the curly pair, the modifier ʼ — folded to one, so
+#: OʻGʻLI and O'G'LI read the same.
+_APOSTROPHES = str.maketrans({c: "'" for c in "ʻʼ‘’′`´"})
 
 
 def _has_cyrillic(text: str) -> bool:
@@ -42,7 +53,7 @@ def to_cyrillic(text: str) -> str:
         return text
     if _has_cyrillic(text):
         return in_russian_letters(text)
-    t = text.upper()
+    t = text.upper().translate(_APOSTROPHES)
     out: list[str] = []
     i = 0
     n = len(t)
@@ -56,7 +67,13 @@ def to_cyrillic(text: str) -> str:
                 break
         if matched:
             continue
-        out.append(_SINGLE.get(t[i], t[i]))
+        char = t[i]
+        if char == "E" and (i == 0 or not t[i - 1].isalpha()):
+            # a Russian word never OPENS with Е for this sound: ERGASH is
+            # ЭРГАШ, ELMUROD is ЭЛМУРОД (mid-word E stays Е: БЕК, СЕРГЕЙ)
+            out.append("Э")
+        else:
+            out.append(_SINGLE.get(char, char))
         i += 1
     return in_russian_letters("".join(out))
 

@@ -32,6 +32,7 @@ from pathlib import Path
 
 import fitz
 
+from src.ai.russian import RUSSIAN_RULES
 from src.ai.text_client import ask
 from src.common.errors import OfisError
 from src.common.logging import get_logger
@@ -54,7 +55,7 @@ _SCAN_DPI = 150
 
 _KEY_LIST = "\n".join(f"- {k}: {v}" for k, v in FIELD_LABELS.items())
 
-_TEXT_PROMPT = """Ты — юрист миграционного отдела. Ниже пронумерованные строки \
+_TEXT_PROMPT = RUSSIAN_RULES + """Ты — юрист миграционного отдела. Ниже пронумерованные строки \
 документа организации, в котором записаны данные КОНКРЕТНОГО работника. \
 Мы делаем из этого документа МНОГОРАЗОВЫЙ ШАБЛОН: данные работника надо \
 стереть и запомнить, что именно стояло на каждом месте.

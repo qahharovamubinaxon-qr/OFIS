@@ -26,6 +26,7 @@ from pathlib import Path
 
 import fitz
 
+from src.ai.russian import RUSSIAN_RULES
 from src.ai.text_client import ask
 from src.common.errors import OfisError
 from src.common.logging import get_logger
@@ -38,7 +39,7 @@ log = get_logger(__name__)
 
 _MAX_LINES = 400  # documents are contracts, not books — keeps the prompt sane
 
-_PROMPT = """Ты — юрист миграционного отдела. Ниже пронумерованные строки \
+_PROMPT = RUSSIAN_RULES + """Ты — юрист миграционного отдела. Ниже пронумерованные строки \
 документа организации, в котором указаны данные ПРЕДЫДУЩЕГО работника. \
 Нужно подготовить тот же документ для НОВОГО работника.
 

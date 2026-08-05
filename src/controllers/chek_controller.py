@@ -13,6 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from src.ai.russian import RUSSIAN_SHORT
 from src.common.logging import get_logger
 from src.domain.enums import DocType
 from src.ocr.preprocess import prepare_image
@@ -35,7 +36,7 @@ KEY_COMPANY_ID = "chek.company_id"
 #: layout was ever found and the receipt came back in the untouched positions.
 KEY_TEMPLATE = "chek.template"
 
-_CHEK_PROMPT = (
+_CHEK_PROMPT = RUSSIAN_SHORT + (
     "You are an OCR extraction engine for Russian migration documents. "
     "Read the image and return ONLY a JSON object, no explanation, no markdown. "
     "Use empty string for anything you cannot read. "

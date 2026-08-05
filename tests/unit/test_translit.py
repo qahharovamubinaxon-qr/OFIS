@@ -24,6 +24,23 @@ def test_empty_and_digraphs() -> None:
     assert to_cyrillic("CHORI") == "ЧОРИ"
 
 
+@pytest.mark.parametrize("latin, russian", [
+    # the endings every Uzbek passport carries — as the patents print them
+    ("O'G'LI", "УГЛИ"), ("OʻGʻLI", "УГЛИ"), ("QIZI", "КИЗИ"),
+    ("TESHA O'G'LI", "ТЕША УГЛИ"),
+    # Ў is У in Russian, never О
+    ("O'KTAM", "УКТАМ"), ("O'RALOV", "УРАЛОВ"), ("YO'LDOSHEV", "ЮЛДОШЕВ"),
+    ("O'ZBEKISTON", "УЗБЕКИСТОН"),
+    # a name may not OPEN with Е in Russian; inside a name Е stays
+    ("ERGASH", "ЭРГАШ"), ("ELMURODOV", "ЭЛМУРОДОВ"), ("BEKZOD", "БЕКЗОД"),
+    # the apostrophes come curly, straight and as the official okina
+    ("G‘ANIYEV", "ГАНИЕВ"), ("G'ANIYEV", "ГАНИЕВ"),
+])
+def test_an_uzbek_passport_name_reads_like_its_patent(latin, russian) -> None:
+    """The passport is Latin, the patent is Russian — they must be ONE name."""
+    assert to_cyrillic(latin) == russian
+
+
 @pytest.mark.parametrize("tajik, russian", [
     # the office's own rule: «Ҷ ҷ ҳарфлар русчасига Дж дж»
     ("ХОҶАЕВ", "ХОДЖАЕВ"), ("Хоҷаев", "Ходжаев"),

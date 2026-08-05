@@ -14,6 +14,7 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
+from src.ai.russian import RUSSIAN_RULES
 from src.common.logging import get_logger
 from src.domain.enums import DocType
 from src.ocr.mrz_reader import strip_document_check_digit
@@ -26,7 +27,7 @@ log = get_logger(__name__)
 
 #: The Russian internal passport and the birth certificate are not the foreign
 #: passports the standard prompt is tuned to, so each gets its own ask.
-_PASSPORT_PROMPT = """\
+_PASSPORT_PROMPT = RUSSIAN_RULES + """\
 Ты — OCR для российских документов. На фото — ПАСПОРТ ГРАЖДАНИНА РФ
 (внутренний), возможно оба разворота.
 
@@ -49,7 +50,7 @@ _PASSPORT_PROMPT = """\
 - если чего-то не видно — верни пустую строку "".
 """
 
-_BIRTH_PROMPT = """\
+_BIRTH_PROMPT = RUSSIAN_RULES + """\
 Ты — OCR для российских документов. На фото — СВИДЕТЕЛЬСТВО О РОЖДЕНИИ
 (метрика), выданное в России.
 

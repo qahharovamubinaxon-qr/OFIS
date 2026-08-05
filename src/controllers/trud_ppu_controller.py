@@ -17,6 +17,7 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
+from src.ai.russian import RUSSIAN_RULES
 from src.ai.text_client import ask
 from src.common.errors import OfisError
 from src.common.logging import get_logger
@@ -28,7 +29,7 @@ log = get_logger(__name__)
 #: Below this much extractable text a PDF is treated as a scan and photographed.
 _TEXT_FLOOR = 150
 
-_CONTRACT_PROMPT = """Ты читаешь ТРУДОВОЙ ДОГОВОР, заключённый российской \
+_CONTRACT_PROMPT = RUSSIAN_RULES + """Ты читаешь ТРУДОВОЙ ДОГОВОР, заключённый российской \
 организацией с иностранным работником.
 
 Найди и верни СТРОГО JSON, без пояснений и без markdown:
