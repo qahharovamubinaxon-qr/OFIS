@@ -6,8 +6,8 @@ more reliably than a chat model looking at the same photograph. It returns the
 page as text, so a second, cheap call turns that text into the JSON the caller
 asked for.
 
-The raw text it produced is carried back on the result. That is what makes the
-MRZ check possible without a second OCR pass.
+The raw text it produced is carried back on the result, so a reader that
+wants the whole page rather than the named fields needs no second OCR pass.
 """
 
 from __future__ import annotations

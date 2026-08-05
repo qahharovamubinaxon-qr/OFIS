@@ -23,8 +23,8 @@ class AiRawResult:
     confidence: dict[str, float] = field(default_factory=dict)
     provider: str = ""
     #: The page as the provider read it, when it does document OCR; empty for a
-    #: provider that only answers questions about a picture. The MRZ check reads
-    #: this, so a passport can be verified without a second pass over the image.
+    #: provider that only answers questions about a picture. Readers that want
+    #: the whole page rather than the named fields work off this.
     text: str = ""
 
 

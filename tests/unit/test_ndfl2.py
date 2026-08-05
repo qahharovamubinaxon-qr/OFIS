@@ -7,16 +7,18 @@ its empty sheet and the same sheet filled in for ЭШДАВЛАТОВ.
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import fitz
 import pytest
 from src.common.errors import ValidationError
 from src.config import paths
 from src.pdf.ndfl2_renderer import Ndfl2Data, money, month_rows, values
-from src.pdf.ndfl2_spec import ALL_SLOTS, ROWS_PER_TABLE
+from src.pdf.ndfl2_spec import ALL_SLOTS, ROWS_PER_TABLE, TABLE_KEYS
 
 #: the sheet groups thousands with a NO-BREAK space, the way Russian
 #: typing does — the expectations below carry it too
@@ -196,3 +198,100 @@ def test_every_slot_has_a_label_and_a_sample() -> None:
     for key, slot in ALL_SLOTS.items():
         assert slot.label, key
         assert slot.sample, key
+
+
+def test_the_month_table_can_be_dragged_like_everything_else() -> None:
+    """The office asked to move the month rows too, so the table is eight
+    handles in the «📐» list — three columns and the last row per side."""
+    for side in ("left", "right"):
+        for part in ("month", "code", "money", "last"):
+            assert f"{side}_{part}" in ALL_SLOTS
+    assert TABLE_KEYS == {f"{s}_{p}" for s in ("left", "right")
+                          for p in ("month", "code", "money", "last")}
+
+
+def test_the_rows_follow_the_handles_the_office_dragged() -> None:
+    """Dragging the last row apart from the first widens every row."""
+    slots = dict(ALL_SLOTS)
+    first = slots["left_month"]
+    slots["left_last"] = replace(slots["left_last"],
+                                 baseline=first.baseline + 0.21)
+    rows = month_rows({m: Decimal("1") for m in range(1, 4)}, slots)
+    pitch = rows[1][1] - rows[0][1]
+    assert pitch == pytest.approx(0.03, abs=1e-6)
+    assert rows[2][1] - rows[1][1] == pytest.approx(pitch, abs=1e-9)
+
+
+# --------------------------------------------------- read off the blank
+def test_the_table_is_measured_off_the_firm_s_own_sheet() -> None:
+    """Every firm scans its own справка, so the rows and columns are read
+    from its rules rather than fixed in code."""
+    from src.pdf.ndfl2_detect import detect
+
+    found = detect(_service().firms()[0] / "blank.pdf")
+    assert found is not None
+    for key in TABLE_KEYS:
+        assert key in found, key
+    # the right table sits a little over half the page across from the left
+    assert found["right_month"][0] - found["left_month"][0] == \
+        pytest.approx(0.46, abs=0.02)
+    # the rows run down the sheet, first above last
+    assert found["left_last"][1] > found["left_month"][1]
+    assert found["rate"][1] == pytest.approx(0.360, abs=0.004)
+
+
+def test_a_sheet_that_is_not_the_form_is_left_alone(tmp_path) -> None:
+    """Nothing is guessed: a blank whose rules do not look like the table
+    keeps whatever the office arranged."""
+    from src.pdf.ndfl2_detect import detect, with_detected
+
+    empty = tmp_path / "empty.pdf"
+    with fitz.open() as doc:
+        doc.new_page()
+        doc.save(str(empty))
+    assert detect(empty) is None
+    assert with_detected(empty, {"fields": {"surname": [0.1, 0.2, 0.01]}}) == \
+        {"fields": {"surname": [0.1, 0.2, 0.01]}}
+
+
+def test_the_rate_is_written_whether_the_sheet_carries_it_or_not(
+        tmp_path) -> None:
+    """«Доходы, облагаемые по ставке ___ %» — one firm's sheet prints the
+    13 already and another leaves it empty, so the program always writes
+    it, and never over the sign or the rule."""
+    service = _service()
+    result = service.generate(_data(), service.firms()[0],
+                              output_dir=tmp_path)
+    rate = [s for s in _spans(result.pdf_path) if s["text"] == "13"]
+    assert len(rate) == 1, "ставка ёзилмади ёки икки марта ёзилди"
+    assert rate[0]["origin"][1] / 822.05 == pytest.approx(0.360, abs=0.004)
+    # it stops short of the «%», which the office's sheet prints at 0.404
+    assert rate[0]["bbox"][2] / 595.28 < 0.400
+
+
+def test_the_passport_series_and_number_are_written_together() -> None:
+    """«Серия и номер документа» takes both, with no space between."""
+    from src.services.ndfl2_service import data_of
+
+    passport = SimpleNamespace(surname="ЗАХИДОВ", name="ДИЛШОДЖАН",
+                               patronymic="ИСРАИЛЖАНОВИЧ",
+                               birth_date=date(1983, 3, 14),
+                               series="FB", number="0757126")
+    made = data_of(passport, None, months={1: Decimal("1")}, year=2026,
+                   form_date=date(2026, 8, 5))
+    assert made.doc_number == "FB0757126"
+    assert values(made)["doc_number"] == "FB0757126"
+    # a Tajik passport carries digits only
+    passport.series = None
+    assert data_of(passport, None, months={1: Decimal("1")}, year=2026,
+                   form_date=None).doc_number == "0757126"
+
+
+def test_the_sheet_keeps_its_boldness_when_only_a_face_was_saved() -> None:
+    """An arrangement saved before the weight was remembered must still
+    print Arial BOLD — the face the office's own справка is typed in."""
+    from src.pdf.ndfl2_renderer import _style
+
+    assert _style(None)["bold"] is True
+    assert _style({"font": "Arial"})["bold"] is True
+    assert _style({"font": "Arial", "bold": False})["bold"] is False

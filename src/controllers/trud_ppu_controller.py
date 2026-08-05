@@ -341,10 +341,11 @@ def _passport(text: str) -> str:
         return ""
     match = re.search(r"[A-ZА-Я]{1,3}\d{6,9}", packed)
     if match:
-        # the reader often copies the machine zone, where the nine document
-        # characters are followed by their CHECK digit — «FB2254876» arrives
-        # as «FB22548766». Taken back off only when the arithmetic proves it.
-        from src.ocr.mrz_reader import strip_document_check_digit
+        # the reader often copies the strip at the foot of the page, where
+        # the nine document characters are followed by their CHECK digit —
+        # «FB2254876» arrives as «FB22548766». Taken back off only when the
+        # arithmetic proves it.
+        from src.domain.document_number import strip_document_check_digit
 
         return strip_document_check_digit(match.group(0))
     for run in re.findall(r"\d+", packed):

@@ -15,9 +15,9 @@ from src.ai.prompts import inn_prompt, patent_back_prompt, prompt_for
 from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
+from src.domain.document_number import strip_document_check_digit
 from src.domain.passport_rules import series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
-from src.ocr import mrz_reader
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic, translate_issuer
 
@@ -92,16 +92,16 @@ def twelve_digit_inn(text: str) -> str:
 
 
 def _clean_document(series: str, number: str) -> tuple[str, str]:
-    """Series and number with the MRZ check digit taken back off.
+    """Series and number with the trailing check digit taken back off.
 
-    The model very often reads them off the machine zone, where the nine
-    document characters are followed by their check digit — «FB2254876» comes
-    back as «FB22548766», one digit too many, and that wrong number then goes
-    onto a registration. Removed only when the check-digit arithmetic proves
-    it (:func:`mrz_reader.strip_document_check_digit`).
+    The model very often reads them off the strip at the foot of the page,
+    where the nine document characters are followed by their check digit —
+    «FB2254876» comes back as «FB22548766», one digit too many, and that
+    wrong number then goes onto a registration. Removed only when the
+    arithmetic proves it (:func:`strip_document_check_digit`).
     """
     packed = "".join((series or "").split()) + "".join((number or "").split())
-    cleaned = mrz_reader.strip_document_check_digit(packed)
+    cleaned = strip_document_check_digit(packed)
     if cleaned == packed.upper():
         return series, number          # nothing proven — leave as printed
     match = re.fullmatch(r"([A-Z]{1,3})(\d+)", cleaned)
@@ -128,19 +128,55 @@ def _mangled_name(patronymic: str, name: str) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= 0.7
 
 
+#: A name as a passport prints it in Latin — letters (including the
+#: republics' own Ə Ğ Ş Ç Ž Ö Ü İ), the okina and the hyphen of a double
+#: surname, nothing else. Anything carrying a digit, a «<» of the machine
+#: strip or a stray mark is a misreading and is not used.
+_LATIN_LETTER = "A-Za-zÀ-ÖØ-öø-ſ"
+_PRINTED_LATIN = re.compile(f"[{_LATIN_LETTER}][{_LATIN_LETTER}'ʻʼ‘’`´\\- ]*")
+
+
+def _russian_name(said: str, printed: str, country: str) -> str:
+    """The worker's name in Russian letters, by the rules and not by guess.
+
+    A passport does not print a Russian spelling: it prints the name in
+    Latin, and the Russian one has to be TRANSLITERATED from it. The model
+    is asked for both, and when the Latin row came back cleanly it is the
+    Latin that decides — the table in :mod:`src.ocr.translit` is the same
+    practical transcription the patents are typed by, so «KAKHOROV» is
+    КАХОРОВ every time. A model writing the Cyrillic freehand is a guess,
+    and a guess dropped the Х out of that very name.
+
+    Only when there is no usable Latin does the model's own Cyrillic stand.
+    """
+    printed = (printed or "").strip()
+    if printed and _PRINTED_LATIN.fullmatch(printed):
+        by_rule = to_cyrillic(printed, country)
+        said_now = to_cyrillic(said or "", country)
+        if by_rule and by_rule != said_now:
+            log.info("исм қоида бўйича ёзилди: «%s» → «%s» (AI «%s» деган эди)",
+                     printed, by_rule, said_now)
+        return by_rule
+    return to_cyrillic(said or "", country)
+
+
 def _passport_from(f: dict[str, str]) -> Passport:
-    """What the vision model said, before the MRZ gets a chance to correct it."""
+    """The passport as the page prints it, in the letters a Russian form needs."""
     series, number = _clean_document(f.get("series", ""), f.get("number", ""))
     # the citizenship decides one letter — a Tajik Jamshed is ДЖАМШЕД
     # where an Uzbek Jasur is ЖАСУР — so it is read first and passed on
     country = to_cyrillic(f.get("nationality", ""))
-    patronymic = to_cyrillic(f.get("patronymic", ""), country)
-    if _mangled_name(patronymic, to_cyrillic(f.get("name", ""), country)):
+    surname = _russian_name(f.get("surname", ""), f.get("surname_latin", ""),
+                            country)
+    name = _russian_name(f.get("name", ""), f.get("name_latin", ""), country)
+    patronymic = _russian_name(f.get("patronymic", ""),
+                               f.get("patronymic_latin", ""), country)
+    if _mangled_name(patronymic, name):
         log.info("отчество «%s» исмнинг ўзи — ташлаб юборилди", patronymic)
         patronymic = ""
     return Passport(
-        surname=to_cyrillic(f.get("surname", ""), country),
-        name=to_cyrillic(f.get("name", ""), country),
+        surname=surname,
+        name=name,
         patronymic=patronymic or None,
         nationality=country or None,
         gender=_parse_gender(f.get("gender", "")),
@@ -168,45 +204,20 @@ class OcrService:
         return self._ai.available()
 
     def read_passport(self, image: bytes) -> Passport:
+        """The passport's printed page, read as printed.
+
+        The strip of «<<<» at the foot of the page is NOT used. It used to
+        be: its check digits are arithmetic, so when they added up its
+        values were taken over the model's. But it carries no patronymic,
+        no issuing office and no birth place, its own reading is what the
+        model made of two crowded lines, and when the arithmetic failed the
+        operator got a warning about a document that was perfectly fine.
+        The office asked for it to go, and it is gone — the printed rows
+        are the source, and the Latin row rules the Russian spelling.
+        """
         image = prepare_image(image)
         answer = self._ai.extract(image, DocType.PASSPORT, prompt_for(DocType.PASSPORT))
-        return self._with_mrz(_passport_from(answer.fields), answer)
-
-    @staticmethod
-    def _with_mrz(passport: Passport, answer) -> Passport:
-        """Let the machine-readable zone correct the reading, when it proves itself.
-
-        The zone's check digits are arithmetic: a misread character almost never
-        adds up. So when they do add up its values win over the model's, and
-        when they do not, nothing is changed and the passport carries a warning
-        the operator can see — a quietly wrong passport number is far worse.
-        """
-        mrz = mrz_reader.read(answer.text,
-                              line1=answer.fields.get("mrz_line1", ""),
-                              line2=answer.fields.get("mrz_line2", ""))
-        if not mrz.found:
-            return passport
-        if not mrz.valid:
-            log.info("MRZ found but unverified: %s", "; ".join(mrz.problems))
-            return passport.model_copy(update={
-                "mrz_warning": "MRZ назорат рақами мос келмади ("
-                               + ", ".join(mrz.problems) + ") — текшириб чиқинг"})
-
-        update: dict[str, object] = {"mrz_checked": True}
-        for key in ("surname", "name", "patronymic", "series", "number",
-                    "nationality"):
-            if mrz.fields.get(key):
-                update[key] = mrz.fields[key]
-        if mrz.fields.get("gender"):
-            update["gender"] = _parse_gender(mrz.fields["gender"])
-        for key in ("birth_date", "expiry_date"):
-            parsed = _parse_date(mrz.fields.get(key, ""))
-            if parsed:
-                update[key] = parsed
-        log.info("Passport verified by MRZ (%s)", mrz.fields.get("number", ""))
-        # revalidated, not copied: model_copy skips the validators, and the
-        # zone is exactly where a country code can come back as a серия
-        return Passport.model_validate({**passport.model_dump(), **update})
+        return _passport_from(answer.fields)
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> Patent:
         """Read the patent. The FRONT gives серия/номер/профессия; the BACK (if

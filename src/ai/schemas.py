@@ -45,6 +45,12 @@ class PassportAnswer(_Answer):
     surname: str = ""
     name: str = ""
     patronymic: str = ""
+    #: The same three names as the page prints them in LATIN. The Russian
+    #: spelling is transliterated from these by the program's own table, so
+    #: the office's rules decide it rather than the model's freehand.
+    surname_latin: str = ""
+    name_latin: str = ""
+    patronymic_latin: str = ""
     nationality: str = ""
     birth_date: str = ""
     birth_place: str = ""
@@ -54,10 +60,9 @@ class PassportAnswer(_Answer):
     issue_date: str = ""
     expiry_date: str = ""
     issued_by: str = ""
-    mrz_line1: str = ""
-    mrz_line2: str = ""
 
-    required_any: ClassVar[tuple[str, ...]] = ("surname", "number", "mrz_line2")
+    required_any: ClassVar[tuple[str, ...]] = ("surname", "surname_latin",
+                                               "number")
     dates: ClassVar[tuple[str, ...]] = ("birth_date", "issue_date", "expiry_date")
 
 

@@ -210,45 +210,32 @@ def test_generate_without_a_blank_says_so() -> None:
 # ---------------------------------------------- the patronymic guarantee
 
 
-def test_the_passport_prompt_demands_the_printed_page_not_only_the_mrz() -> None:
-    """A Tajik MRZ never prints the patronymic; the page above does.
-
-    Registrations were coming out with no отчество because the model fixated
-    on the machine zone. The prompt now says in so many words: whatever the
-    MRZ lacks comes from the printed part of the page.
-    """
+def test_the_passport_prompt_reads_the_printed_page_and_ignores_the_strip() -> None:
+    """Registrations were coming out with no отчество because the model
+    fixated on the strip at the foot of the page, which carries none. The
+    prompt now says in so many words: ignore that strip, read the rows."""
     from src.ai.prompts import _PASSPORT
 
     assert "patronymic" in _PASSPORT
-    assert "MRZ often has NO patronymic" in _PASSPORT
+    assert "IGNORE the" in _PASSPORT
+    assert "Father's name" in _PASSPORT
+    # and the Latin rows the office's rules are applied to
+    assert "surname_latin" in _PASSPORT
 
 
-def test_a_valid_mrz_without_a_patronymic_keeps_the_models_one(monkeypatch) -> None:
-    """Proven MRZ values win — but a value the zone does not carry must never
-    erase what the model read off the printed page."""
-    from src.domain.documents import Passport
-    from src.ocr import service as ocr_service
+def test_the_patronymic_off_the_printed_page_is_never_thrown_away() -> None:
+    """A Tajik passport prints «Номи падар» in its own row and nowhere else.
+    Nothing in the reader may erase it — that used to happen when the strip
+    at the foot of the page, which has no patronymic, was allowed to win."""
+    from src.ocr.service import _passport_from
 
-    class _Zone:
-        found = True
-        valid = True
-        problems = ()
-        fields = {"surname": "ХУДОЙБЕРДИЕВ", "name": "ФАРХОД",
-                  "number": "401234567"}          # no patronymic — Tajik zone
-
-    monkeypatch.setattr(ocr_service.mrz_reader, "read",
-                        lambda *a, **k: _Zone())
-
-    class _Answer:
-        text = ""
-        fields = {"mrz_line1": "", "mrz_line2": ""}
-
-    before = Passport(surname="ХУДОЙБЕРДИЕВ", name="ФАРХОД",
-                      patronymic="РУЗИМУРАТОВИЧ", number="401234567")
-    after = ocr_service.OcrService._with_mrz(before, _Answer())
-    assert after.patronymic == "РУЗИМУРАТОВИЧ", (
-        "the patronymic read off the printed page was thrown away")
-    assert after.mrz_checked
+    passport = _passport_from({
+        "surname": "ХУДОЙБЕРДИЕВ", "surname_latin": "KHUDOYBERDIEV",
+        "name": "ФАРХОД", "name_latin": "FARKHOD",
+        "patronymic": "РУЗИМУРАТОВИЧ", "patronymic_latin": "RUZIMURATOVICH",
+        "number": "401234567", "nationality": "ТАДЖИКИСТАН"})
+    assert passport.patronymic == "РУЗИМУРАТОВИЧ"
+    assert passport.surname == "ХУДОЙБЕРДИЕВ"
 
 
 # ------------------------------------------- the two reported read failures

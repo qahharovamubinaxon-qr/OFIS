@@ -198,21 +198,14 @@ def test_a_passport_typed_by_hand_obeys_the_same_rules() -> None:
     assert employee.passport.issued_by == "МВД РТ"
 
 
-def test_the_machine_readable_zone_cannot_put_the_code_back() -> None:
-    """The zone's values win over the model's — but not over the rules.
+def test_nothing_can_put_the_country_code_back_as_a_series() -> None:
+    """A Tajik passport has no series, and «TJK» is not one.
 
-    :meth:`OcrService._with_mrz` used to copy them in without revalidating,
-    and the zone is exactly where a country code comes from.
+    The rules run on every passport however it was built — read, typed or
+    carried in — so no later update can smuggle the code back in.
     """
-    from src.ocr.service import OcrService
-
-    class _Answer:
-        text = ""
-        fields = {"mrz_line1": "", "mrz_line2": ""}
-
     read = _tajik(series=None, number="")
-    verified = OcrService._with_mrz(read, _Answer())      # no zone: unchanged
-    assert verified.series is None
+    assert read.series is None
 
     revalidated = Passport.model_validate(
         {**read.model_dump(), "series": "TJK", "number": "TJK406576690"})

@@ -81,10 +81,7 @@ class TemplateController:
         passport, patent = self._ocr.read_documents(passport_image, patent_image)
         values = template_fill.values_for(passport, patent, form_date=form_date,
                                           profession=profession)
-        result = template_fill.fill(study, template, out, values)
-        if passport.mrz_warning:
-            result.problems.append(passport.mrz_warning)
-        return result
+        return template_fill.fill(study, template, out, values)
 
     @staticmethod
     def fields() -> list[tuple[str, str]]:

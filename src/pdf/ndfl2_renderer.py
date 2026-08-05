@@ -16,23 +16,17 @@ from pathlib import Path
 import fitz
 
 from src.common.errors import OfisError
-from src.pdf.engine import _font_file, _fontname
+from src.pdf.fonts import font_file, font_id
 from src.pdf.ndfl2_spec import (
     ALL_SLOTS,
+    BOLD,
     DATE_CLEAR,
-    FONT,
+    FAMILY,
     INCOME_CODE,
     INK,
-    LEFT_CODE,
-    LEFT_MONEY,
-    LEFT_MONTH,
-    MONTH_SIZE,
-    RIGHT_CODE,
-    RIGHT_MONEY,
-    RIGHT_MONTH,
-    ROW_FIRST,
     ROW_PITCH,
     ROWS_PER_TABLE,
+    TABLE_KEYS,
     TAX_RATE,
     Slot,
 )
@@ -40,6 +34,16 @@ from src.pdf.ndfl2_spec import (
 #: «1 165 000.00» — a thin no-break space groups the thousands, the way
 #: the office's own справка prints them.
 _GROUP = " "
+#: How thickly a one-weight face is stroked when bold was asked for.
+FAUX_BOLD = 0.03
+
+#: Values that clear whatever the sheet already printed in their place.
+#: Only the rate: every other value goes where the sheet left a blank.
+WIPED = frozenset({"rate"})
+#: The wipe, in multiples of the text's own size — tall enough to take a
+#: figure printed a shade higher, shallow enough to spare the dotted rule
+#: it sits on.
+WIPE_UP, WIPE_DOWN, WIPE_SIDE = 0.95, 0.10, 0.35
 
 
 def money(value: Decimal | float | int, comma: bool = True) -> str:
@@ -103,6 +107,7 @@ def values(data: Ndfl2Data) -> dict[str, str]:
         "birth_y": str(born.year) if born else "",
         "doc_code": (data.doc_code or "").strip(),
         "doc_number": (data.doc_number or "").strip(),
+        "rate": f"{int(TAX_RATE * 100)}",
         "total_income": money(data.total(), comma=False),
         "tax_base": money(data.tax_base(), comma=False),
         "tax_calculated": money(data.tax()),
@@ -112,6 +117,20 @@ def values(data: Ndfl2Data) -> dict[str, str]:
 
 def _title(text: str) -> str:
     return " ".join(w.capitalize() for w in (text or "").split())
+
+
+def anchor_offset(slot: Slot, size: float) -> float:
+    """How far the slot's anchor sits from the LEFT edge the editor shows.
+
+    A right-aligned value is anchored at its right edge and a centred one
+    at its middle, but the editor drags everything by its left edge — so
+    the two are converted on the way in and on the way out.
+    """
+    if slot.align == "right":
+        return measured_width(slot, size)
+    if slot.align == "centre":
+        return measured_width(slot, size) / 2
+    return 0.0
 
 
 def placed(layout: dict) -> dict[str, Slot]:
@@ -124,10 +143,7 @@ def placed(layout: dict) -> dict[str, Slot]:
         spot = moved.get(key)
         if spot and len(spot) == 3:
             x, baseline, size = (float(v) for v in spot)
-            if slot.align == "right":
-                # the editor hands back the LEFT edge; the slot keeps its
-                # right edge, so it is put back the way it was measured
-                x = x + measured_width(slot, size)
+            x = x + anchor_offset(slot, size)
         out[key] = Slot(x, baseline, size, slot.align, slot.sample,
                         slot.label)
     for key, chosen in styles.items():
@@ -141,21 +157,32 @@ def placed(layout: dict) -> dict[str, Slot]:
 def measured_width(slot: Slot, size: float) -> float:
     """How wide the sample is, as a share of an A4's width — the editor
     shows a right-aligned value from its left edge, so it has to know."""
-    font = fitz.Font(fontfile=str(_font_file(FONT)))
-    return font.text_length(slot.sample, fontsize=size * 822.05) / 595.28
+    face, _ = font_file(FAMILY, BOLD)
+    return fitz.Font(fontfile=str(face)).text_length(
+        slot.sample, fontsize=size * 822.05) / 595.28
 
 
-def month_rows(months: dict[int, Decimal]) -> list[tuple[int, float, int]]:
+def month_rows(months: dict[int, Decimal],
+               slots: dict[str, Slot] | None = None
+               ) -> list[tuple[int, float, int]]:
     """(month, baseline, column) for every month the office typed, in order.
 
     The first eight go down the LEFT table, the rest down the right one —
-    the way the form itself is laid out.
+    the way the form itself is laid out. Where the rows start and how far
+    apart they sit comes from the table's own handles, so a firm whose
+    sheet is scanned differently drags them once and every справка after
+    that lands in its cells.
     """
+    slots = slots or ALL_SLOTS
     rows = []
     for index, month in enumerate(sorted(months)):
         column = index // ROWS_PER_TABLE
-        baseline = ROW_FIRST + (index % ROWS_PER_TABLE) * ROW_PITCH
-        rows.append((month, baseline, column))
+        side = "right" if column else "left"
+        first = slots[f"{side}_month"].baseline
+        last = slots[f"{side}_last"].baseline
+        pitch = ((last - first) / (ROWS_PER_TABLE - 1)
+                 if last > first else ROW_PITCH)
+        rows.append((month, first + (index % ROWS_PER_TABLE) * pitch, column))
     return rows
 
 
@@ -172,7 +199,6 @@ def render(data: Ndfl2Data, template: Path) -> bytes:
     with doc:
         page = doc[0]
         width, height = page.rect.width, page.rect.height
-        font = fitz.Font(fontfile=str(_font_file(FONT)))
         # the sheet's own printed date is replaced by the operator's
         for x0, y0, x1, y1 in DATE_CLEAR:
             page.draw_rect(fitz.Rect(x0 * width, y0 * height,
@@ -180,50 +206,62 @@ def render(data: Ndfl2Data, template: Path) -> bytes:
                            color=None, fill=(1, 1, 1))
         styles = (data.layout or {}).get("styles") or {}
         for key, slot in slots.items():
-            chosen = styles.get(key) or {}
-            _write(page, font, slot, text.get(key, ""),
-                   colour=tuple(chosen.get("colour") or INK)[:3],
-                   family=str(chosen.get("font") or FONT))
-        for month, baseline, column in month_rows(data.months):
+            if key in TABLE_KEYS:
+                continue                  # a handle, not a value of its own
+            # one firm's sheet carries «13» already and another leaves the
+            # spot empty, so the figure is always written — over a wipe of
+            # its own box, which reaches neither the rule under it nor the
+            # «%» beside it
+            _write(page, slot, text.get(key, ""), wipe=key in WIPED,
+                   **_style(styles.get(key)))
+        for month, baseline, column in month_rows(data.months, slots):
+            side = "right" if column else "left"
             amount = money(data.months[month]) + " ₽"
-            if column == 0:
-                m_x, c_x, box = LEFT_MONTH, LEFT_CODE, LEFT_MONEY
-            else:
-                m_x, c_x, box = RIGHT_MONTH, RIGHT_CODE, RIGHT_MONEY
-            _write(page, font, Slot(m_x, baseline, MONTH_SIZE, "centre"),
-                   str(month))
-            _write(page, font, Slot(c_x, baseline, MONTH_SIZE, "centre"),
-                   INCOME_CODE)
-            _write(page, font,
-                   Slot((box[0] + box[1]) / 2, baseline, MONTH_SIZE, "centre"),
-                   amount)
+            for key, value in ((f"{side}_month", str(month)),
+                               (f"{side}_code", INCOME_CODE),
+                               (f"{side}_money", amount)):
+                anchor = slots[key]
+                _write(page, Slot(anchor.x, baseline, anchor.size, "centre"),
+                       value, **_style(styles.get(key)))
         for extra in (data.layout or {}).get("extra") or []:
-            _write(page, font, Slot(float(extra.get("x", 0.1)),
-                                    float(extra.get("baseline", 0.1)),
-                                    float(extra.get("size", 0.0116)), "left"),
-                   str(extra.get("text") or ""),
-                   colour=tuple(extra.get("colour") or INK)[:3],
-                   family=str(extra.get("font") or FONT))
+            _write(page, Slot(float(extra.get("x", 0.1)),
+                              float(extra.get("baseline", 0.1)),
+                              float(extra.get("size", 0.0116)), "left"),
+                   str(extra.get("text") or ""), **_style(extra))
         return doc.tobytes()
 
 
-def _write(page, font, slot: Slot, text: str, *, colour=INK,
-           family: str = FONT) -> None:
+def _style(chosen: dict | None) -> dict:
+    """Colour, face and weight for one value — the sheet's own by default."""
+    chosen = chosen or {}
+    return {"colour": tuple(chosen.get("colour") or INK)[:3],
+            "family": str(chosen.get("font") or FAMILY),
+            "bold": bool(chosen.get("bold", BOLD))}
+
+
+def _write(page, slot: Slot, text: str, *, colour=INK,
+           family: str = FAMILY, bold: bool = BOLD,
+           wipe: bool = False) -> None:
     if not text:
         return
     width, height = page.rect.width, page.rect.height
     size = slot.size * height
-    if family != FONT:
-        font = fitz.Font(fontfile=str(_font_file(family)))
-    span = font.text_length(text, fontsize=size)
+    face, faux = font_file(family, bold)
+    span = fitz.Font(fontfile=str(face)).text_length(text, fontsize=size)
     x = slot.x * width
     if slot.align == "right":
         x -= span
     elif slot.align == "centre":
         x -= span / 2
+    if wipe:
+        top, foot, side = (WIPE_UP * size, WIPE_DOWN * size, WIPE_SIDE * size)
+        page.draw_rect(fitz.Rect(x - side, slot.baseline * height - top,
+                                 x + span + side, slot.baseline * height + foot),
+                       color=None, fill=(1, 1, 1))
     page.insert_text((x, slot.baseline * height), text, fontsize=size,
-                     fontfile=str(_font_file(family)),
-                     fontname=_fontname(family), color=colour)
+                     fontfile=str(face), fontname=font_id(family, bold),
+                     color=colour, render_mode=2 if faux else 0,
+                     border_width=FAUX_BOLD if faux else 0.0)
 
 
 def output_stem(data: Ndfl2Data) -> str:

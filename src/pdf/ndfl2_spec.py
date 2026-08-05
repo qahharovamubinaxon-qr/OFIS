@@ -14,8 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: Arial Bold — the face the office's own справка is typed in.
-FONT = "OfisArialBold"
+#: Arial Bold — the face the office's own справка is typed in, named the
+#: way the font picker in «📐» names it. The weight is a flag of its own,
+#: so the office may keep the boldness while changing the face, and the
+#: two travel together through the saved arrangement.
+FAMILY = "Arial"
+BOLD = True
 INK = (0.0, 0.0, 0.0)
 
 
@@ -82,15 +86,53 @@ ROW_FIRST = 0.4067
 ROW_PITCH = 0.01527
 ROWS_PER_TABLE = 8
 
-#: cell centres, measured off the blank's own rules
-LEFT_MONTH, LEFT_CODE = 0.0820, 0.1454
-LEFT_MONEY = (0.1771, 0.2963)          # the cell the sum is centred in
-RIGHT_MONTH, RIGHT_CODE = 0.4991, 0.5424
-RIGHT_MONEY = (0.6378, 0.7570)
+#: Cell CENTRES, measured off the bundled blank's own rules. The right
+#: table's were a column out at first — its «Месяц» cell begins at 0.5109,
+#: it is not centred on it — which is what pushed the months 9–12 outside
+#: their boxes. Both tables are now taken from the rules themselves.
+LEFT_MONTH, LEFT_CODE, LEFT_MONEY = 0.0820, 0.1454, 0.2367
+RIGHT_MONTH, RIGHT_CODE, RIGHT_MONEY = 0.5424, 0.6058, 0.6974
 
 #: «2000» — «Доходы, полученные по трудовому договору»
 INCOME_CODE = "2000"
 MONTH_SIZE = 0.0116
+
+#: The month tables, as things the office can DRAG. Every firm scans its
+#: own sheet — the office's «ООО МЕГАПОЛИС» blank is 842 points tall where
+#: the bundled one is 822, and its right-hand table sits elsewhere — so the
+#: table cannot be fixed in code. Four handles per table say everything:
+#: the three columns of the FIRST row, and the month column of the LAST
+#: row, which is what gives the row spacing.
+_LAST_ROW = ROW_FIRST + (ROWS_PER_TABLE - 1) * ROW_PITCH
+TABLE: dict[str, Slot] = {
+    "left_month": Slot(LEFT_MONTH, ROW_FIRST, MONTH_SIZE, "centre", "1",
+                       "Чап жадвал — ой рақами (1-қатор)"),
+    "left_code": Slot(LEFT_CODE, ROW_FIRST, MONTH_SIZE, "centre",
+                      INCOME_CODE, "Чап жадвал — код дохода"),
+    "left_money": Slot(LEFT_MONEY, ROW_FIRST, MONTH_SIZE, "centre",
+                       "150 000,00 ₽", "Чап жадвал — сумма дохода"),
+    "left_last": Slot(LEFT_MONTH, _LAST_ROW, MONTH_SIZE, "centre", "8",
+                      "Чап жадвал — ОХИРГИ қатор (қатор оралиғи)"),
+    "right_month": Slot(RIGHT_MONTH, ROW_FIRST, MONTH_SIZE, "centre", "9",
+                        "Ўнг жадвал — ой рақами (1-қатор)"),
+    "right_code": Slot(RIGHT_CODE, ROW_FIRST, MONTH_SIZE, "centre",
+                       INCOME_CODE, "Ўнг жадвал — код дохода"),
+    "right_money": Slot(RIGHT_MONEY, ROW_FIRST, MONTH_SIZE, "centre",
+                        "500 600,00 ₽", "Ўнг жадвал — сумма дохода"),
+    "right_last": Slot(RIGHT_MONTH, _LAST_ROW, MONTH_SIZE, "centre", "16",
+                       "Ўнг жадвал — ОХИРГИ қатор (қатор оралиғи)"),
+}
+
+#: «Доходы, облагаемые по ставке ___ %» — the office's ТРАЙД sheet carries
+#: «13» already and its МЕГАПОЛИС sheet leaves the spot empty, so the
+#: program always writes it, over a wipe of its own box. Measured off the
+#: bundled sheet: the digits run 0.3757–0.3910 (centre 0.3834) and sit on
+#: 0.3601, with the dotted rule below at 0.3626 and the «%» from 0.4043.
+#: A firm whose sheet puts the sign elsewhere has this measured off it.
+RATE: dict[str, Slot] = {
+    "rate": Slot(0.3834, 0.3601, 0.0111, "centre", "13",
+                 "Ставка (13 %)"),
+}
 
 #: ---- 5. Общая сумма дохода и сумма налога ----------------------------
 #: All four are right-aligned against their cell's right edge.
@@ -108,4 +150,8 @@ TOTALS: dict[str, Slot] = {
 #: The rate the справка is issued at — printed on the blank as «13 %».
 TAX_RATE = 0.13
 
-ALL_SLOTS: dict[str, Slot] = {**DATE, **PERSON, **TOTALS}
+ALL_SLOTS: dict[str, Slot] = {**DATE, **PERSON, **RATE, **TOTALS, **TABLE}
+
+#: The handles that describe the month tables rather than printing a value
+#: of their own — the renderer reads them, the editor drags them.
+TABLE_KEYS = frozenset(TABLE)

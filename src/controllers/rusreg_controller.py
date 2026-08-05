@@ -17,7 +17,7 @@ from pathlib import Path
 from src.ai.russian import RUSSIAN_RULES
 from src.common.logging import get_logger
 from src.domain.enums import DocType
-from src.ocr.mrz_reader import strip_document_check_digit
+from src.domain.document_number import strip_document_check_digit
 from src.ocr.preprocess import prepare_image
 from src.ocr.service import OcrService
 from src.pdf.rusreg_renderer import RusRegData

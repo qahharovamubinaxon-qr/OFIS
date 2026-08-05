@@ -37,9 +37,6 @@ class GenerationResult:
     pdf_path: Path
     reg_number: int
     surname: str
-    #: set when the passport's machine-readable zone did not add up — the
-    #: operator has to check the document rather than trust what was read
-    mrz_warning: str | None = None
 
 
 class GenerationService:
@@ -84,8 +81,7 @@ class GenerationService:
             )
         log.info("Generated %s (reg %s) for %s", out_path.name, reg_number, company.name)
         return GenerationResult(pdf_path=out_path, reg_number=reg_number,
-                                surname=employee.passport.surname,
-                                mrz_warning=employee.passport.mrz_warning)
+                                surname=employee.passport.surname)
 
     def _unique_output_path(
         self, company: Company, employee: Employee, base: Path | None = None

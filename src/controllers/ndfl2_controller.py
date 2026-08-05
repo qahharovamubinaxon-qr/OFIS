@@ -36,7 +36,9 @@ class Ndfl2Controller:
         return self._service.blank(firm)
 
     def layout(self, firm: Path) -> dict:
-        return ndfl2_service.load_layout(firm)
+        """What «📐» opens with — the table measured off this firm's sheet
+        when it has never been arranged."""
+        return ndfl2_service.table_of(firm)
 
     def save_layout(self, firm: Path, layout: dict) -> None:
         ndfl2_service.save_layout(firm, layout)

@@ -61,13 +61,6 @@ class Passport(BaseModel):
     expiry_date: date | None = None  # Срок действия — needed by the registration form
     issued_by: str | None = None
 
-    # How much of this was *proved* rather than believed. The machine-readable
-    # zone carries a check digit beside each of its values, so when it adds up
-    # those values are arithmetic, not a reading. When it does not add up the
-    # operator has to look at the document — nothing is silently overwritten.
-    mrz_checked: bool = False
-    mrz_warning: str | None = None
-
     @field_validator("surname", "name", "patronymic", "nationality",
                      "birth_place")
     @classmethod

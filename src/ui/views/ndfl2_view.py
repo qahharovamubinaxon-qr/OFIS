@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from src.common.threading import run_async
 from src.controllers.ndfl2_controller import Ndfl2Controller
 from src.pdf.ndfl2_renderer import money
-from src.pdf.ndfl2_spec import ALL_SLOTS, TAX_RATE
+from src.pdf.ndfl2_spec import ALL_SLOTS, BOLD, FAMILY, TAX_RATE
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
@@ -253,19 +253,20 @@ class Ndfl2View(QWidget):
         catalogue = {key: slot.label or key for key, slot in ALL_SLOTS.items()}
         samples = {key: slot.sample for key, slot in ALL_SLOTS.items()}
         frozen = set(ALL_SLOTS)
+        from src.pdf.ndfl2_renderer import anchor_offset
+
         fields = []
         for key, slot in slots.items():
             chosen = styles.get(key) or {}
-            width = 0.0
-            if ALL_SLOTS[key].align == "right":
-                from src.pdf.ndfl2_renderer import measured_width
-
-                width = measured_width(ALL_SLOTS[key], slot.size)
+            # the editor drags by the LEFT edge; a right-aligned or centred
+            # value is anchored elsewhere, so it is converted both ways
+            offset = anchor_offset(ALL_SLOTS[key], slot.size)
             fields.append(Field(
-                key=key, page=1, x=slot.x - width, baseline=slot.baseline,
+                key=key, page=1, x=slot.x - offset, baseline=slot.baseline,
                 size=slot.size,
                 colour=tuple(chosen.get("colour") or (0.0, 0.0, 0.0))[:3],
-                font=str(chosen.get("font") or "Arial")))
+                font=str(chosen.get("font") or FAMILY),
+                bold=bool(chosen.get("bold", BOLD))))
         for index, extra in enumerate(layout.get("extra") or []):
             key = f"extra{index}"
             catalogue[key] = f"Қўшимча матн {index + 1}"
@@ -275,7 +276,8 @@ class Ndfl2View(QWidget):
                 baseline=float(extra.get("baseline", 0.1)),
                 size=float(extra.get("size", 0.0116)),
                 colour=tuple(extra.get("colour") or (0.0, 0.0, 0.0))[:3],
-                font=str(extra.get("font") or "Arial")))
+                font=str(extra.get("font") or FAMILY),
+                bold=bool(extra.get("bold", BOLD))))
 
         dialog = FieldEditor(pages, fields, title=firm.name, parent=self,
                              catalogue=catalogue, samples=samples,
@@ -291,6 +293,7 @@ class Ndfl2View(QWidget):
                                         round(made.baseline, 5),
                                         round(made.size, 5)]
                 new_styles[made.key] = {"font": made.font,
+                                        "bold": made.bold,
                                         "colour": list(made.colour),
                                         "size": round(made.size, 5)}
             else:
@@ -298,7 +301,7 @@ class Ndfl2View(QWidget):
                     "text": samples.get(made.key, "матн"),
                     "x": round(made.x, 5), "baseline": round(made.baseline, 5),
                     "size": round(made.size, 5), "font": made.font,
-                    "colour": list(made.colour)})
+                    "bold": made.bold, "colour": list(made.colour)})
         self._c.save_layout(firm, {"fields": new_fields, "styles": new_styles,
                                    "extra": new_extra})
         self._status.setText("✅ Жойлар ва созламалар сақланди.")

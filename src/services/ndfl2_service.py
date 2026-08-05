@@ -63,6 +63,25 @@ def save_layout(firm: Path, layout: dict) -> None:
     blank_layout.save(SECTION, layout_key(firm), layout)
 
 
+def table_of(firm: Path) -> dict:
+    """This firm's arrangement, with its month table measured if it lacks one.
+
+    The reading is SAVED, so the office sees it in «📐» and can nudge it;
+    from then on its own numbers are used and nothing is measured again.
+    """
+    from src.pdf.ndfl2_detect import with_detected
+
+    layout = load_layout(firm)
+    blank = Ndfl2Service.blank(firm)
+    if blank is None:
+        return layout
+    grown = with_detected(blank, layout)
+    if grown != layout:
+        save_layout(firm, grown)
+        log.info("2НДФЛ: «%s» жадвали бланкадан ўлчаб олинди", Path(firm).name)
+    return grown
+
+
 @dataclass(frozen=True)
 class Ndfl2Result:
     pdf_path: Path
@@ -124,7 +143,9 @@ class Ndfl2Service:
             raise ValidationError("Фамилия керак — ҳужжатларни ўқитинг")
         if not data.months:
             raise ValidationError("Камида битта ойнинг ойлигини киритинг")
-        data.layout = load_layout(firm)
+        # every firm scans its own sheet, so the month table is measured off
+        # THIS one the first time it is used; what the office dragged wins
+        data.layout = table_of(firm)
         pdf = render(data, blank)
 
         folder = output_dir if output_dir is not None else (
