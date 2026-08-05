@@ -56,6 +56,48 @@ def test_a_tajik_letter_never_reaches_a_russian_form(tajik, russian) -> None:
     assert to_cyrillic(tajik) == russian
 
 
+@pytest.mark.parametrize("printed, country, russian", [
+    # ---- Тоҷикистон: Ҷ is ДЖ in Cyrillic and J is ДЖ in Latin
+    ("Ҷамшед", None, "Джамшед"), ("ХОҶАЕВ", None, "ХОДЖАЕВ"),
+    ("JAMSHED", "ТАДЖИКИСТАН", "ДЖАМШЕД"),
+    ("JURAEV", "ТАДЖИКИСТАН", "ДЖУРАЕВ"),
+    ("SAFAROV", "ТАДЖИКИСТАН", "САФАРОВ"),
+    # ---- Ўзбекистон: the same J is Ж
+    ("JASUR", "УЗБЕКИСТАН", "ЖАСУР"), ("JAMSHID", "УЗБЕКИСТАН", "ЖАМШИД"),
+    # ---- Кыргызстан
+    ("Өмүрбек", None, "Омурбек"), ("Жеңиш", None, "Жениш"),
+    # ---- Қазақстан
+    ("Әбдіғаппар", None, "Абдигаппар"), ("Ұлан", None, "Улан"),
+    ("Һасан", None, "Хасан"),
+    # ---- Azərbaycan: C is ДЖ, Ə is А, and the old Cyrillic Ҹ is ДЖ too
+    ("Cəfər", "АЗЕРБАЙДЖАН", "ДЖАФАР"), ("Əliyev", "АЗЕРБАЙДЖАН", "АЛИЕВ"),
+    ("Ҹаваншир", None, "Джаваншир"),
+    # ---- Türkmenistan: y after a consonant is ы
+    ("Myrat", "ТУРКМЕНИСТАН", "МЫРАТ"),
+    ("Ýazmyrat", "ТУРКМЕНИСТАН", "ЯЗМЫРАТ"),
+    ("Şöhrat", "ТУРКМЕНИСТАН", "ШОХРАТ"),
+    # ---- Moldova · Беларусь · Україна
+    ("Ștefan", None, "ШТЕФАН"), ("Ўладзімір", None, "Уладзимир"),
+    ("Їжакевич", None, "Ижакевич"),
+])
+def test_every_republic_s_letters_reach_a_russian_form(
+        printed, country, russian) -> None:
+    """The office's workers are not only Uzbek — every alphabet they carry."""
+    assert to_cyrillic(printed, country) == russian
+
+
+def test_the_citizenship_decides_the_one_letter_that_differs() -> None:
+    """J is the only letter that depends on the republic — and it does."""
+    assert to_cyrillic("JAMSHED", "ТАДЖИКИСТАН") != to_cyrillic(
+        "JAMSHED", "УЗБЕКИСТАН")
+    # everything else is the same wherever the passport is from
+    for name in ("SHUKUROV", "KHOLMATOV", "O'G'LI", "ERGASH"):
+        assert to_cyrillic(name, "ТАДЖИКИСТАН") == \
+            to_cyrillic(name, "УЗБЕКИСТАН")
+    # and an unknown citizenship never breaks anything
+    assert to_cyrillic("SHUKUROV") == "ШУКУРОВ"
+
+
 def test_the_rule_holds_wherever_a_name_comes_from() -> None:
     """Read, taken from the machine-readable zone, or typed by hand."""
     from src.domain.documents import MigrationCard, Passport, Patent, Registration

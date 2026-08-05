@@ -37,6 +37,42 @@ _SINGLE: dict[str, str] = {
     "V": "В", "W": "В", "X": "Х", "Y": "Й", "Z": "З", "'": "", "`": "",
 }
 
+#: The OTHER republics' Latin alphabets, folded to their plain letters
+#: before the table above runs. Azerbaijani (Ə Ğ Ş Ç Ö Ü İ), Turkmen
+#: (Ä Ž Ň Ý Ş Ö Ü), Moldovan (Ă Â Î Ș Ț) and the accents a scanner may
+#: leave on any of them — «Əliyev» is Алиев, «Şöhrat» is Шохрат,
+#: «Ștefan» is Штефан.
+_LATIN_FOLD = str.maketrans({
+    "Ə": "A", "Ä": "A", "Ă": "A", "Â": "A", "À": "A", "Á": "A",
+    "Ğ": "G", "Ģ": "G",
+    "Ş": "SH", "Ș": "SH", "Š": "SH",
+    "Ç": "CH", "Č": "CH", "Ć": "CH",
+    "Ž": "ZH", "Ź": "ZH", "Ż": "ZH",
+    "Ö": "O", "Ó": "O", "Ô": "O", "Ő": "O", "Ø": "O",
+    "Ü": "U", "Ú": "U", "Ù": "U", "Ű": "U", "Ū": "U", "Ų": "U",
+    "İ": "I", "Í": "I", "Î": "I", "Ï": "I", "Ī": "I", "Į": "I",
+    "Ň": "N", "Ń": "N", "Ñ": "N", "Ņ": "N",
+    "Ý": "Y", "Ÿ": "Y",
+    "Ţ": "TS", "Ț": "TS",
+    "Ė": "E", "É": "E", "È": "E", "Ê": "E", "Ë": "E", "Ě": "E",
+    "Ł": "L", "Ļ": "L", "Ř": "R", "Ķ": "K", "Ď": "D", "Ť": "T",
+    "Ğ".lower(): "G", "ß": "SS", "Æ": "A", "Œ": "O",
+})
+
+#: Where «J» is «ДЖ» and not «Ж»: a Tajik Jamshed is ДЖАМШЕД (his own
+#: passport prints Ҷамшед) where an Uzbek Jasur is ЖАСУР.
+_J_IS_DZH = ("ТАДЖИКИСТАН", "ТОДЖИКИСТОН", "ТОЧИКИСТОН", "TAJIKISTAN",
+             "TJK", "ТЖК")
+#: Azerbaijani spells that same sound with C — Cəfər is ДЖАФАР — and its
+#: J is Ж (Jale is ЖАЛЯ).
+_AZERI = ("АЗЕРБАЙДЖАН", "AZERBAIJAN", "AZE", "ОЗАРБАЙЖОН")
+#: Turkmen y is ы, not й: Ýazmyrat is ЯЗМЫРАТ, Myrat is МЫРАТ.
+_TURKMEN = ("ТУРКМЕНИСТАН", "TURKMENISTAN", "TKM")
+
+
+def _is(country: str, names: tuple[str, ...]) -> bool:
+    return any(name in country for name in names)
+
 #: Every apostrophe an Uzbek document may carry — the official okina ʻ,
 #: the typewriter ', the curly pair, the modifier ʼ — folded to one, so
 #: OʻGʻLI and O'G'LI read the same.
@@ -47,13 +83,23 @@ def _has_cyrillic(text: str) -> bool:
     return any("Ѐ" <= c <= "ӿ" for c in text)
 
 
-def to_cyrillic(text: str) -> str:
-    """Latin → Cyrillic, and Cyrillic → RUSSIAN Cyrillic. Empty is unchanged."""
+def to_cyrillic(text: str, country: str | None = None) -> str:
+    """Latin → Cyrillic, and Cyrillic → RUSSIAN Cyrillic.
+
+    ``country`` is the holder's citizenship when it is known — the one
+    letter that depends on it is J: an Uzbek Jasur is ЖАСУР, a Tajik
+    Jamshed is ДЖАМШЕД. Everything else is the same for every republic.
+    Empty text is unchanged.
+    """
     if not text:
         return text
     if _has_cyrillic(text):
         return in_russian_letters(text)
-    t = text.upper().translate(_APOSTROPHES)
+    t = text.upper().translate(_APOSTROPHES).translate(_LATIN_FOLD)
+    upper = (country or "").upper()
+    j_is_dzh = _is(upper, _J_IS_DZH)
+    azeri = _is(upper, _AZERI)
+    turkmen = _is(upper, _TURKMEN)
     out: list[str] = []
     i = 0
     n = len(t)
@@ -68,10 +114,17 @@ def to_cyrillic(text: str) -> str:
         if matched:
             continue
         char = t[i]
-        if char == "E" and (i == 0 or not t[i - 1].isalpha()):
+        before = t[i - 1] if i else ""
+        if char == "E" and (i == 0 or not before.isalpha()):
             # a Russian word never OPENS with Е for this sound: ERGASH is
             # ЭРГАШ, ELMUROD is ЭЛМУРОД (mid-word E stays Е: БЕК, СЕРГЕЙ)
             out.append("Э")
+        elif (char == "J" and j_is_dzh) or (char == "C" and azeri):
+            # the same sound, spelled J by Tajikistan and C by Azerbaijan
+            out.append("ДЖ")
+        elif char == "Y" and turkmen and before and before not in "AEIOUY":
+            # Turkmen y is ы after a consonant: Myrat is МЫРАТ
+            out.append("Ы")
         else:
             out.append(_SINGLE.get(char, char))
         i += 1

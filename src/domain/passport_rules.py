@@ -122,20 +122,36 @@ def normalise_document(series: str | None, number: str | None,
 
 # ------------------------------------------------------------ кем выдан
 
-#: Letters the neighbouring alphabets have and Russian does not. Tajik «ҷ» is
-#: the one that is not a letter swap at all — it is «дж»: Ҷумҳурӣ is Джумхури,
-#: Тоҷикистон is Таджикистан. The rest drop to their nearest Russian letter.
-#: Latin scripts are not here; they are transliterated by the reader.
+#: Letters the neighbouring alphabets have and Russian does not — every
+#: republic the office's workers come from, not only Tajikistan. Ҷ (and
+#: its Azerbaijani twin Ҹ) is the one that is not a letter swap at all: it
+#: is «дж» — Ҷумҳурӣ is Джумхури, Тоҷикистон is Таджикистан. The rest drop
+#: to their nearest Russian letter. Latin scripts are handled in
+#: :mod:`src.ocr.translit`.
 _FOREIGN_OUT = {
     # Tajik
     "Ҳ": "Х", "ҳ": "х", "Қ": "К", "қ": "к", "Ғ": "Г", "ғ": "г",
     "Ӣ": "И", "ӣ": "и", "Ӯ": "У", "ӯ": "у",
     # Kyrgyz
     "Ө": "О", "ө": "о", "Ү": "У", "ү": "у", "Ң": "Н", "ң": "н",
+    # Kazakh — Әбдіғаппар is Абдигаппар, Ұлан is Улан, Һасан is Хасан
+    "Ә": "А", "ә": "а", "Ұ": "У", "ұ": "у", "Һ": "Х", "һ": "х",
+    "Ѕ": "С", "ѕ": "с",
+    # Azerbaijani Cyrillic (older passports still carry it)
+    "Ҝ": "Г", "ҝ": "г",
+    # Belarusian — Ўладзімір is Владимир's Ў, written У in Russian
+    "Ў": "У", "ў": "у",
+    # Bashkir / Tatar, for workers with those documents
+    "Ҡ": "К", "ҡ": "к", "Ҙ": "З", "ҙ": "з", "Ҫ": "С", "ҫ": "с",
+    "Ҥ": "Н", "ҥ": "н",
     # Ukrainian
     "І": "И", "і": "и", "Ї": "И", "ї": "и", "Є": "Е", "є": "е",
     "Ґ": "Г", "ґ": "г",
 }
+
+#: The letters that are «дж», not a single Russian letter: Tajik Ҷ and the
+#: Azerbaijani Ҹ.
+_DZH = ("Ҷ", "ҷ", "Ҹ", "ҹ")
 
 #: For *matching* only, each Russian letter stands for itself or its foreign
 #: twin — «ҶТ» and «ЧТ» are the same republic, «СГІРФО» and «СГИРФО» the same
@@ -245,9 +261,9 @@ def in_russian_letters(text: str) -> str:
     """
     out: list[str] = []
     for i, char in enumerate(text):
-        if char in ("Ҷ", "ҷ"):
+        if char in _DZH:
             after = text[i + 1] if i + 1 < len(text) else ""
-            if char == "ҷ":
+            if char.islower():
                 out.append("дж")
             else:
                 out.append("ДЖ" if after.isupper() or not after.isalpha()

@@ -131,20 +131,23 @@ def _mangled_name(patronymic: str, name: str) -> bool:
 def _passport_from(f: dict[str, str]) -> Passport:
     """What the vision model said, before the MRZ gets a chance to correct it."""
     series, number = _clean_document(f.get("series", ""), f.get("number", ""))
-    patronymic = to_cyrillic(f.get("patronymic", ""))
-    if _mangled_name(patronymic, to_cyrillic(f.get("name", ""))):
+    # the citizenship decides one letter — a Tajik Jamshed is ДЖАМШЕД
+    # where an Uzbek Jasur is ЖАСУР — so it is read first and passed on
+    country = to_cyrillic(f.get("nationality", ""))
+    patronymic = to_cyrillic(f.get("patronymic", ""), country)
+    if _mangled_name(patronymic, to_cyrillic(f.get("name", ""), country)):
         log.info("отчество «%s» исмнинг ўзи — ташлаб юборилди", patronymic)
         patronymic = ""
     return Passport(
-        surname=to_cyrillic(f.get("surname", "")),
-        name=to_cyrillic(f.get("name", "")),
+        surname=to_cyrillic(f.get("surname", ""), country),
+        name=to_cyrillic(f.get("name", ""), country),
         patronymic=patronymic or None,
-        nationality=to_cyrillic(f.get("nationality", "")) or None,
+        nationality=country or None,
         gender=_parse_gender(f.get("gender", "")),
         series=series or None,  # series/number stay as printed otherwise
         number=number,
         birth_date=_parse_date(f.get("birth_date", "")),
-        birth_place=to_cyrillic(f.get("birth_place", "")) or None,
+        birth_place=to_cyrillic(f.get("birth_place", ""), country) or None,
         issue_date=_parse_date(f.get("issue_date", "")),
         expiry_date=_parse_date(f.get("expiry_date", "")),
         issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
@@ -222,6 +225,7 @@ class OcrService:
             # the blank «ПР 8074980» is printed on the back bottom — prefer it
             blank_series = (b.get("blank_series") or "").strip() or blank_series
             blank_number = (b.get("blank_number") or "").strip() or blank_number
+        country = to_cyrillic(f.get("citizenship", ""))
         return Patent(
             series=f.get("series") or None,
             number=f.get("number", ""),
@@ -230,10 +234,11 @@ class OcrService:
             issue_date=issue_date,
             issued_by=to_cyrillic(issued_by or "") or None,
             profession=to_cyrillic(f.get("profession", "")) or "ПОДСОБНЫЙ РАБОЧИЙ",
-            holder_surname=to_cyrillic(f.get("surname", "")) or None,
-            holder_name=to_cyrillic(f.get("name", "")) or None,
-            holder_patronymic=to_cyrillic(f.get("patronymic", "")) or None,
-            holder_citizenship=to_cyrillic(f.get("citizenship", "")) or None,
+            holder_surname=to_cyrillic(f.get("surname", ""), country) or None,
+            holder_name=to_cyrillic(f.get("name", ""), country) or None,
+            holder_patronymic=to_cyrillic(f.get("patronymic", ""), country)
+            or None,
+            holder_citizenship=country or None,
         )
 
     def read_inn(self, image: bytes) -> str:

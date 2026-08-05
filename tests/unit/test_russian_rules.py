@@ -28,9 +28,28 @@ def test_the_rule_covers_what_the_office_kept_correcting(must) -> None:
     assert must in RUSSIAN_RULES, must
 
 
+@pytest.mark.parametrize("republic, letters", [
+    ("ТАДЖИКСКИЙ", ("Ҷ/ҷ→ДЖ/дж", "Ҳ→Х", "Қ→К", "Ғ→Г", "Ӣ→И", "Ӯ→У",
+                    "JAMSHED→ДЖАМШЕД")),
+    ("КИРГИЗСКИЙ", ("Ө→О", "Ү→У", "Ң→Н")),
+    ("КАЗАХСКИЙ", ("Ә→А", "Ұ→У", "Һ→Х")),
+    ("АЗЕРБАЙДЖАНСКИЙ", ("Ə→А", "Ğ→Г", "Ş→Ш", "Ç→Ч", "Ҹ→ДЖ")),
+    ("ТУРКМЕНСКИЙ", ("Ä→А", "Ž→Ж", "Ň→Н", "Ý→Й")),
+    ("МОЛДАВСКИЙ", ("Ș→Ш", "Ț→Ц")),
+    ("БЕЛОРУССКИЙ", ("Ў→У",)),
+    ("УКРАИНСКИЙ", ("І→И", "Ї→И", "Є→Е", "Ґ→Г")),
+])
+def test_the_rule_is_not_only_for_uzbek_passports(republic, letters) -> None:
+    """«Бошқа давлат паспортларини ҳарфларига ҳам қўйганмисан?» — yes."""
+    assert republic in RUSSIAN_RULES, republic
+    for pair in letters:
+        assert pair in RUSSIAN_RULES, f"{republic}: {pair}"
+
+
 def test_the_short_rule_is_short_but_carries_the_letters() -> None:
     assert len(RUSSIAN_SHORT) < len(RUSSIAN_RULES) / 3
-    for must in ("O'→У", "Ҷ→ДЖ", "СУРХАНДАРЬИНСКАЯ ОБЛАСТЬ"):
+    for must in ("O'→У", "Ҷ/Ҹ→ДЖ", "Ә→А", "Ў→У", "Ə→А",
+                 "СУРХАНДАРЬИНСКАЯ ОБЛАСТЬ"):
         assert must in RUSSIAN_SHORT, must
 
 
