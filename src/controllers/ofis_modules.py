@@ -163,6 +163,33 @@ def _run_mvdreg(ctx: RunContext, state: dict) -> list[Path]:
     return [r.pdf_path]
 
 
+def _run_ndfl2(ctx: RunContext, state: dict) -> list[Path]:
+    """2 НДФЛ — the months typed as one line: «150000,150000,160000»."""
+    from decimal import Decimal, InvalidOperation
+
+    passport_img, patent_img, _back = _trio(state)
+    raw = str(state["answers"].get("months") or "")
+    months: dict[int, Decimal] = {}
+    for index, part in enumerate(raw.replace(";", ",").split(","), start=1):
+        cleaned = part.replace(" ", "").replace("\xa0", "").replace(",", ".")
+        if not cleaned:
+            continue
+        try:
+            amount = Decimal(cleaned)
+        except InvalidOperation:
+            continue
+        if amount > 0:
+            months[index] = amount
+    if not months:
+        raise OfisError("Ойликлар тушунарсиз — «150000,150000,160000» каби ёзинг.")
+    when = state["answers"].get("form_date") or date.today()
+    result = ctx.ctl["ndfl2"].generate_from_images(
+        Path(state["target"]), passport_img, patent_img,
+        months=months, year=when.year, form_date=when)
+    ctx.note(f"Жами: {result.total} · солиқ: {result.tax}")
+    return [result.pdf_path]
+
+
 def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     """ТД + УВ off the firm's own mapped samples."""
     passport_img, patent_img, back = _trio(state)
@@ -980,6 +1007,14 @@ MODULES: tuple[Module, ...] = (
            photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
            asks=(Ask("start", "Яшаш БОШЛАНИШ санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("expiry", "Яшаш ТУГАШ санаси (КК.ОО.ЙЙЙЙ):", default_days=90))),
+    Module("ndfl2", "💰 2 НДФЛ", _run_ndfl2,
+           targets=lambda c: c["ndfl2"].firms(),
+           target_prompt="Фирмани танланг:",
+           photo_prompt=_TRIO_PROMPT, photo_labels=_TRIO_LABELS,
+           asks=(Ask("form_date", "Справка санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("months", "Ойликлар — вергул билан, январдан бошлаб "
+                     "(масалан 150000,150000,160000):", kind="text"))),
     Module("mvdreg", "🏛️ МВД РЕГИСТРАЦИЯ", _run_mvdreg,
            targets=lambda c: c["mvdreg"].addresses(),
            target_prompt="Адресни танланг:",
@@ -1292,6 +1327,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
     from src.controllers.mvdreg_controller import MvdRegController
+    from src.controllers.ndfl2_controller import Ndfl2Controller
     from src.controllers.osago_controller import OsagoController
     from src.controllers.patent_controller import PatentController
     from src.controllers.ppu_controller import PpuController
@@ -1324,6 +1360,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
     from src.services.mvdreg_service import MvdRegService
+    from src.services.ndfl2_service import Ndfl2Service
     from src.services.osago_service import OsagoService
     from src.services.patent_service import PatentService
     from src.services.perevod_service import PerevodService
@@ -1383,6 +1420,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             container.resolve(RegistrationAddressService), ocr, HostelService()),
         "mvdreg": MvdRegController(
             container.resolve(RegistrationAddressService), ocr, MvdRegService()),
+        "ndfl2": Ndfl2Controller(
+            ocr, Ndfl2Service(container.resolve(SettingsService))),
         "trud": Trud8Controller(
             ocr, Trud8Service(container.resolve(SettingsService))),
         "svera": SveraController(

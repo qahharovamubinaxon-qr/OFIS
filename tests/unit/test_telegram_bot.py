@@ -129,6 +129,7 @@ _DESKTOP_TO_MODULE = {
     "nav.registration": "reg",
     "nav.hostel": "hostel",
     "nav.mvdreg": "mvdreg",
+    "nav.ndfl2": "ndfl2",
     "nav.trud": "trud",
     "nav.dms": "dms",
     "nav.strahovka": "insurance",
