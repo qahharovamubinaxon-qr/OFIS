@@ -31,8 +31,12 @@ if errorlevel 1 goto :failed
 if not exist "dist\OFIS\OFIS.exe" goto :failed
 
 echo === Portable ZIP ===
+rem Compress-Archive reads the whole folder into memory and dies on ours
+rem ("System.OutOfMemoryException"), so the .NET packer is used instead:
+rem it streams straight to the file. The EXE is already built by now, so a
+rem ZIP that fails is a warning, never a failed build.
 if exist "dist\OFIS_portable_1.0.0.zip" del /F /Q "dist\OFIS_portable_1.0.0.zip"
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\OFIS' -DestinationPath 'dist\OFIS_portable_1.0.0.zip' -Force"
+powershell -NoProfile -Command "try { Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path 'dist\OFIS').Path, (Join-Path (Resolve-Path 'dist').Path 'OFIS_portable_1.0.0.zip'), [System.IO.Compression.CompressionLevel]::Optimal, $true) } catch { Write-Host ('ZIP tayyorlanmadi (EXE tayyor): ' + $_.Exception.Message) }"
 
 echo.
 echo ============================================================
