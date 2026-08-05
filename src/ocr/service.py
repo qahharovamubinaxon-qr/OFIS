@@ -16,7 +16,7 @@ from src.common.logging import get_logger
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
 from src.domain.document_number import strip_document_check_digit
-from src.domain.passport_rules import series_in_latin
+from src.domain.passport_rules import same_name, series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import to_cyrillic, translate_issuer
@@ -187,7 +187,16 @@ def _passport_from(f: dict[str, str]) -> Passport:
         issue_date=_parse_date(f.get("issue_date", "")),
         expiry_date=_parse_date(f.get("expiry_date", "")),
         issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
+        surname_latin=_latin(f.get("surname_latin", "")),
+        name_latin=_latin(f.get("name_latin", "")),
+        patronymic_latin=_latin(f.get("patronymic_latin", "")),
     )
+
+
+def _latin(value: str) -> str:
+    """The printed Latin row, kept only when it read as one."""
+    text = (value or "").strip()
+    return text if text and _PRINTED_LATIN.fullmatch(text) else ""
 
 
 class OcrService:
@@ -385,16 +394,52 @@ class OcrService:
         if patent is not None and patent.holder_surname:
             passport = passport.model_copy(
                 update={
-                    "surname": patent.holder_surname,
-                    "name": patent.holder_name or passport.name,
+                    "surname": _agreed(passport, "surname",
+                                       patent.holder_surname),
+                    "name": _agreed(passport, "name", patent.holder_name)
+                    or passport.name,
                     # taken AS the patent says, absence included: the patent
                     # prints the full ФИО in Russian, so a patent with no
                     # patronymic means the worker HAS none — while the
                     # passport's value may be an invented one (a Philippine
                     # «middle name» is not an отчество, but models return it
                     # as one). Falling back re-introduced exactly that.
+                    #
+                    # Nor is it compared with the passport's, the way the
+                    # surname is: a father's name is written one way on an
+                    # Uzbek passport and another on a Russian patent —
+                    # «ANVAROVICH» there, «Анвар угли» here — and both are
+                    # the same father. Only the patent's form belongs on a
+                    # Russian document.
                     "patronymic": patent.holder_patronymic or None,
                     "nationality": patent.holder_citizenship or passport.nationality,
                 }
             )
         return passport, patent
+
+
+def _agreed(passport: Passport, field: str, from_patent: str | None) -> str:
+    """The patent's spelling of one name — unless it was plainly misread.
+
+    The office's rule stands: the patent prints the ФИО in Russian and it
+    is the name. But a patent is a small laminated card, often photographed
+    badly, and «Кахоров» came back as «Какаров» from one such photograph
+    while the passport's own Latin row read KAKHOROV perfectly.
+
+    So the two are compared by :func:`same_name`: a vowel apart is two
+    offices spelling one man and the PATENT wins, a consonant apart is a
+    misreading and the passport's spelling — transliterated from machine
+    print by a fixed table — wins. Without a Latin row there is nothing to
+    prove, and the patent wins as before.
+    """
+    patent_says = (from_patent or "").strip()
+    ours = (getattr(passport, field) or "").strip()
+    if not patent_says or not ours:
+        return patent_says
+    if getattr(passport, f"{field}_latin", "") and \
+            not same_name(ours, patent_says):
+        log.info("«%s»: патент «%s» деб ўқилди, паспортда «%s» (лотинча "
+                 "«%s») — паспортники олинди", field, patent_says, ours,
+                 getattr(passport, f"{field}_latin"))
+        return ours
+    return patent_says

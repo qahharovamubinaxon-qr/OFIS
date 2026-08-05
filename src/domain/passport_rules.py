@@ -304,6 +304,50 @@ def split_son_of(value: str | None) -> str:
     return text
 
 
+#: Letters that legitimately differ between one Russian spelling of a name
+#: and another. Two offices transliterating the same passport disagree
+#: about VOWELS all the time — ХУДОЙБЕРДИЕВ and ХУДАЙБЕРДИЕВ are one man,
+#: ЮЛДАШЕВ and ЙУЛДАШЕВ are one man — and never about consonants. Й is in
+#: here because it is a glide: Ю is ЙУ, Я is ЙА.
+_GLIDING = set("АЕЁИЙОУЫЭЮЯ")
+
+
+def _bare(value: str | None) -> str:
+    """A name reduced to what two spellings of it must have in common."""
+    text = re.sub(r"\s+", "", (value or "").upper())
+    text = in_russian_letters(text).replace("ДЖ", "Ж")
+    return text.replace("Ъ", "").replace("Ь", "").replace("Ё", "Е")
+
+
+def same_name(one: str | None, other: str | None) -> bool:
+    """Two spellings of ONE name, or two different names?
+
+    The office's documents disagree about a name in two very different
+    ways, and telling them apart is what keeps a misreading off a form:
+
+    * a VOWEL differs — «ХУДОЙБЕРДИЕВ» / «ХУДАЙБЕРДИЕВ». That is two
+      offices transliterating the same passport, and both are the man.
+    * a CONSONANT differs — «КАХОРОВ» / «КАКАРОВ». No transliteration
+      turns Х into К: one of the two was simply misread.
+
+    Anything missing on one side and present on the other counts the same
+    way — a dropped vowel is a variant, a dropped consonant is a misreading.
+    """
+    a, b = _bare(one), _bare(other)
+    if not a or not b:
+        return True                    # nothing to disagree with
+    if a == b:
+        return True
+    from difflib import SequenceMatcher
+
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, a, b).get_opcodes():
+        if tag == "equal":
+            continue
+        if any(c not in _GLIDING for c in a[i1:i2] + b[j1:j2]):
+            return False
+    return True
+
+
 def issuer_in_russian(value: str | None) -> str:
     """«ХШБ ВКД ҶТ» → «МВД РТ». Text already in Russian comes back unchanged."""
     out = value or ""

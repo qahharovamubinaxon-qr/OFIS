@@ -210,15 +210,17 @@ def test_generate_without_a_blank_says_so() -> None:
 # ---------------------------------------------- the patronymic guarantee
 
 
-def test_the_passport_prompt_reads_the_printed_page_and_ignores_the_strip() -> None:
+def test_the_passport_prompt_never_lets_the_strip_erase_a_patronymic() -> None:
     """Registrations were coming out with no отчество because the model
-    fixated on the strip at the foot of the page, which carries none. The
-    prompt now says in so many words: ignore that strip, read the rows."""
+    fixated on the strip at the foot of the page, which in many countries
+    carries none. The strip may spell the letters; it may never take a
+    father's name away from the printed rows."""
     from src.ai.prompts import _PASSPORT
 
     assert "patronymic" in _PASSPORT
-    assert "IGNORE the" in _PASSPORT
     assert "Father's name" in _PASSPORT
+    assert "father's name IS there and comes" in _PASSPORT
+    assert "a Tajik one never does" in _PASSPORT
     # and the Latin rows the office's rules are applied to
     assert "surname_latin" in _PASSPORT
 

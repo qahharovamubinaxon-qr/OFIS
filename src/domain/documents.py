@@ -62,6 +62,14 @@ class Passport(BaseModel):
     expiry_date: date | None = None  # Срок действия — needed by the registration form
     issued_by: str | None = None
 
+    # The name as the page prints it in LATIN, kept because the Russian
+    # spelling is TRANSLITERATED from it: when the patent disagrees, this
+    # is what says which of the two was misread. Empty for a document that
+    # prints no Latin at all.
+    surname_latin: str = ""
+    name_latin: str = ""
+    patronymic_latin: str = ""
+
     @field_validator("surname", "name", "nationality", "birth_place")
     @classmethod
     def _clean_text(cls, v: str | None) -> str | None:

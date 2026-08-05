@@ -153,6 +153,70 @@ def test_the_patent_still_outranks_the_passport_for_the_name() -> None:
     assert passport.series == "FB" and passport.number == "1234567"
 
 
+# ------------------------------- when the two documents do not agree
+def test_a_vowel_apart_is_one_man_a_consonant_apart_is_a_misreading() -> None:
+    """Two offices transliterating one passport disagree about vowels and
+    never about consonants — which is how a misread patent is spotted."""
+    from src.domain.passport_rules import same_name
+
+    for one, other in (("ХУДОЙБЕРДИЕВ", "ХУДАЙБЕРДИЕВ"),
+                       ("ЮЛДАШЕВ", "ЙУЛДАШЕВ"),
+                       ("ДЖУМАЕВ", "ЖУМАЕВ"),
+                       ("ЖУРАМУРОД УГЛИ", "ЖУРАМУРОДУГЛИ"),
+                       ("КАХОРОВ", "КАХОРОВ")):
+        assert same_name(one, other), f"{one} / {other}"
+    for one, other in (("КАХОРОВ", "КАКАРОВ"),
+                       ("КАХОРОВ", "КАКОРОВ"),
+                       ("САФАРОВ", "САФОНОВ"),
+                       ("РАХМОНОВ", "РАХМАТОВ")):
+        assert not same_name(one, other), f"{one} / {other}"
+
+
+def test_a_misread_patent_does_not_overrule_the_passports_own_letters() -> None:
+    """The office's own case, exactly as it happened: the patent card was
+    photographed badly and read «Какаров», while the passport's Latin row
+    read KAKHOROV perfectly. The form must carry КАХОРОВ."""
+    from src.domain.enums import DocType
+
+    service = _service(KAKHOROV, per_type={
+        DocType.PATENT: {"surname": "КАКАРОВ", "name": "АББОСБЕК",
+                         "patronymic": "ЖУРАМУРОД УГЛИ",
+                         "number": "50 2600194831",
+                         "citizenship": "УЗБЕКИСТАН",
+                         "profession": "ПОДСОБНЫЙ РАБОЧИЙ"}})
+    passport, _ = service.read_documents(b"p", b"pat")
+    assert passport.surname == "КАХОРОВ"
+    assert passport.patronymic == "ЖУРАМУРОД УГЛИ"
+
+
+def test_a_patent_that_merely_spells_it_differently_still_wins() -> None:
+    """«ХУДАЙБЕРДИЕВ» on the patent is the spelling Russia registered him
+    under — a vowel apart is not a misreading, and the patent is the name."""
+    from src.domain.enums import DocType
+
+    service = _service({**KAKHOROV, "surname": "ХУДОЙБЕРДИЕВ",
+                        "surname_latin": "XUDOYBERDIYEV"}, per_type={
+        DocType.PATENT: {"surname": "ХУДАЙБЕРДИЕВ", "name": "АББОСБЕК",
+                         "number": "1", "citizenship": "УЗБЕКИСТАН",
+                         "profession": "ПОВАР"}})
+    passport, _ = service.read_documents(b"p", b"pat")
+    assert passport.surname == "ХУДАЙБЕРДИЕВ"
+
+
+def test_without_a_latin_row_the_patent_wins_as_the_office_asked() -> None:
+    """Nothing to prove the passport's spelling by — so the patent, printed
+    in Russian, is the name, exactly as before."""
+    from src.domain.enums import DocType
+
+    service = _service({**KAKHOROV, "surname": "КАХОРОВ",
+                        "surname_latin": ""}, per_type={
+        DocType.PATENT: {"surname": "КАКАРОВ", "name": "АББОСБЕК",
+                         "number": "1", "citizenship": "УЗБЕКИСТАН",
+                         "profession": "ПОВАР"}})
+    passport, _ = service.read_documents(b"p", b"pat")
+    assert passport.surname == "КАКАРОВ"
+
+
 # ------------------------------------------------- the strip is not read
 def test_the_machine_strip_is_neither_read_nor_complained_about() -> None:
     """The office asked for it to go. A page whose strip is unreadable —
@@ -167,17 +231,37 @@ def test_the_machine_strip_is_neither_read_nor_complained_about() -> None:
 
 
 def test_nothing_in_the_program_still_warns_about_a_machine_zone() -> None:
+    """No check digits, no verdict, no warning — none of it is left."""
     import inspect
 
-    from src.ai import prompts
     from src.ocr import service
     from src.services import generation_service
     from src.ui.views import process_view
 
     for module in (service, process_view, generation_service):
         assert "mrz" not in inspect.getsource(module).lower(), module.__name__
-    # and the model is told to leave the strip alone
-    assert "IGNORE the" in prompts.prompt_for.__globals__["_PASSPORT"]
+
+
+def test_the_strip_is_a_spelling_aid_and_the_prompt_says_only_that() -> None:
+    """The office's question, in its own words: «Mistral used to read it
+    right — why not now?» Because the prompt had been told to ignore the
+    strip outright, and the strip is where the letters are machine-printed.
+
+    It is a spelling aid for the LATIN name and nothing else: it must never
+    take away a father's name that the printed rows carry, because many
+    countries put none in it.
+    """
+    from src.ai.prompts import _PASSPORT
+
+    assert "IGNORE the" not in _PASSPORT, "бутунлай тақиқлаб қўйилган"
+    assert "most reliable place" in _PASSPORT
+    assert "the strip has the letters right" in _PASSPORT
+    # ...but never as a source of the fields it does not carry
+    assert "father's name IS there" in _PASSPORT
+    assert "no issuing authority" in _PASSPORT
+    # and the word break the strip spells with «<»
+    assert "JURAMUROD UGLI" in _PASSPORT
+    assert "K-A-K-H-O-R-O-V" in _PASSPORT
 
 
 # --------------------------------------- the check digit taken back off
