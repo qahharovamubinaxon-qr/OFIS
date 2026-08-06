@@ -257,3 +257,34 @@ _REGISTRATION = RUSSIAN_RULES + (
 
 def registration_prompt() -> str:
     return _REGISTRATION
+
+
+#: The ПИНФЛ (ЖШШИР) is nowhere on an Uzbek passport's face — it lives in the
+#: strip at the foot, at the end of the second line. So this asks for the LINE
+#: and not for the number: a line copied character for character can be taken
+#: apart by arithmetic here (:mod:`src.domain.pinfl`), and arithmetic cannot
+#: hallucinate. A number the reader «worked out» cannot be checked at all.
+_PINFL_STRIP = (
+    "You are an OCR extraction engine. This is the data page of a passport. "
+    "Look ONLY at the machine-readable strip at the FOOT of the page — the two "
+    "long lines set in a machine font and padded with «<» characters. Return "
+    "ONLY a JSON object, no explanation, no markdown.\n"
+    "Copy the SECOND of those two lines EXACTLY as printed, character for "
+    "character, including every digit, every letter and every «<». Do not tidy "
+    "it, do not remove the «<», do not add spaces, do not correct anything. It "
+    "looks like this:\n"
+    "  AA12345671UZB9505134M30051131301954050087<64\n"
+    "Also copy the FIRST line the same way — it is asked for only so the "
+    "program can tell the two apart if they arrive swapped.\n"
+    "IMPORTANT — every character in the strip is meaningful and the program "
+    "does the arithmetic itself. A single digit invented, dropped or "
+    "«corrected» turns the number into another person's. If the strip is "
+    "blurred, cut off or not visible in the image, return empty strings. An "
+    "empty answer is right; a guessed one is not.\n"
+    'Keys: {"line1":"P<UZBERGASHEV<<UMIDJON<<<<<<<<<<<<<<<<<<<<<<<",'
+    '"line2":"AA12345671UZB9505134M30051131301954050087<64"}\n'
+)
+
+
+def pinfl_prompt() -> str:
+    return _PINFL_STRIP

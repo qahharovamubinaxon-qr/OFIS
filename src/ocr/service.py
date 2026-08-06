@@ -302,6 +302,42 @@ class OcrService:
                  {k: str(v)[:60] for k, v in fields.items()} or "—")
         return ""
 
+    def read_pinfl(self, image: bytes, born: date | None = None) -> str:
+        """The ПИНФЛ off the strip at the foot of an Uzbek passport, or "".
+
+        The Uzbek certificates the office sends home name the worker by this
+        number, and the passport prints it nowhere on its face — only in the
+        machine-readable strip. So the reader is asked for the STRIP'S LINE,
+        not for the number: the fourteen digits are cut out of it here, by
+        arithmetic (:mod:`src.domain.pinfl`), and checked against the birth
+        date the passport prints above it. Nothing comes back unless the two
+        agree — a wrong ПИНФЛ on a certificate filed with the agency is far
+        worse than an empty box the operator fills in from the passport.
+
+        Free-form, like :meth:`read_inn`: this asks for two lines no document
+        model has, so it must not be judged against one.
+        """
+        from src.ai.prompts import pinfl_prompt
+        from src.domain.pinfl import pinfl_from_mrz
+
+        try:
+            answer = self._ai.extract(prepare_image(image), DocType.UNKNOWN,
+                                      pinfl_prompt())
+        except Exception as exc:          # noqa: BLE001 - reading is optional
+            log.info("ПИНФЛ ўқилмади: %s", exc)
+            return ""
+        fields = answer.fields
+        # the second line first, then the first — a reader that swapped them
+        # still gets the number out, and a line that is not one cannot pass
+        # the century-and-birth-date arithmetic
+        for key in ("line2", "line1"):
+            found = pinfl_from_mrz(str(fields.get(key, "")), born)
+            if found:
+                return found
+        log.info("ПИНФЛ топилмади. Ўқувчи қайтарган: %s",
+                 {k: str(v)[:60] for k, v in fields.items()} or "—")
+        return ""
+
     def read_registration(self, image: bytes) -> dict[str, str]:
         """A регистрация read for the ППУ pair — plain strings, nothing invented.
 
