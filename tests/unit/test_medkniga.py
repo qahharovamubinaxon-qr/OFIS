@@ -113,6 +113,9 @@ def test_the_number_and_the_date_repeat_on_every_page_that_carries_them() -> Non
     spans = _spans(render(_data()))
     numbers = [s for s in spans if s["text"] == "8832888"]
     assert {s["page"] for s in numbers} == {1, 3, 4}, "рақам ҳар бетда эмас"
+    # page 5 prints the sign and the number together, in the booklet's navy
+    fifth = [s for s in spans if s["page"] == 5]
+    assert [s["text"] for s in fifth] == ["№ 8832888"]
     stamped = [s for s in spans if s["text"] == "05 АВГ 2026"]
     # once on page 1, once on page 3, and one per doctor's line on page 4
     assert len([s for s in stamped if s["page"] == 4]) == 13
@@ -138,6 +141,7 @@ def test_the_inks_are_the_office_s_own() -> None:
 def test_nothing_is_written_for_a_worker_who_has_no_number() -> None:
     spans = {s["text"] for s in _spans(render(_data(number="")))}
     assert "№" not in spans and "8832888" not in spans
+    assert "№ 8832888" not in spans
 
 
 def test_every_slot_has_a_label_and_a_sample() -> None:
@@ -309,10 +313,17 @@ def test_the_section_is_on_the_phone_too() -> None:
     assert BY_KEY["medkniga"].asks, "бот сўровлари йўқ"
 
 
-def test_no_registry_or_verification_artefact_is_produced() -> None:
-    """The office asked for a «подтверждение» page imitating the state ЛМК
-    register, hosted and linked by a QR on the booklet. It is not built,
-    and nothing in the section may quietly grow into one."""
+def test_no_verification_artefact_is_produced() -> None:
+    """Page 5 of the booklet carries a frame for a QR code, and the office
+    asked three times for that QR to point at a «подтверждение» page it
+    makes itself and hosts on an image site — first copying the state ЛМК
+    register outright, then with its own name at the top.
+
+    Only the printed NUMBER on that page is written. The frame is left
+    empty: a QR there is a verification of an official medical booklet
+    against a page its holder wrote, which is the one thing this section
+    must never produce. Nothing here may quietly grow into it.
+    """
     import inspect
 
     from src.pdf import medkniga_renderer, medkniga_spec
@@ -320,5 +331,5 @@ def test_no_registry_or_verification_artefact_is_produced() -> None:
 
     for module in (medkniga_spec, medkniga_renderer, medkniga_service):
         source = inspect.getsource(module).lower()
-        for forbidden in ("реестр", "imgbb", "qrcode", "подтвержд"):
+        for forbidden in ("реестр", "imgbb", "qrcode", "qr_", "подтвержд"):
             assert forbidden not in source, f"{module.__name__}: {forbidden}"

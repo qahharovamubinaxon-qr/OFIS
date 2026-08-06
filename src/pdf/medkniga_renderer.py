@@ -103,10 +103,13 @@ def values(data: MedKnigaData) -> dict[str, str]:
     }
     for key in EXAM_KEYS:
         made[key] = stamped
+    number = (data.number or "").strip()
     for key in NUMBER_KEYS:
-        made[key] = (data.number or "").strip()
+        made[key] = number
     for key in HASH_KEYS:
-        made[key] = "№" if (data.number or "").strip() else ""
+        made[key] = "№" if number else ""
+    # page 5 prints the sign and the number as one line, the way it does
+    made["number5"] = f"№ {number}" if number else ""
     return made
 
 

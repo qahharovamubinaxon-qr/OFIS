@@ -17,12 +17,14 @@ from dataclasses import dataclass
 
 #: The office's own page. Kept to the point so a print lines up 1:1.
 PAGE_W, PAGE_H = 2160.0, 3840.0
-PAGES = 4
+PAGES = 5
 
 #: The three inks, taken from the darkest core of the office's own marks.
 BLUE = (0.000, 0.055, 0.740)
 RED = (0.733, 0.005, 0.132)
 GREY = (0.482, 0.435, 0.428)
+#: The booklet's own dark navy — the number printed at the foot of page 5.
+NAVY = (0.216, 0.251, 0.494)
 
 #: The two faces its pages are set in — both installed on the office's
 #: machine, both looked up by the name the font picker shows.
@@ -136,7 +138,17 @@ PAGE4.update({
                     "left", "8832888", "4-бет — китоб рақами"),
 })
 
-ALL_SLOTS: dict[str, Slot] = {**PAGE1, **PAGE2, **PAGE3, **PAGE4}
+#: ---- 5-бет ------------------------------------------------------------
+#: The office's own page 5 carries one printed thing — the booklet number
+#: at the foot, in the booklet's navy serif — and a frame for a QR code.
+#: Only the number is written here; see the note in the section's README
+#: and in :mod:`tests.unit.test_medkniga` about the frame.
+PAGE5: dict[str, Slot] = {
+    "number5": Slot(5, 0.4342, 0.7736, 0.0234, NAVY, "Times New Roman", True,
+                    0, "left", "№ 8832888", "5-бет — китоб рақами"),
+}
+
+ALL_SLOTS: dict[str, Slot] = {**PAGE1, **PAGE2, **PAGE3, **PAGE4, **PAGE5}
 
 #: Every mark that shows the book's own number — one value, many places.
 NUMBER_KEYS = ("number1", "number3", "number4")
