@@ -190,6 +190,23 @@ def _run_ndfl2(ctx: RunContext, state: dict) -> list[Path]:
     return [result.pdf_path]
 
 
+def _run_medkniga(ctx: RunContext, state: dict) -> list[Path]:
+    """МЕД КНИЖКА — the four pages, from the passport and the worker's photo."""
+    images = state.get("photos") or []
+    if not images:
+        raise OfisError("Паспорт расмини юборинг.")
+    answers = state["answers"]
+    result = ctx.ctl["medkniga"].generate_from_images(
+        images[0],
+        position=str(answers.get("position") or "").strip(),
+        city=str(answers.get("city") or "Москва").strip() or "Москва",
+        number=str(answers.get("number") or "").strip(),
+        exam_date=answers.get("exam_date") or date.today(),
+        photo_png=images[1] if len(images) > 1 else None)
+    ctx.note(f"№ {result.number} · тугаши {result.expires}")
+    return [result.pdf_path]
+
+
 def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
     """ТД + УВ off the firm's own mapped samples."""
     passport_img, patent_img, back = _trio(state)
@@ -1015,6 +1032,14 @@ MODULES: tuple[Module, ...] = (
                      default_days=0),
                  Ask("months", "Ойликлар — вергул билан, январдан бошлаб "
                      "(масалан 150000,150000,160000):", kind="text"))),
+    Module("medkniga", "🩺 МЕД КНИЖКА", _run_medkniga,
+           photo_prompt=_PORTRAIT_PROMPT, photo_labels=_PORTRAIT_LABELS,
+           asks=(Ask("exam_date", "Кўрик санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("number", "Китоб рақами (китобнинг ўзидан):", kind="text"),
+                 Ask("position", "Лавозими (масалан Помощник повара):",
+                     kind="text"),
+                 Ask("city", "Адрес (Москва / Московская область):",
+                     kind="text"))),
     Module("mvdreg", "🏛️ МВД РЕГИСТРАЦИЯ", _run_mvdreg,
            targets=lambda c: c["mvdreg"].addresses(),
            target_prompt="Адресни танланг:",
@@ -1324,6 +1349,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.inn_controller import InnController
     from src.controllers.karta_controller import KartaController
     from src.controllers.kukchek_controller import KukChekController
+    from src.controllers.medkniga_controller import MedKnigaController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
     from src.controllers.mvdreg_controller import MvdRegController
@@ -1357,6 +1383,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.inn_service import InnService
     from src.services.karta_service import KartaService
     from src.services.kukchek_service import KukChekService
+    from src.services.medkniga_service import MedKnigaService
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
     from src.services.mvdreg_service import MvdRegService
@@ -1422,6 +1449,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             container.resolve(RegistrationAddressService), ocr, MvdRegService()),
         "ndfl2": Ndfl2Controller(
             ocr, Ndfl2Service(container.resolve(SettingsService))),
+        "medkniga": MedKnigaController(ocr, MedKnigaService()),
         "trud": Trud8Controller(
             ocr, Trud8Service(container.resolve(SettingsService))),
         "svera": SveraController(

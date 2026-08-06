@@ -56,6 +56,8 @@ _NAV = [
     (None, "nav.mvdreg", "МВД РЕГИСТРАЦИЯ",
      "Рўйхатга қўйиш бланкаси → электрон PDF", "🏛️"),
     (None, "nav.ndfl2", "2 НДФЛ", "Даромад справкаси → PDF", "💰"),
+    (None, "nav.medkniga", "МЕД КНИЖКА",
+     "Тиббий кўрик учун 4 бет → PDF", "🩺"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -213,6 +215,15 @@ class MainWindow(QMainWindow):
             return Ndfl2View(Ndfl2Controller(
                 self._container.resolve(OcrService),
                 Ndfl2Service(self._settings),
+            ))
+        if key == "nav.medkniga":
+            from src.controllers.medkniga_controller import MedKnigaController
+            from src.services.medkniga_service import MedKnigaService
+            from src.ui.views.medkniga_view import MedKnigaView
+
+            return MedKnigaView(MedKnigaController(
+                self._container.resolve(OcrService),
+                MedKnigaService(),
             ))
         if key == "nav.chek":
             from src.controllers.chek_controller import ChekController
