@@ -231,15 +231,26 @@ def test_the_machine_strip_is_neither_read_nor_complained_about() -> None:
 
 
 def test_nothing_in_the_program_still_warns_about_a_machine_zone() -> None:
-    """No check digits, no verdict, no warning — none of it is left."""
+    """No check digits, no verdict, no warning — none of it is left.
+
+    One call DOES read the strip now, and on purpose: :meth:`read_pinfl`
+    digs the ПИНФЛ out of it for the Uzbek certificates, which name the
+    worker by that number and by nothing else. It is a value the operator
+    asked for, not a judgement passed on his passport — a separate call
+    nobody makes by accident, and it warns no one. So the guard is on the
+    passport's own reading, which is where the verdict used to live.
+    """
     import inspect
 
     from src.ocr import service
     from src.services import generation_service
     from src.ui.views import process_view
 
-    for module in (service, process_view, generation_service):
+    for module in (process_view, generation_service):
         assert "mrz" not in inspect.getsource(module).lower(), module.__name__
+    for read in (service.OcrService.read_passport,
+                 service.OcrService.read_documents, service._passport_from):
+        assert "mrz" not in inspect.getsource(read).lower(), read.__name__
 
 
 def test_the_strip_is_a_spelling_aid_and_the_prompt_says_only_that() -> None:
