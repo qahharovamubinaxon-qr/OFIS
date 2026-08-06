@@ -216,11 +216,11 @@ def test_every_sheet_goes_into_the_editor_wearing_its_own_number() -> None:
 
 
 def test_what_the_editor_leaves_is_what_the_renderer_reads_back() -> None:
+    from dataclasses import replace
+
     from src.pdf.uzbspravka_renderer import placed, placed_images
     from src.pdf.uzbspravka_spec import SEAL_KEY
     from src.ui.views.uzbspravka_view import to_fields, to_layout
-
-    from dataclasses import replace
 
     _cat, samples, fields = to_fields(store.SHEETS, {})
     dragged = {"4:pinfl": (0.44, 0.62, 0.014),
