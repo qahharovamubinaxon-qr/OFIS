@@ -91,6 +91,44 @@ def test_the_seal_and_the_qr_are_drawn_where_the_office_put_them() -> None:
     assert where[QR_KEY] == placed_images(1, {})[QR_KEY]
 
 
+@pytest.mark.parametrize("sheet", [1, 2, 3, 4])
+def test_the_qr_stands_beside_the_code_and_never_over_it(sheet) -> None:
+    """The code is what the checker reads first — a QR on top of it is a
+    certificate nobody can verify, and it was drawn over it once."""
+    from src.pdf.uzbspravka_renderer import QR_DEFAULT
+    from src.pdf.uzbspravka_spec import slots_of
+
+    code = slots_of(sheet)["code"]
+    left, bottom, height = QR_DEFAULT
+    # a QR is square, so its width in page-shares is height × (PAGE_H / PAGE_W)
+    right = left + height * PAGE_H / PAGE_W
+    assert right < code.x, "QR коднинг устига тушди"
+    # and it must still be down at the foot, level with the code
+    top, code_top = bottom - height, code.baseline - code.size
+    assert top < code.baseline and bottom > code_top, "QR кодднан узоқда"
+
+
+def test_the_seal_starts_clear_of_both_the_qr_and_the_code() -> None:
+    """The office drags the seal onto its own blank, but it must not start
+    life covering the two things that make the certificate checkable."""
+    from src.pdf.uzbspravka_renderer import QR_DEFAULT
+    from src.pdf.uzbspravka_spec import SEAL_DEFAULT, slots_of
+
+    def box(where):
+        left, bottom, height = where
+        return (left, bottom - height,
+                left + height * PAGE_H / PAGE_W, bottom)
+
+    seal, qr = box(SEAL_DEFAULT), box(QR_DEFAULT)
+    apart = seal[0] >= qr[2] or qr[0] >= seal[2] \
+        or seal[1] >= qr[3] or qr[1] >= seal[3]
+    assert apart, "печать QR устига тушди"
+    for sheet in (1, 4):
+        code = slots_of(sheet)["code"]
+        assert seal[0] > code.x or seal[3] < code.baseline - code.size \
+            or seal[1] > code.baseline, "печать коднинг устига тушди"
+
+
 def test_a_dragged_value_moves_on_that_sheet_only() -> None:
     moved = {"fields": {"4": {"pinfl": [0.44, 0.62, 0.014]}}}
     assert placed(4, moved)["pinfl"].x == pytest.approx(0.44)

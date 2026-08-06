@@ -111,7 +111,10 @@ SHEETS: dict[int, dict[str, Slot]] = {1: SHEET123, 2: SHEET123,
                                       3: SHEET123, 4: SHEET4}
 
 #: Where the chosen firm's seal starts out, as «left, BOTTOM, height».
-SEAL_DEFAULT = (0.6200, 0.8200, 0.1300)
+#: Below the code and to the right of it, clear of the QR: the office drags
+#: it onto its own blank, but a seal that lands on the code or on the QR is a
+#: certificate that cannot be checked, so it starts where neither of them is.
+SEAL_DEFAULT = (0.7200, 0.9000, 0.1300)
 SEAL_KEY = "img_seal"
 SEAL_LABEL = "⬤ ФИРМА ПЕЧАТИ"
 

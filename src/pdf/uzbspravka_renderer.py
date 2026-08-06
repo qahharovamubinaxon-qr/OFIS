@@ -31,9 +31,12 @@ from src.pdf.uzbspravka_spec import (
 
 #: How thickly a one-weight face is stroked when bold was asked for.
 FAUX_BOLD = 0.03
-#: Where the QR starts out — beside the four-digit code at the foot.
+#: Where the QR starts out: BESIDE the four-digit code at the foot and never
+#: on top of it. A square of this height is 0.127 of the width, so its right
+#: edge lands at 0.687 — a finger's width clear of the code, which begins at
+#: 0.708 — and its middle sits level with the code's own middle.
 QR_KEY = "img_qr"
-QR_DEFAULT = (0.5900, 0.7150, 0.0900)
+QR_DEFAULT = (0.5600, 0.7280, 0.0900)
 
 
 @dataclass
