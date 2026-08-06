@@ -20,7 +20,7 @@ from src.common.errors import ValidationError
 from src.common.logging import get_logger
 from src.config import paths
 from src.pdf.medkniga_renderer import MedKnigaData, output_stem, render
-from src.pdf.medkniga_spec import PAGES
+from src.pdf.medkniga_spec import DEFAULT_KIT, KITS, PAGES
 
 log = get_logger(__name__)
 
@@ -28,28 +28,41 @@ SECTION = "medkniga"
 _COUNTER = "number.json"
 
 
-def folder() -> Path:
-    made = paths.user_templates_dir() / SECTION
+def folder(kit: str = DEFAULT_KIT) -> Path:
+    """One kit's own corner. The blanks differ between Москва and the
+    область; nothing else does, so only the blanks live in here."""
+    made = paths.user_templates_dir() / SECTION / _kit(kit)
     made.mkdir(parents=True, exist_ok=True)
     return made
 
 
+def _kit(kit: str | None) -> str:
+    """Whatever was passed, as one of the two kits the office keeps."""
+    name = (kit or "").strip().lower()
+    if name in KITS:
+        return name
+    for key, label in KITS.items():          # «Московская область» → oblast
+        if name and (name in label.lower() or label.lower() in name):
+            return key
+    return DEFAULT_KIT
+
+
 # ---------------------------------------------------------------- blanks
-def blank_of(page: int) -> Path | None:
-    """The office's own scan for one page, if it uploaded one."""
+def blank_of(page: int, kit: str = DEFAULT_KIT) -> Path | None:
+    """The office's own scan for one page of one kit, if it uploaded one."""
     for suffix in (".pdf", ".png", ".jpg", ".jpeg"):
-        found = folder() / f"page{page}{suffix}"
+        found = folder(kit) / f"page{page}{suffix}"
         if found.exists():
             return found
     return None
 
 
-def blanks() -> dict[int, Path]:
+def blanks(kit: str = DEFAULT_KIT) -> dict[int, Path]:
     return {p: found for p in range(1, PAGES + 1)
-            if (found := blank_of(p)) is not None}
+            if (found := blank_of(p, kit)) is not None}
 
 
-def set_blank(page: int, source: Path) -> Path:
+def set_blank(page: int, source: Path, kit: str = DEFAULT_KIT) -> Path:
     """Upload one page's blank. A page may be replaced at any time."""
     if not 1 <= page <= PAGES:
         raise ValidationError(f"Бет 1 дан {PAGES} гача бўлиши керак")
@@ -58,23 +71,30 @@ def set_blank(page: int, source: Path) -> Path:
         raise ValidationError("Бланка PDF ёки расм бўлиши керак")
     if not source.exists():
         raise ValidationError("Бланка файли топилмади")
-    clear_blank(page)
-    target = folder() / f"page{page}{source.suffix.lower()}"
+    clear_blank(page, kit)
+    target = folder(kit) / f"page{page}{source.suffix.lower()}"
     shutil.copyfile(source, target)
-    log.info("МЕДКНИЖКА: %d-бет бланкаси юкланди", page)
+    log.info("МЕДКНИЖКА: «%s» — %d-бет бланкаси юкланди", _kit(kit), page)
     return target
 
 
-def clear_blank(page: int) -> None:
-    found = blank_of(page)
+def clear_blank(page: int, kit: str = DEFAULT_KIT) -> None:
+    found = blank_of(page, kit)
     if found is not None:
         found.unlink(missing_ok=True)
 
 
 # ------------------------------------------------------------ the number
+def _root() -> Path:
+    """What both kits share: the numbering and the arrangement."""
+    made = paths.user_templates_dir() / SECTION
+    made.mkdir(parents=True, exist_ok=True)
+    return made
+
+
 def next_number() -> str:
     """The booklet number the office is up to — «» until it types one."""
-    store = folder() / _COUNTER
+    store = _root() / _COUNTER
     if not store.exists():
         return ""
     try:
@@ -94,12 +114,14 @@ def remember_number(used: str) -> None:
     if not used:
         return
     following = str(int(used) + 1).zfill(len(used)) if used.isdigit() else used
-    (folder() / _COUNTER).write_text(
+    (_root() / _COUNTER).write_text(
         json.dumps({"next": following}, ensure_ascii=False), "utf-8")
 
 
 # ------------------------------------------------------------ the layout
 def load_layout() -> dict:
+    """ONE arrangement for both kits: the office said the blanks differ but
+    every mark sits in the same place, so it is dragged once."""
     from src.services import blank_layout
 
     return blank_layout.load(SECTION, SECTION)
@@ -121,7 +143,7 @@ class MedKnigaResult:
 
 
 class MedKnigaService:
-    def generate(self, data: MedKnigaData,
+    def generate(self, data: MedKnigaData, kit: str = DEFAULT_KIT,
                  output_dir: Path | None = None) -> MedKnigaResult:
         if not (data.surname or "").strip():
             raise ValidationError("Фамилия керак — ҳужжатни ўқитинг")
@@ -129,7 +151,7 @@ class MedKnigaService:
             raise ValidationError("Кўрик санасини белгиланг")
         if not (data.number or "").strip():
             raise ValidationError("Китоб рақамини киритинг")
-        data.blanks = blanks()
+        data.blanks = blanks(kit)
         data.layout = load_layout()
         pdf = render(data)
 
@@ -143,8 +165,8 @@ class MedKnigaService:
             counter += 1
         target.write_bytes(pdf)
         remember_number(data.number)
-        log.info("МЕДКНИЖКА: %s — № %s, %s", data.surname, data.number,
-                 data.exam_date)
+        log.info("МЕДКНИЖКА: %s — «%s», № %s, %s", data.surname,
+                 KITS[_kit(kit)], data.number, data.exam_date)
         return MedKnigaResult(pdf_path=target, surname=data.surname,
                               number=data.number, exam_date=data.exam_date,
                               expires=data.expires())

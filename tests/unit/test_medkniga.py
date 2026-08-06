@@ -26,6 +26,7 @@ from src.pdf.medkniga_spec import (
     ALL_SLOTS,
     BLUE,
     EXAM_KEYS,
+    IMG_KEYS,
     NUMBER_KEYS,
     PAGE_H,
     PAGE_W,
@@ -196,6 +197,78 @@ def test_a_blank_is_optional_and_replaceable(tmp_path) -> None:
         set_blank(9, scan)
     with pytest.raises(ValidationError):
         set_blank(1, tmp_path / "nope.txt")
+
+
+def test_the_two_kits_keep_their_own_blanks_but_share_everything_else(
+        tmp_path) -> None:
+    """The office's own words: «бланкалари бошқа-бошқа, лекин текст, расм —
+    ҳаммаси бир хил жойлашсин». So the blanks are per kit and the
+    arrangement and the numbering are not."""
+    from src.services.medkniga_service import (
+        MedKnigaService,
+        blanks,
+        load_layout,
+        next_number,
+        save_layout,
+        set_blank,
+    )
+
+    scan = tmp_path / "page1.pdf"
+    with fitz.open() as doc:
+        doc.new_page(width=PAGE_W, height=PAGE_H)
+        doc.save(str(scan))
+    set_blank(1, scan, "moskva")
+    assert blanks("moskva").keys() == {1}
+    assert blanks("oblast") == {}, "бир комплект бланкаси бошқасига ўтган"
+
+    # …but one arrangement serves both, and so does the numbering
+    save_layout({"fields": {"surname": [0.20, 0.30, 0.02]}})
+    assert load_layout()["fields"]["surname"] == [0.20, 0.30, 0.02]
+    MedKnigaService().generate(_data(), "oblast", output_dir=tmp_path)
+    assert next_number() == "8832889"
+    MedKnigaService().generate(_data(), "moskva", output_dir=tmp_path)
+    assert next_number() == "8832889", "рақам комплектга боғланиб қолган"
+
+
+@pytest.mark.parametrize("said, folder_name", [
+    ("moskva", "moskva"), ("oblast", "oblast"),
+    ("Москва", "moskva"), ("Московская область", "oblast"),
+    ("", "moskva"), ("нима эмас", "moskva"),
+])
+def test_the_kit_is_recognised_however_it_was_named(said, folder_name) -> None:
+    """The bot asks for it in words; the desktop passes a key. Both land in
+    the same place, and anything unrecognised falls back to Москва."""
+    from src.services.medkniga_service import folder
+
+    assert folder(said).name == folder_name
+
+
+def test_the_photo_and_the_signature_are_dragged_like_anything_else() -> None:
+    """The office asked to place the signature itself: both pictures are
+    «page, left, BOTTOM, height», the way the editor drags a picture."""
+    from src.pdf.medkniga_renderer import placed_images
+
+    default = placed_images({})
+    assert set(default) == set(IMG_KEYS)
+    assert default["img_photo"][0] == 1 and default["img_sign"][0] == 1
+    moved = placed_images({"images": {"img_sign": [1, 0.42, 0.81, 0.05]}})
+    assert moved["img_sign"] == (1, 0.42, 0.81, 0.05)
+    # what was not moved keeps its measured place
+    assert moved["img_photo"] == default["img_photo"]
+
+
+def test_the_signature_really_reaches_the_page(tmp_path) -> None:
+    """Before this it was accepted and then never drawn."""
+    png = (tmp_path / "sign.png")
+    with fitz.open() as doc:
+        page = doc.new_page(width=120, height=40)
+        page.draw_line(fitz.Point(4, 30), fitz.Point(116, 12))
+        page.get_pixmap(dpi=72).save(str(png))
+    made = render(_data(signature_png=png.read_bytes(),
+                        photo_png=png.read_bytes()))
+    with fitz.open("pdf", made) as doc:
+        assert len(doc[0].get_images(full=True)) == 2, "имзо ёки расм тушмади"
+        assert not doc[1].get_images(full=True)
 
 
 def test_a_dragged_mark_really_moves(tmp_path) -> None:

@@ -25,12 +25,12 @@ from src.pdf.medkniga_spec import (
     ALL_SLOTS,
     EXAM_KEYS,
     HASH_KEYS,
+    IMG_DEFAULTS,
     MONTHS_SHORT,
     NUMBER_KEYS,
     PAGE_H,
     PAGE_W,
     PAGES,
-    PHOTO,
     Slot,
 )
 
@@ -140,35 +140,39 @@ def placed(layout: dict) -> dict[str, Slot]:
     return out
 
 
-def photo_box(layout: dict) -> tuple[float, float, float, float]:
-    """Where the worker's photograph goes, after any dragging."""
-    spot = ((layout or {}).get("images") or {}).get("photo")
-    if spot and len(spot) == 4:
-        return tuple(float(v) for v in spot)      # type: ignore[return-value]
-    return PHOTO
+def placed_images(layout: dict) -> dict[str, tuple[int, float, float, float]]:
+    """The photograph and the signature: «page, left, BOTTOM, height».
 
-
-def signature_box(layout: dict) -> tuple[float, float, float, float] | None:
-    """Where the WORKER signs his own page, once the office has placed it."""
-    spot = ((layout or {}).get("images") or {}).get("signature")
-    if spot and len(spot) == 4:
-        return tuple(float(v) for v in spot)      # type: ignore[return-value]
-    return None
+    Kept the way the editor drags a picture — by its left edge and its
+    bottom — so the office moves both with the mouse like any other mark.
+    """
+    moved = (layout or {}).get("images") or {}
+    out: dict[str, tuple[int, float, float, float]] = {}
+    for key, spot in IMG_DEFAULTS.items():
+        got = moved.get(key)
+        if got and len(got) == 4:
+            out[key] = (int(got[0]), float(got[1]), float(got[2]),
+                        float(got[3]))
+        else:
+            out[key] = spot
+    return out
 
 
 def render(data: MedKnigaData) -> bytes:
     """The four pages, ready for the printer."""
     text = values(data)
     slots = placed(data.layout)
+    pictures = placed_images(data.layout)
     doc = fitz.open()
     try:
         for number in range(1, PAGES + 1):
             page = doc.new_page(width=PAGE_W, height=PAGE_H)
             _lay_blank(page, data.blanks.get(number))
-            if number == 1:
-                _lay_image(page, data.photo_png, photo_box(data.layout))
-                _lay_image(page, data.signature_png,
-                           signature_box(data.layout))
+            for key, png in (("img_photo", data.photo_png),
+                             ("img_sign", data.signature_png)):
+                where = pictures[key]
+                if png and where[0] == number:
+                    _lay_image(page, png, where[1:])
             for key, slot in slots.items():
                 if slot.page == number:
                     _write(page, slot, text.get(key, ""))
@@ -203,12 +207,25 @@ def _lay_blank(page, blank: Path | None) -> None:
     page.insert_image(page.rect, filename=str(blank))
 
 
-def _lay_image(page, png: bytes | None, box) -> None:
-    if not png or box is None:
+def _lay_image(page, png: bytes | None, where) -> None:
+    """One picture, by its left edge, its BOTTOM and its height.
+
+    The width follows the picture's own shape, so a signature photographed
+    wide stays wide and one photographed narrow stays narrow — the office
+    sets how TALL it is and never has to think about the rest.
+    """
+    if not png or where is None:
         return
-    x0, y0, x1, y1 = box
-    page.insert_image(fitz.Rect(x0 * PAGE_W, y0 * PAGE_H,
-                                x1 * PAGE_W, y1 * PAGE_H),
+    left, bottom, height = where
+    try:
+        shape = fitz.Pixmap(png)
+        ratio = (shape.width / shape.height) if shape.height else 1.0
+    except Exception:                             # noqa: BLE001
+        ratio = 1.0
+    top = (bottom - height) * PAGE_H
+    width = height * PAGE_H * ratio
+    page.insert_image(fitz.Rect(left * PAGE_W, top,
+                                left * PAGE_W + width, bottom * PAGE_H),
                       stream=png, keep_proportion=True)
 
 

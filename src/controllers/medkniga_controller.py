@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from src.ocr.service import OcrService
+from src.pdf.medkniga_spec import DEFAULT_KIT, KITS
 from src.services import medkniga_service
 from src.services.medkniga_service import MedKnigaResult, MedKnigaService
 
@@ -20,16 +21,20 @@ class MedKnigaController:
 
     # -------------------------------------------------------------- blanks
     @staticmethod
-    def blanks() -> dict[int, Path]:
-        return medkniga_service.blanks()
+    def kits() -> dict[str, str]:
+        return dict(KITS)
 
     @staticmethod
-    def set_blank(page: int, source: Path) -> Path:
-        return medkniga_service.set_blank(page, source)
+    def blanks(kit: str = DEFAULT_KIT) -> dict[int, Path]:
+        return medkniga_service.blanks(kit)
 
     @staticmethod
-    def clear_blank(page: int) -> None:
-        medkniga_service.clear_blank(page)
+    def set_blank(page: int, source: Path, kit: str = DEFAULT_KIT) -> Path:
+        return medkniga_service.set_blank(page, source, kit)
+
+    @staticmethod
+    def clear_blank(page: int, kit: str = DEFAULT_KIT) -> None:
+        medkniga_service.clear_blank(page, kit)
 
     # -------------------------------------------------------------- layout
     @staticmethod
@@ -57,6 +62,7 @@ class MedKnigaController:
         photo_png: bytes | None = None,
         signature_png: bytes | None = None,
         is_patent: bool = False,
+        kit: str = DEFAULT_KIT,
     ) -> MedKnigaResult:
         """Read the passport (or the patent) and print the four pages."""
         if is_patent:
@@ -68,10 +74,10 @@ class MedKnigaController:
             passport, patent, position=position, city=city, number=number,
             exam_date=exam_date, photo_png=photo_png,
             signature_png=signature_png)
-        return self._service.generate(data)
+        return self._service.generate(data, kit)
 
-    def generate(self, data) -> MedKnigaResult:
-        return self._service.generate(data)
+    def generate(self, data, kit: str = DEFAULT_KIT) -> MedKnigaResult:
+        return self._service.generate(data, kit)
 
     @staticmethod
     def read_image(path: Path) -> bytes:

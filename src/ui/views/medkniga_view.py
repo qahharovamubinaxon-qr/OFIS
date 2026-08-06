@@ -75,6 +75,18 @@ class MedKnigaView(QWidget):
         note.setStyleSheet("color:#8a94a3;")
         root.addWidget(note)
 
+        kit_row = QHBoxLayout()
+        kit_row.addWidget(QLabel("Комплект:"))
+        self._kit = QComboBox()
+        for key, label in self._c.kits().items():
+            self._kit.addItem(label, key)
+        self._kit.setToolTip("Бланкалари бошқа-бошқа; матн, расм ва имзо "
+                             "иккисида ҳам бир хил жойда туради")
+        self._kit.currentIndexChanged.connect(self._kit_chosen)
+        kit_row.addWidget(self._kit, stretch=1)
+        kit_row.addStretch(2)
+        root.addLayout(kit_row)
+
         docs = QHBoxLayout()
         self._photo = DropZone("🖼", "Ишчи расми")
         docs.addWidget(self._photo)
@@ -155,6 +167,19 @@ class MedKnigaView(QWidget):
     def _when(self) -> date:
         return self._date.date().toPython()
 
+    def _kit_key(self) -> str:
+        return str(self._kit.currentData() or "moskva")
+
+    def _kit_chosen(self) -> None:
+        """The kit says which town the holder's page carries by default."""
+        self._city.setCurrentText(self._kit.currentText())
+        have = len(self._c.blanks(self._kit_key()))
+        self._status.setText(
+            f"«{self._kit.currentText()}» танланди — {have}/{PAGES} бланка "
+            "юкланган." if have else
+            f"«{self._kit.currentText()}» танланди — бланкаси йўқ, оқ "
+            "саҳифага чиқади.")
+
     def _show_dates(self) -> None:
         from src.pdf.medkniga_renderer import a_year_on
 
@@ -165,13 +190,15 @@ class MedKnigaView(QWidget):
 
     # ------------------------------------------------------------- blanks
     def _blanks(self) -> None:
-        have = self._c.blanks()
+        kit = self._kit_key()
+        have = self._c.blanks(kit)
         lines = "\n".join(
             f"  {p}-бет: {'✅ ' + have[p].name if p in have else '— йўқ (оқ)'}"
             for p in range(1, PAGES + 1))
         box = QMessageBox(self)
-        box.setWindowTitle("Бланкалар")
-        box.setText(f"Ҳозирги ҳолат:\n{lines}\n\nҚайси бетни юкласиз?")
+        box.setWindowTitle(f"Бланкалар — {self._kit.currentText()}")
+        box.setText(f"«{self._kit.currentText()}» комплекти:\n{lines}\n\n"
+                    "Қайси бетни юкласиз?")
         buttons = {}
         for page in range(1, PAGES + 1):
             buttons[box.addButton(f"{page}-бет",
@@ -183,22 +210,26 @@ class MedKnigaView(QWidget):
         picked = box.clickedButton()
         if picked is clear:
             for page in range(1, PAGES + 1):
-                self._c.clear_blank(page)
-            self._status.setText("✅ Бланкалар тозаланди — оқ саҳифага чиқади.")
+                self._c.clear_blank(page, kit)
+            self._status.setText(
+                f"✅ «{self._kit.currentText()}» бланкалари тозаланди — оқ "
+                "саҳифага чиқади.")
             return
         page = buttons.get(picked)
         if page is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, f"{page}-бет бланкаси", "", "Бланка (*.pdf *.png *.jpg *.jpeg)")
+            self, f"{self._kit.currentText()} — {page}-бет бланкаси", "",
+            "Бланка (*.pdf *.png *.jpg *.jpeg)")
         if not path:
             return
         try:
-            self._c.set_blank(page, Path(path))
+            self._c.set_blank(page, Path(path), kit)
         except Exception as error:                # noqa: BLE001
             self._failed(error)
             return
-        self._status.setText(f"✅ {page}-бет бланкаси юкланди.")
+        self._status.setText(
+            f"✅ «{self._kit.currentText()}» — {page}-бет бланкаси юкланди.")
 
     def _pick_signature(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -217,8 +248,10 @@ class MedKnigaView(QWidget):
         from src.pdf.medkniga_renderer import (
             MedKnigaData,
             placed,
+            placed_images,
             render,
         )
+        from src.pdf.medkniga_spec import IMG_LABELS
         from src.pdf.trud8_fields import Field
         from src.ui.widgets.field_editor import FieldEditor
 
@@ -229,7 +262,7 @@ class MedKnigaView(QWidget):
             birth_year="1992", city=self._city.currentText(),
             position=self._trade.currentText() or "Помощник повара",
             number=self._number.text() or "8832888", exam_date=self._when(),
-            blanks=self._c.blanks(), layout={})
+            blanks=self._c.blanks(self._kit_key()), layout={})
         try:
             with fitz.open("pdf", render(sample)) as doc:
                 pages = [p.get_pixmap(dpi=52).tobytes("png") for p in doc]
@@ -259,16 +292,37 @@ class MedKnigaView(QWidget):
                 bold=bool(extra.get("bold", False)),
                 font=str(extra.get("font") or "Arial")))
 
+        # the photograph and the signature are dragged like anything else,
+        # and the REAL picture is what is dragged — so what is on screen is
+        # the size and the place they will print at
+        pictures: dict[str, bytes] = {}
+        if self._photo.path is not None:
+            pictures["img_photo"] = Path(self._photo.path).read_bytes()
+        if self._signature is not None and self._signature.exists():
+            pictures["img_sign"] = self._signature.read_bytes()
+        for key, (page_no, x, bottom, height) in placed_images(layout).items():
+            catalogue[key] = IMG_LABELS[key]
+            samples[key] = IMG_LABELS[key]
+            fields.append(Field(key=key, page=page_no, x=x, baseline=bottom,
+                                size=height, colour=(0.0, 0.0, 0.0),
+                                bold=False, font="Arial"))
+
         dialog = FieldEditor(pages, fields, title="Мед книжка", parent=self,
                              catalogue=catalogue, samples=samples,
-                             frozen=set(ALL_SLOTS))
+                             frozen=set(ALL_SLOTS) | set(IMG_LABELS),
+                             images=pictures)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         new_fields: dict[str, list[float]] = {}
         new_styles: dict[str, dict] = {}
         new_extra: list[dict] = []
+        new_images: dict[str, list] = {}
         for made in dialog.fields():
-            if made.key in ALL_SLOTS:
+            if made.key in IMG_LABELS:
+                new_images[made.key] = [made.page, round(made.x, 5),
+                                        round(made.baseline, 5),
+                                        round(made.size, 5)]
+            elif made.key in ALL_SLOTS:
                 new_fields[made.key] = [round(made.x, 5),
                                         round(made.baseline, 5),
                                         round(made.size, 5)]
@@ -281,10 +335,10 @@ class MedKnigaView(QWidget):
                     "x": round(made.x, 5), "baseline": round(made.baseline, 5),
                     "size": round(made.size, 5), "font": made.font,
                     "bold": made.bold, "colour": list(made.colour)})
-        kept = dict(layout.get("images") or {})
         self._c.save_layout({"fields": new_fields, "styles": new_styles,
-                             "extra": new_extra, "images": kept})
-        self._status.setText("✅ Жойлар ва созламалар сақланди.")
+                             "extra": new_extra, "images": new_images})
+        self._status.setText("✅ Жойлар ва созламалар сақланди — иккала "
+                             "комплектга ҳам тегишли.")
 
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
@@ -312,11 +366,13 @@ class MedKnigaView(QWidget):
         self._run.setEnabled(False)
         self._progress.start("Ҳужжат ўқилиб, тўрт бет тайёрланаяпти…")
 
+        kit = self._kit_key()
+
         def work():
             return self._c.generate_from_images(
                 document, position=position, city=city, number=number,
                 exam_date=when, photo_png=photo, signature_png=signature,
-                is_patent=is_patent)
+                is_patent=is_patent, kit=kit)
 
         run_async(work, on_success=self._done, on_error=self._failed)
 

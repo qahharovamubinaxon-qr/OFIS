@@ -49,9 +49,30 @@ class Slot:
     label: str = ""
 
 
+#: The two kits the office keeps. Their BLANKS differ — one booklet is
+#: printed for Москва and another for the область — but every mark sits in
+#: the same place on both, so the arrangement below serves them both and
+#: is dragged once.
+KITS: dict[str, str] = {"moskva": "Москва",
+                        "oblast": "Московская область"}
+DEFAULT_KIT = "moskva"
+
 #: ---- 1-бет: the holder's own page ------------------------------------
 #: The photo box, as the office pastes it.
 PHOTO = (0.5440, 0.2437, 0.7342, 0.3860)
+
+#: The two pictures the office puts on the first page, as things it can
+#: DRAG: «x = left edge, baseline = BOTTOM edge, size = height», the way
+#: the editor already handles a picture in МВД РЕГИСТРАЦИЯ. The worker's
+#: photograph starts in the booklet's own frame; his signature starts
+#: under the typed block, and the office moves it where its own booklet
+#: prints the line.
+IMG_KEYS = ("img_photo", "img_sign")
+IMG_LABELS = {"img_photo": "🖼 ИШЧИ РАСМИ", "img_sign": "✍ ИШЧИ ИМЗОСИ"}
+IMG_DEFAULTS: dict[str, tuple[int, float, float, float]] = {
+    "img_photo": (1, 0.5440, 0.3860, 0.1423),
+    "img_sign": (1, 0.3600, 0.7850, 0.0330),
+}
 
 PAGE1: dict[str, Slot] = {
     "exam_date": Slot(1, 0.2573, 0.4850, 0.0173, BLUE, TYPEWRITER, True, 0,

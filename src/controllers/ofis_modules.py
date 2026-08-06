@@ -202,7 +202,8 @@ def _run_medkniga(ctx: RunContext, state: dict) -> list[Path]:
         city=str(answers.get("city") or "Москва").strip() or "Москва",
         number=str(answers.get("number") or "").strip(),
         exam_date=answers.get("exam_date") or date.today(),
-        photo_png=images[1] if len(images) > 1 else None)
+        photo_png=images[1] if len(images) > 1 else None,
+        kit=str(answers.get("kit") or "Москва"))
     ctx.note(f"№ {result.number} · тугаши {result.expires}")
     return [result.pdf_path]
 
@@ -1034,7 +1035,9 @@ MODULES: tuple[Module, ...] = (
                      "(масалан 150000,150000,160000):", kind="text"))),
     Module("medkniga", "🩺 МЕД КНИЖКА", _run_medkniga,
            photo_prompt=_PORTRAIT_PROMPT, photo_labels=_PORTRAIT_LABELS,
-           asks=(Ask("exam_date", "Кўрик санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
+           asks=(Ask("kit", "Комплект — «Москва» ёки «Московская область»:",
+                     kind="text"),
+                 Ask("exam_date", "Кўрик санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("number", "Китоб рақами (китобнинг ўзидан):", kind="text"),
                  Ask("position", "Лавозими (масалан Помощник повара):",
                      kind="text"),
