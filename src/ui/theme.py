@@ -53,6 +53,7 @@ PAPER: dict[str, str] = {
     "nav.sertifikat": "rose",      # рус тили сертификати — малина гильош
     "nav.dover": "brass",          # нотариус — муҳр
     "nav.perevod": "brass",
+    "nav.uzbspravka": "sage",      # ўзбек давлат портали — яшил муҳр
 }
 
 #: The text colours each theme sets its own ink in, for the parts of the window

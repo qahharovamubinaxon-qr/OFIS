@@ -43,6 +43,8 @@ SHEET_NAMES = {
     3: "Оила ҳолати — яшаш жойи ва болалар мактаби",
     4: "Ҳақиқатан ишлаётгани ҳақида",
 }
+#: The same four, short enough to sit beside a tick box.
+SHEET_SHORT = {1: "хулқ-атвор", 2: "маош", 3: "оила", 4: "иш жойи"}
 _PICTURES = (".png", ".jpg", ".jpeg")
 _SHEET_KINDS = (".pdf", *_PICTURES)
 #: How finely the certificate is photographed for the copy the QR opens —

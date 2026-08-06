@@ -166,9 +166,14 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-#: Nothing is left off any more — АЛПИНИСТ signs off a photographed sheet
-#: of paper on the phone instead of the program's mouse pad.
-_NOT_ON_THE_PHONE: set[str] = set()
+#: АЛПИНИСТ signs off a photographed sheet of paper on the phone instead of
+#: the program's mouse pad, so it is on there too. One section is not:
+#:
+#: **УЗБ СПРАВКАЛАР** needs four uploaded scans and a per-firm seal before it
+#: can print anything, and every certificate is code-gated — the codes go on
+#: the paper the office hands over. Until the bot has a way to hold all that,
+#: it stays on the desk.
+_NOT_ON_THE_PHONE: set[str] = {"nav.uzbspravka"}
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:

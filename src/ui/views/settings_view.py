@@ -291,6 +291,28 @@ class SettingsView(QWidget):
         root.addWidget(qr_card)
         root.addStretch(1)
 
+        # -- УЗБ СПРАВКАЛАР: qrixtools -------------------------------------
+        from src.services import qrixtools
+
+        gate_card = Card("🔐", f"{qrixtools.SETTING_LABEL} — кодли ҳавола",
+                         "УЗБ справканинг QR'и шу сайт орқали ўтади: сайт "
+                         "аввал пастдаги 4 хонали кодни сўрайди, кейин "
+                         "справкани кўрсатади. Калит қоғозга ҳам, логга ҳам "
+                         "ёзилмайди.")
+        gf = gate_card.form()
+        self._qrix_key = QLineEdit(
+            str(self._settings.get(qrixtools.SETTING_KEY, "") or ""))
+        self._qrix_key.setPlaceholderText(
+            f"{qrixtools.DOMAIN} дан олинган калит")
+        self._qrix_key.setEchoMode(QLineEdit.EchoMode.Password)
+        gf.addRow("API калит:", self._qrix_key)
+        save_gate = QPushButton("Saqlash")
+        save_gate.setObjectName("primaryButton")
+        save_gate.clicked.connect(self._save_qrixtools)
+        gate_card.add(_right(save_gate))
+        root.addWidget(gate_card)
+        root.addStretch(1)
+
         # -- перевод certification names ----------------------------------
         from src.controllers.ofis_modules import (
             PEREVOD_CITY_KEY,
@@ -912,6 +934,13 @@ class SettingsView(QWidget):
 
         self._settings.set(KEY_IMGBB, self._imgbb_key.text().strip())
         QMessageBox.information(self, "OK", "imgbb калити сақланди.")
+
+    def _save_qrixtools(self) -> None:
+        from src.services import qrixtools
+
+        self._settings.set(qrixtools.SETTING_KEY, self._qrix_key.text().strip())
+        QMessageBox.information(
+            self, "OK", f"{qrixtools.SETTING_LABEL} калити сақланди.")
 
     def _save_webapp(self) -> None:
         from src.controllers.telegram_bot import KEY_WEBAPP

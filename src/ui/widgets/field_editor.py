@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -325,13 +326,24 @@ class FieldEditor(QDialog):
 
     def _add(self) -> None:
         offered = {k: v for k, v in self._cat.items() if k not in self._frozen}
+        if not offered:
+            # a section may hand in a catalogue where every value is the
+            # blank's own — there is then nothing to add, and asking with an
+            # empty list used to walk off the end of the list below
+            QMessageBox.information(
+                self, "Матн қўшиш",
+                "Бу бланкада қўшиладиган матн йўқ — бор майдонларни суриш, "
+                "катта-кичик қилиш ва бўяш мумкин.")
+            return
         labels = list(offered.values())
         picked, ok = QInputDialog.getItem(
             self, "Матн маъноси", "Бу матн ишчининг қайси маълумоти?",
             labels, 0, False)
         if not ok:
             return
-        key = [k for k, v in offered.items() if v == picked][0]
+        key = next((k for k, v in offered.items() if v == picked), "")
+        if not key:
+            return
         model = self._drafts[self._picked()].field if self._picked() is not None \
             else None
         made = Field(key=key, page=self._page)

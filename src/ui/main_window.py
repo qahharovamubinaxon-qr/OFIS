@@ -58,6 +58,8 @@ _NAV = [
     (None, "nav.ndfl2", "2 НДФЛ", "Даромад справкаси → PDF", "💰"),
     (None, "nav.medkniga", "МЕД КНИЖКА",
      "Тиббий кўрик учун 4 бет → PDF", "🩺"),
+    (None, "nav.uzbspravka", "УЗБ СПРАВКАЛАР",
+     "Ўзбекистондан 4 справка — кодли QR билан → PDF", "🇺🇿"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -224,6 +226,17 @@ class MainWindow(QMainWindow):
             return MedKnigaView(MedKnigaController(
                 self._container.resolve(OcrService),
                 MedKnigaService(),
+            ))
+        if key == "nav.uzbspravka":
+            from src.controllers.uzbspravka_controller import (
+                UzbSpravkaController,
+            )
+            from src.services.uzbspravka_service import UzbSpravkaService
+            from src.ui.views.uzbspravka_view import UzbSpravkaView
+
+            return UzbSpravkaView(UzbSpravkaController(
+                self._container.resolve(OcrService),
+                UzbSpravkaService(self._settings),
             ))
         if key == "nav.chek":
             from src.controllers.chek_controller import ChekController
