@@ -31,6 +31,10 @@ from src.pdf.trud8_fields import CATALOGUE, Field
 from src.ui.widgets.layout_editor import Item, _Canvas
 
 WEIGHTS = ("Юпқа (оддий)", "Қалин (жирний)")
+#: Which way a text lies. Blanks that are written up their own edge — a
+#: медкнижка has several — are turned here rather than in code.
+TURNS: tuple[tuple[str, int], ...] = (
+    ("↔ Ётиқ", 0), ("↑ Тик (пастдан)", 90), ("↓ Тик (тепадан)", 270))
 
 
 class _PickCanvas(_Canvas):
@@ -147,6 +151,14 @@ class FieldEditor(QDialog):
         self._weight.addItems(WEIGHTS)
         self._weight.currentIndexChanged.connect(self._set_weight)
         style.addWidget(self._weight)
+        style.addWidget(QLabel("Ҳолати:"))
+        self._turn = QComboBox()
+        for label, degrees in TURNS:
+            self._turn.addItem(label, degrees)
+        self._turn.setToolTip("Матн ётиб турадими ёки бланканинг четида "
+                              "тик турадими")
+        self._turn.currentIndexChanged.connect(self._set_turn)
+        style.addWidget(self._turn)
         style.addWidget(QLabel("Шрифт:"))
         self._font = QComboBox()
         self._font.addItems(families())
@@ -261,11 +273,13 @@ class FieldEditor(QDialog):
         """The bar always shows the picked text's own settings."""
         self._filling = True
         enabled = index is not None
-        for widget in (self._colour, self._weight, self._font):
+        for widget in (self._colour, self._weight, self._turn, self._font):
             widget.setEnabled(enabled)
         if enabled:
             field = self._drafts[index].field
             self._weight.setCurrentIndex(1 if field.bold else 0)
+            turned = self._turn.findData(getattr(field, "rotate", 0))
+            self._turn.setCurrentIndex(turned if turned >= 0 else 0)
             at = self._font.findText(field.font)
             if at < 0:
                 self._font.insertItem(0, field.font)
@@ -300,6 +314,10 @@ class FieldEditor(QDialog):
     def _set_weight(self, index: int) -> None:
         if not self._filling:
             self._restyle(bold=index == 1)
+
+    def _set_turn(self, _index: int) -> None:
+        if not self._filling:
+            self._restyle(rotate=int(self._turn.currentData() or 0))
 
     def _set_font(self, _index: int) -> None:
         if not self._filling:

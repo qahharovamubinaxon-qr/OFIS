@@ -84,6 +84,39 @@ def clear_blank(page: int, kit: str = DEFAULT_KIT) -> None:
         found.unlink(missing_ok=True)
 
 
+# ------------------------------------------------------------- the seal
+def stamp() -> Path | None:
+    """The office's OWN seal, uploaded once and used for every worker.
+
+    Shared by both kits, like the arrangement: it is one firm with one
+    seal, whichever booklet its worker is given.
+    """
+    for suffix in (".png", ".jpg", ".jpeg"):
+        found = _root() / f"stamp{suffix}"
+        if found.exists():
+            return found
+    return None
+
+
+def set_stamp(source: Path) -> Path:
+    source = Path(source)
+    if source.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        raise ValidationError("Печать расм бўлиши керак (PNG яхши)")
+    if not source.exists():
+        raise ValidationError("Печать файли топилмади")
+    clear_stamp()
+    target = _root() / f"stamp{source.suffix.lower()}"
+    shutil.copyfile(source, target)
+    log.info("МЕДКНИЖКА: фирма печати юкланди")
+    return target
+
+
+def clear_stamp() -> None:
+    found = stamp()
+    if found is not None:
+        found.unlink(missing_ok=True)
+
+
 # ------------------------------------------------------------ the number
 def _root() -> Path:
     """What both kits share: the numbering and the arrangement."""
@@ -153,6 +186,10 @@ class MedKnigaService:
             raise ValidationError("Китоб рақамини киритинг")
         data.blanks = blanks(kit)
         data.layout = load_layout()
+        if data.stamp_png is None:
+            seal = stamp()
+            if seal is not None:
+                data.stamp_png = seal.read_bytes()
         pdf = render(data)
 
         target_dir = output_dir if output_dir is not None else (

@@ -36,6 +36,19 @@ class MedKnigaController:
     def clear_blank(page: int, kit: str = DEFAULT_KIT) -> None:
         medkniga_service.clear_blank(page, kit)
 
+    # ---------------------------------------------------------------- seal
+    @staticmethod
+    def stamp() -> Path | None:
+        return medkniga_service.stamp()
+
+    @staticmethod
+    def set_stamp(source: Path) -> Path:
+        return medkniga_service.set_stamp(source)
+
+    @staticmethod
+    def clear_stamp() -> None:
+        medkniga_service.clear_stamp()
+
     # -------------------------------------------------------------- layout
     @staticmethod
     def layout() -> dict:

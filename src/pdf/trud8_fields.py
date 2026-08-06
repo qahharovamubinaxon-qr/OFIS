@@ -97,6 +97,10 @@ class Field:
     #: the face by the name the computer knows it by — «Arial», «Calibri»…
     font: str = DEFAULT_FAMILY
     colour: tuple[float, float, float] = BLACK
+    #: 0 lying flat, 90 reading upwards, 270 reading downwards. Blanks with
+    #: writing up their edge — a медкнижка has several — are turned here
+    #: rather than being fixed in code.
+    rotate: int = 0
 
     def label(self) -> str:
         return CATALOGUE.get(self.key, self.key)

@@ -69,11 +69,13 @@ PHOTO = (0.5440, 0.2437, 0.7342, 0.3860)
 #: photograph starts in the booklet's own frame; his signature starts
 #: under the typed block, and the office moves it where its own booklet
 #: prints the line.
-IMG_KEYS = ("img_photo", "img_sign")
-IMG_LABELS = {"img_photo": "🖼 ИШЧИ РАСМИ", "img_sign": "✍ ИШЧИ ИМЗОСИ"}
+IMG_KEYS = ("img_photo", "img_sign", "img_stamp")
+IMG_LABELS = {"img_photo": "🖼 ИШЧИ РАСМИ", "img_sign": "✍ ИШЧИ ИМЗОСИ",
+              "img_stamp": "⬤ ФИРМА ПЕЧАТИ"}
 IMG_DEFAULTS: dict[str, tuple[int, float, float, float]] = {
     "img_photo": (1, 0.5440, 0.3860, 0.1423),
     "img_sign": (1, 0.3600, 0.7850, 0.0330),
+    "img_stamp": (1, 0.5600, 0.8400, 0.1000),
 }
 
 PAGE1: dict[str, Slot] = {

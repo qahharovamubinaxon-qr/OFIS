@@ -51,6 +51,7 @@ class MedKnigaView(QWidget):
         super().__init__()
         self._c = controller
         self._signature: Path | None = None
+        self._signature_png: bytes | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -133,10 +134,19 @@ class MedKnigaView(QWidget):
                           "оқ саҳифага чиқади")
         blanks.clicked.connect(self._blanks)
         tools.addWidget(blanks)
-        signature = QPushButton("✍ Имзо")
-        signature.setToolTip("Ишчининг имзоси — 1-бетга тушади")
-        signature.clicked.connect(self._pick_signature)
+        signature = QPushButton("✍ Имзо чизиш")
+        signature.setToolTip("Ишчи шу ерда имзо қўяди — 1-бетга тушади")
+        signature.clicked.connect(self._draw_signature)
         tools.addWidget(signature)
+        signature_file = QPushButton("📎 Имзо расми")
+        signature_file.setToolTip("Ёки имзонинг тайёр расмини юкланг")
+        signature_file.clicked.connect(self._pick_signature)
+        tools.addWidget(signature_file)
+        seal = QPushButton("⬤ Печать")
+        seal.setToolTip("Фирманинг ўз печати — бир марта юкланади ва ҳар "
+                        "ишчига ишлатилади")
+        seal.clicked.connect(self._pick_stamp)
+        tools.addWidget(seal)
         arrange = QPushButton("📐 Созлаш")
         arrange.setToolTip("Матнларни суриш, катта-кичик қилиш, ранг ва "
                            "шрифт танлаш, матн қўшиш")
@@ -231,6 +241,21 @@ class MedKnigaView(QWidget):
         self._status.setText(
             f"✅ «{self._kit.currentText()}» — {page}-бет бланкаси юкланди.")
 
+    def _draw_signature(self) -> None:
+        """The worker signs here, with the mouse or a finger."""
+        from PySide6.QtWidgets import QDialog
+
+        from src.ui.widgets.signature_pad import SignaturePad
+
+        pad = SignaturePad(self)
+        pad.set_ink((0, 14, 168))            # the booklet's own blue
+        if pad.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._signature_png = pad.signature_png()
+        self._signature = None
+        self._status.setText("✅ Имзо олинди — жойини «📐 Созлаш» да "
+                             "белгиланг.")
+
     def _pick_signature(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Ишчининг имзоси (шаффоф PNG яхши)", "",
@@ -238,7 +263,40 @@ class MedKnigaView(QWidget):
         if not path:
             return
         self._signature = Path(path)
+        self._signature_png = Path(path).read_bytes()
         self._status.setText(f"✅ Имзо танланди: {Path(path).name} — жойини "
+                             "«📐 Созлаш» да белгиланг.")
+
+    def _pick_stamp(self) -> None:
+        """The firm's own seal — uploaded once, used for every worker."""
+        have = self._c.stamp()
+        if have is not None:
+            box = QMessageBox(self)
+            box.setWindowTitle("Печать")
+            box.setText(f"Ҳозирги печать: {have.name}\n\nНима қиламиз?")
+            change = box.addButton("Алмаштириш",
+                                   QMessageBox.ButtonRole.ActionRole)
+            drop = box.addButton("🗑 Ўчириш",
+                                 QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Ёпиш", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is drop:
+                self._c.clear_stamp()
+                self._status.setText("✅ Печать ўчирилди.")
+                return
+            if box.clickedButton() is not change:
+                return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Фирманинг печати (шаффоф PNG яхши)", "",
+            "Расм (*.png *.jpg *.jpeg)")
+        if not path:
+            return
+        try:
+            self._c.set_stamp(Path(path))
+        except Exception as error:                # noqa: BLE001
+            self._failed(error)
+            return
+        self._status.setText(f"✅ Печать юкланди: {Path(path).name} — жойини "
                              "«📐 Созлаш» да белгиланг.")
 
     # ------------------------------------------------------------ arrange
@@ -277,7 +335,7 @@ class MedKnigaView(QWidget):
         fields = [
             Field(key=key, page=slot.page, x=slot.x, baseline=slot.baseline,
                   size=slot.size, colour=tuple(slot.colour)[:3],
-                  bold=slot.bold, font=slot.family)
+                  bold=slot.bold, font=slot.family, rotate=slot.rotate)
             for key, slot in slots.items()]
         for index, extra in enumerate(layout.get("extra") or []):
             key = f"extra{index}"
@@ -290,7 +348,8 @@ class MedKnigaView(QWidget):
                 size=float(extra.get("size", 0.013)),
                 colour=tuple(extra.get("colour") or (0.0, 0.0, 0.0))[:3],
                 bold=bool(extra.get("bold", False)),
-                font=str(extra.get("font") or "Arial")))
+                font=str(extra.get("font") or "Arial"),
+                rotate=int(extra.get("rotate", 0))))
 
         # the photograph and the signature are dragged like anything else,
         # and the REAL picture is what is dragged — so what is on screen is
@@ -298,8 +357,11 @@ class MedKnigaView(QWidget):
         pictures: dict[str, bytes] = {}
         if self._photo.path is not None:
             pictures["img_photo"] = Path(self._photo.path).read_bytes()
-        if self._signature is not None and self._signature.exists():
-            pictures["img_sign"] = self._signature.read_bytes()
+        if self._signature_png:
+            pictures["img_sign"] = self._signature_png
+        seal = self._c.stamp()
+        if seal is not None:
+            pictures["img_stamp"] = seal.read_bytes()
         for key, (page_no, x, bottom, height) in placed_images(layout).items():
             catalogue[key] = IMG_LABELS[key]
             samples[key] = IMG_LABELS[key]
@@ -328,13 +390,15 @@ class MedKnigaView(QWidget):
                                         round(made.size, 5)]
                 new_styles[made.key] = {"font": made.font, "bold": made.bold,
                                         "colour": list(made.colour),
+                                        "rotate": made.rotate,
                                         "size": round(made.size, 5)}
             else:
                 new_extra.append({
                     "text": samples.get(made.key, "матн"), "page": made.page,
                     "x": round(made.x, 5), "baseline": round(made.baseline, 5),
                     "size": round(made.size, 5), "font": made.font,
-                    "bold": made.bold, "colour": list(made.colour)})
+                    "bold": made.bold, "rotate": made.rotate,
+                    "colour": list(made.colour)})
         self._c.save_layout({"fields": new_fields, "styles": new_styles,
                              "extra": new_extra, "images": new_images})
         self._status.setText("✅ Жойлар ва созламалар сақланди — иккала "
@@ -354,9 +418,7 @@ class MedKnigaView(QWidget):
         document = Path(self._document.path).read_bytes()
         photo = (Path(self._photo.path).read_bytes()
                  if self._photo.path is not None else None)
-        signature = (self._signature.read_bytes()
-                     if self._signature is not None
-                     and self._signature.exists() else None)
+        signature = self._signature_png
         is_patent = "патент" in Path(self._document.path).name.lower()
         position = self._trade.currentText().strip()
         city = self._city.currentText().strip() or "Москва"

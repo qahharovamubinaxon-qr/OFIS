@@ -247,6 +247,50 @@ def test_the_kit_is_recognised_however_it_was_named(said, folder_name) -> None:
     assert folder(said).name == folder_name
 
 
+def test_a_text_can_be_turned_upright_or_laid_flat() -> None:
+    """A медкнижка is written up its own edge in several places, so which
+    way a text lies is the office's to set, not the code's."""
+    from src.pdf.medkniga_renderer import placed
+
+    assert placed({})["exam_date"].rotate == 0
+    assert placed({})["exam_date3"].rotate == 270
+    turned = placed({"styles": {"exam_date": {"rotate": 90},
+                                "exam_date3": {"rotate": 0}}})
+    assert turned["exam_date"].rotate == 90
+    assert turned["exam_date3"].rotate == 0
+    # and the editor offers exactly those three
+    from src.ui.widgets.field_editor import TURNS
+
+    assert [d for _label, d in TURNS] == [0, 90, 270]
+
+
+def test_the_firms_own_seal_is_kept_and_used_for_every_worker(tmp_path) -> None:
+    """Uploaded once, shared by both kits, and drawn on the page."""
+    from src.services.medkniga_service import (
+        MedKnigaService,
+        clear_stamp,
+        set_stamp,
+        stamp,
+    )
+
+    assert stamp() is None
+    seal = tmp_path / "seal.png"
+    with fitz.open() as doc:
+        page = doc.new_page(width=100, height=100)
+        page.draw_circle(fitz.Point(50, 50), 40)
+        page.get_pixmap(dpi=72).save(str(seal))
+    set_stamp(seal)
+    assert stamp() is not None
+
+    result = MedKnigaService().generate(_data(), output_dir=tmp_path)
+    with fitz.open(str(result.pdf_path)) as doc:
+        assert len(doc[0].get_images(full=True)) == 1, "печать тушмади"
+    with pytest.raises(ValidationError):
+        set_stamp(tmp_path / "nope.txt")
+    clear_stamp()
+    assert stamp() is None
+
+
 def test_the_photo_and_the_signature_are_dragged_like_anything_else() -> None:
     """The office asked to place the signature itself: both pictures are
     «page, left, BOTTOM, height», the way the editor drags a picture."""

@@ -76,6 +76,8 @@ class MedKnigaData:
     exam_date: date | None = None
     photo_png: bytes | None = None
     signature_png: bytes | None = None
+    #: the office's OWN seal, uploaded once and used for every worker
+    stamp_png: bytes | None = None
     #: page number → the office's own scanned blank for it, if it has one
     blanks: dict[int, Path] = field(default_factory=dict)
     layout: dict = field(default_factory=dict)
@@ -139,7 +141,11 @@ def placed(layout: dict) -> dict[str, Slot]:
             tuple(chosen.get("colour") or slot.colour)[:3],
             str(chosen.get("font") or slot.family),
             bool(chosen.get("bold", slot.bold)),
-            slot.rotate, slot.align, slot.sample, slot.label)
+            # the office turns a text upright or flat itself: a медкнижка
+            # is written up its own edge in several places, and which way
+            # is the blank's business, not the code's
+            int(chosen.get("rotate", slot.rotate)),
+            slot.align, slot.sample, slot.label)
     return out
 
 
@@ -172,7 +178,8 @@ def render(data: MedKnigaData) -> bytes:
             page = doc.new_page(width=PAGE_W, height=PAGE_H)
             _lay_blank(page, data.blanks.get(number))
             for key, png in (("img_photo", data.photo_png),
-                             ("img_sign", data.signature_png)):
+                             ("img_sign", data.signature_png),
+                             ("img_stamp", data.stamp_png)):
                 where = pictures[key]
                 if png and where[0] == number:
                     _lay_image(page, png, where[1:])
@@ -189,7 +196,8 @@ def render(data: MedKnigaData) -> bytes:
                     tuple(extra.get("colour") or (0.0, 0.0, 0.0))[:3],
                     str(extra.get("font") or "Arial"),
                     bool(extra.get("bold", False)),
-                    int(extra.get("rotate", 0))), str(extra.get("text") or ""))
+                    int(extra.get("rotate", 0))),
+                    str(extra.get("text") or ""))
         return doc.tobytes()
     finally:
         doc.close()
