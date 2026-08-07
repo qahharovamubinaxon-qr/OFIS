@@ -131,6 +131,7 @@ _DESKTOP_TO_MODULE = {
     "nav.mvdreg": "mvdreg",
     "nav.ndfl2": "ndfl2",
     "nav.medkniga": "medkniga",
+    "nav.uzbspravka": "uzbspravka",
     "nav.trud": "trud",
     "nav.dms": "dms",
     "nav.strahovka": "insurance",
@@ -166,14 +167,11 @@ _DESKTOP_TO_MODULE = {
 _HOUSEKEEPING = {"nav.dashboard", "nav.companies", "nav.archive", "nav.search",
                  "nav.settings"}
 
-#: АЛПИНИСТ signs off a photographed sheet of paper on the phone instead of
-#: the program's mouse pad, so it is on there too. One section is not:
-#:
-#: **УЗБ СПРАВКАЛАР** needs four uploaded scans and a per-firm seal before it
-#: can print anything, and every certificate is code-gated — the codes go on
-#: the paper the office hands over. Until the bot has a way to hold all that,
-#: it stays on the desk.
-_NOT_ON_THE_PHONE: set[str] = {"nav.uzbspravka"}
+#: Nothing is left off any more — АЛПИНИСТ signs off a photographed sheet
+#: of paper on the phone instead of the program's mouse pad, and УЗБ
+#: СПРАВКАЛАР prints from the phone too: the scans and the seals are the
+#: computer's job either way, so the phone picks the firm and presses.
+_NOT_ON_THE_PHONE: set[str] = set()
 
 
 def test_every_desktop_section_is_also_on_the_phone() -> None:
@@ -805,6 +803,7 @@ def test_chek_flow_passes_the_typed_authorisation_code_through(
     monkeypatch.setattr(ctl, "generate", fake_generate)
 
     _text(ready, "🧾 ЧЕК")
+    _pick(ready, 0)                 # the blank, picked as on the computer
     _photo(ready)
     _text(ready, "✅ Тайёрла")
     assert "Сумма" in _last(ready)
@@ -847,6 +846,7 @@ def test_chek_really_produces_the_pdf(ready, monkeypatch) -> None:
     """
     _chek_ready(ready, monkeypatch)
     _text(ready, "🧾 ЧЕК")
+    _pick(ready, 0)                 # the blank, picked as on the computer
     _photo(ready)
     _text(ready, "✅ Тайёрла")
     _chek_answers(ready)
@@ -861,6 +861,7 @@ def test_chek_refuses_a_missing_authorisation_code(ready, monkeypatch) -> None:
     off the bank's confirmation, never generated."""
     _chek_ready(ready, monkeypatch)
     _text(ready, "🧾 ЧЕК")
+    _pick(ready, 0)                 # the blank, picked as on the computer
     _photo(ready)
     _text(ready, "✅ Тайёрла")
     _chek_answers(ready, avtoriz="✅ Тайёрла")   # left blank
@@ -1281,3 +1282,112 @@ def test_nothing_is_offered_when_the_mini_app_is_off(ready, monkeypatch,
     assert not any(kb and "inline_keyboard" in kb
                    and kb["inline_keyboard"][0][0].get("callback_data") == "wa"
                    for _t, kb in ready.sent)
+
+
+# ------------------------------------------------------ УЗБ СПРАВКАЛАР
+def _uzb_ready(ready, monkeypatch, tmp_path):
+    """The computer's part, done: four blanks and one firm's seal."""
+    from datetime import date as _date
+
+    import fitz
+    from src.pdf.uzbspravka_renderer import UzbData
+    from src.services import uzbspravka_service as store
+
+    blank = tmp_path / "blank.pdf"
+    with fitz.open() as doc:
+        doc.new_page(width=595, height=842)
+        doc.save(str(blank))
+    for sheet in store.SHEETS:
+        store.set_blank(sheet, blank)
+
+    seal = tmp_path / "seal.png"
+    with fitz.open() as doc:
+        page = doc.new_page(width=60, height=60)
+        page.draw_circle(fitz.Point(30, 30), 22)
+        page.get_pixmap(dpi=72).save(str(seal))
+    store.add_seal("ООО СФЕРА", seal)
+
+    ctl = ready.ctl()["uzbspravka"]
+    monkeypatch.setattr(ctl, "read_passport", lambda image, *, firm: UzbData(
+        surname="ЭРГАШЕВ", name="УМИДЖОН", patronymic="ШУХРАТ УГЛИ",
+        latin_name="ERGASHEV UMIDJON SHUKHRAT UGLI",
+        birth_date=_date(2002, 10, 2), passport="FA3445084",
+        pinfl="50210025720042", firm=firm))
+    return ctl
+
+
+def test_uzbspravka_prints_all_four_from_the_phone(ready, monkeypatch,
+                                                   tmp_path) -> None:
+    _uzb_ready(ready, monkeypatch, tmp_path)
+    _text(ready, "🇺🇿 УЗБ СПРАВКАЛАР")
+    _pick(ready, 0)                          # the firm, and so its seal
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "09.07.2026")               # сана
+    _text(ready, "10:15:08")                 # соат
+    _text(ready, "✅ Тайёрла")               # тўрттаси
+    _text(ready, "✅ Тайёрла")               # ПИНФЛ — паспортдан
+
+    assert len(ready.files) == 4, _all(ready)[-400:]
+    assert all(f.suffix.lower() == ".pdf" for f in ready.files)
+    assert all(f.read_bytes()[:5] == b"%PDF-" for f in ready.files)
+
+
+def test_uzbspravka_prints_only_the_ones_asked_for(ready, monkeypatch,
+                                                   tmp_path) -> None:
+    _uzb_ready(ready, monkeypatch, tmp_path)
+    _text(ready, "🇺🇿 УЗБ СПРАВКАЛАР")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "09.07.2026")
+    _text(ready, "10:15:08")
+    _text(ready, "1,3")
+    _text(ready, "✅ Тайёрла")
+    assert len(ready.files) == 2, _all(ready)[-400:]
+
+
+def test_uzbspravka_says_what_the_computer_still_has_to_do(ready) -> None:
+    """No blanks uploaded — the phone says so before asking anything."""
+    _text(ready, "🇺🇿 УЗБ СПРАВКАЛАР")
+    said = _last(ready).lower()
+    assert "бланка" in said and "компютерда" in said
+    assert "сана" not in said, "савол берилди"
+
+
+def test_uzbspravka_takes_a_pinfl_typed_by_hand(ready, monkeypatch,
+                                                tmp_path) -> None:
+    """The strip is the only place it is printed — a blurred one is typed."""
+    from src.pdf.uzbspravka_renderer import UzbData
+
+    ctl = _uzb_ready(ready, monkeypatch, tmp_path)
+    monkeypatch.setattr(ctl, "read_passport", lambda image, *, firm: UzbData(
+        surname="ЭРГАШЕВ", name="УМИДЖОН", firm=firm, pinfl=""))
+    _text(ready, "🇺🇿 УЗБ СПРАВКАЛАР")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "09.07.2026")
+    _text(ready, "10:15:08")
+    _text(ready, "1")
+    _text(ready, "50210025720042")
+    assert len(ready.files) == 1, _all(ready)[-400:]
+
+
+def test_uzbspravka_refuses_when_the_pinfl_is_neither_read_nor_typed(
+        ready, monkeypatch, tmp_path) -> None:
+    from src.pdf.uzbspravka_renderer import UzbData
+
+    ctl = _uzb_ready(ready, monkeypatch, tmp_path)
+    monkeypatch.setattr(ctl, "read_passport", lambda image, *, firm: UzbData(
+        surname="ЭРГАШЕВ", name="УМИДЖОН", firm=firm, pinfl=""))
+    _text(ready, "🇺🇿 УЗБ СПРАВКАЛАР")
+    _pick(ready, 0)
+    _photo(ready)
+    _text(ready, "✅ Тайёрла")
+    _text(ready, "09.07.2026")
+    _text(ready, "10:15:08")
+    _text(ready, "1")
+    _text(ready, "✅ Тайёрла")
+    assert "пинфл" in _all(ready).lower()
+    assert not ready.files, "ПИНФЛсиз справка чиқди"

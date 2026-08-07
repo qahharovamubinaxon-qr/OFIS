@@ -192,7 +192,11 @@ class WebAppServer:
             out.append({
                 "key": m.key, "icon": m.icon, "title": m.title,
                 "hint": m.photo_prompt, "targetPrompt": m.target_prompt,
-                "needsTarget": m.targets is not None, "targets": targets,
+                # an empty offered list draws an empty picker the operator
+                # cannot answer — so it is not shown at all
+                "needsTarget": m.targets is not None and (
+                    bool(targets) or not m.targets_optional),
+                "targets": targets,
                 "textOnly": m.text_only, "minPhotos": m.min_photos,
                 "photoLabels": list(m.photo_labels), "wantsPdf": m.wants_pdf,
                 "ready": (ai or not m.needs_ai) and not self._blocked(m, ctl),
@@ -237,9 +241,15 @@ class WebAppServer:
         state["pdfs"] = pdfs or []
         if module.targets is not None:
             items = list(module.targets(ctl))
-            if target_index is None or not 0 <= target_index < len(items):
-                raise OfisError("Рўйхатдан танланг.")
-            state["target"] = items[target_index]
+            if items:
+                if target_index is None or not 0 <= target_index < len(items):
+                    raise OfisError("Рўйхатдан танланг.")
+                state["target"] = items[target_index]
+            elif not module.targets_optional:
+                raise OfisError("Рўйхат бўш — аввал компютерда қўшинг.")
+            # an empty list where picking was only an offer: the module has
+            # its own fallback, and demanding a pick from nothing would
+            # refuse a section that works
         if module.wants_pdf and len(state["pdfs"]) < module.wants_pdf:
             raise OfisError(f"{module.wants_pdf} та PDF ҳужжат юкланг.")
         if not module.text_only and len(images) < module.min_photos:

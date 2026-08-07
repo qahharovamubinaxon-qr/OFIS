@@ -81,6 +81,12 @@ class Module:
     run: Callable[[RunContext, dict], list[Path]]
     targets: Callable[[dict], list] | None = None
     target_prompt: str = "Танланг:"
+    #: The pick list is an OFFER, not a gate: when it is empty the module
+    #: still runs and the runner falls back to whatever it used before.
+    #: ЧЕК is the case — it prints on the built-in background when the
+    #: office has uploaded no blank, and refusing to open the section over
+    #: an empty list would take away a thing that worked.
+    targets_optional: bool = False
     photo_prompt: str = "Расмларни юборинг."
     photo_labels: tuple[str, ...] = ()
     min_photos: int = 1
@@ -206,6 +212,69 @@ def _run_medkniga(ctx: RunContext, state: dict) -> list[Path]:
         kit=str(answers.get("kit") or "Москва"))
     ctx.note(f"№ {result.number} · тугаши {result.expires}")
     return [result.pdf_path]
+
+
+def _uzb_ready(ctl: dict) -> str:
+    """Why УЗБ СПРАВКАЛАР cannot run yet, said before any question is asked.
+
+    Both of these are the computer's job — a scan and a seal are files, and
+    files are uploaded there — so the phone says which one is missing rather
+    than asking four questions and refusing at the end.
+    """
+    section = ctl["uzbspravka"]
+    missing = [str(s) for s in section.sheets() if s not in section.blanks()]
+    if missing:
+        return (f"{', '.join(missing)}-справка бланкаси йўқ — компютерда "
+                "УЗБ СПРАВКАЛАР бўлимида «📄 Бланкалар» орқали юкланг.")
+    if not section.seals():
+        return ("Фирма печати йўқ — компютерда «⬤ Печатлар» орқали "
+                "камида биттасини юкланг.")
+    return ""
+
+
+def _uzb_sheets(said: str) -> tuple[int, ...]:
+    """«1234», «1,3», «2 4» or nothing at all → which certificates to print.
+
+    An empty answer means all four, because that is the usual run: the
+    agency asks for the set, not for one of them.
+    """
+    wanted = tuple(int(c) for c in (said or "") if c in "1234")
+    return tuple(dict.fromkeys(wanted)) or (1, 2, 3, 4)
+
+
+def _run_uzbspravka(ctx: RunContext, state: dict) -> list[Path]:
+    """УЗБ СПРАВКАЛАР from the phone — the same four sheets as the desktop.
+
+    The firm is picked from the list, which is the firms whose seals the
+    office has uploaded: the seal is what makes the certificate that firm's,
+    and there is no printing without one. The blanks and the arrangement are
+    the computer's — this reads the worker and presses the button.
+    """
+    ctl = ctx.ctl["uzbspravka"]
+    images = state.get("photos") or []
+    if not images:
+        raise OfisError("Паспортнинг маълумот бетини юборинг.")
+    answers = state["answers"]
+    firm = str(state.get("target") or "").strip()
+
+    data = ctl.read_passport(images[0], firm=firm)
+    typed = str(answers.get("pinfl") or "").strip()
+    if typed:
+        data.pinfl = typed
+    if not data.pinfl:
+        raise OfisError(
+            "ПИНФЛ ўқилмади — стрип хира ёки кесилган. Қайта юборинг ёки "
+            "«ПИНФЛ» саволига паспортдан кўчириб ёзинг.")
+    ctx.note(f"Ўқилди: {data.fio()} · ПИНФЛ {data.pinfl}")
+
+    data.made_at = datetime.combine(
+        answers.get("made_date") or date.today(),
+        _clock(str(answers.get("made_time") or "")))
+    sheets = _uzb_sheets(str(answers.get("sheets") or ""))
+    result = ctl.generate(data, sheets, with_qr=ctl.can_make_qr())
+    ctx.note(" · ".join(f"{s}: код {result.codes[s]}"
+                        for s in sorted(result.pdfs)))
+    return [result.pdfs[s] for s in sorted(result.pdfs)]
 
 
 def _run_trud(ctx: RunContext, state: dict) -> list[Path]:
@@ -492,11 +561,15 @@ def _run_chek(ctx: RunContext, state: dict) -> list[Path]:
 
     when = datetime.combine(answers.get("when_date") or date.today(),
                             _clock(str(answers.get("when_time") or "")))
+    picked = state.get("target")
     pdf, name = ctl.generate(
         **fields,
         card4=str(answers.get("card4") or ""),
         when=when, rub=rub, kop=kop,
-        avtoriz=str(answers.get("avtoriz") or ""))
+        avtoriz=str(answers.get("avtoriz") or ""),
+        # the blank the operator chose on the phone, with its own arranged
+        # positions; nothing picked still falls back to the desktop's last
+        template=Path(picked) if picked else None)
 
     out = _free_path(paths.output_dir() / "chek", name)
     out.write_bytes(pdf)
@@ -849,8 +922,9 @@ def _run_kukchek(ctx: RunContext, state: dict) -> list[Path]:
     ctx.note(f"Патент ўқилди: {fields.get('fam', '')} "
              f"{fields.get('ism', '')}".strip())
     answers = state["answers"]
+    picked = state.get("target")
     result = ctl.generate(
-        template=(ctl.templates() or [None])[0],
+        template=Path(picked) if picked else (ctl.templates() or [None])[0],
         fields=fields, when=answers.get("when") or date.today(),
         amount_text=str(answers.get("amount") or "0"))
     return [result.saved]
@@ -1043,6 +1117,21 @@ MODULES: tuple[Module, ...] = (
                      kind="text"),
                  Ask("city", "Адрес (Москва / Московская область):",
                      kind="text"))),
+    Module("uzbspravka", "🇺🇿 УЗБ СПРАВКАЛАР", _run_uzbspravka,
+           targets=lambda c: sorted(c["uzbspravka"].seals()),
+           target_prompt="Фирмани танланг (печати ўшаники бўлади):",
+           photo_prompt="Паспортнинг МАЪЛУМОТ БЕТИ расмини юборинг — "
+                        "пастдаги стрип ҳам кўриниб турсин, ПИНФЛ ўша ерда.",
+           photo_labels=("Паспорт",),
+           ready=lambda c: _uzb_ready(c),
+           asks=(Ask("made_date", "Справка санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("made_time", "Справка соати (СС:ДД:СС, бўш — ҳозир):",
+                     kind="text"),
+                 Ask("sheets", "Қайси справкалар — 1234 ёки 1,3 "
+                     "(бўш — тўрттаси):", kind="text"),
+                 Ask("pinfl", "ПИНФЛ (бўш — паспортнинг стрипидан ўқилади):",
+                     kind="text"))),
     Module("mvdreg", "🏛️ МВД РЕГИСТРАЦИЯ", _run_mvdreg,
            targets=lambda c: c["mvdreg"].addresses(),
            target_prompt="Адресни танланг:",
@@ -1085,6 +1174,10 @@ MODULES: tuple[Module, ...] = (
            asks=(Ask("form_date", "Ҳужжат санаси (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("profession", "Профессия (ихтиёрий):", kind="text"))),
     Module("chek", "🧾 ЧЕК", _run_chek,
+           # the phone picks its blank like the computer does; without this
+           # it always printed on whichever one the desktop last used
+           targets=lambda c: c["chek"].templates(),
+           target_prompt="Бланкани танланг:", targets_optional=True,
            ready=lambda c: "" if c["chek"].company_id() else (
                "ЧЕК учун компания коди керак — у ҳар сафар ўйлаб "
                "топилмайди. Компютерда ЧЕК бўлимига кириб бир марта "
@@ -1182,6 +1275,10 @@ MODULES: tuple[Module, ...] = (
                "" if c["karta"].blank("inner")
                else "Карта бланкаси йўқ — компютерда бўлимга юкланг.")),
     Module("kukchek", "🔵 КУК ЧЕК", _run_kukchek,
+           # it used to take whichever blank sorted first, whatever the
+           # office actually wanted to print on
+           targets=lambda c: c["kukchek"].templates(),
+           target_prompt="Бланкани танланг:",
            photo_prompt="Патент картасининг расмини юборинг.",
            photo_labels=("Патент",),
            asks=(Ask("when", "Число (КК.ОО.ЙЙЙЙ):", default_days=0),
@@ -1372,6 +1469,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud8_controller import Trud8Controller
     from src.controllers.trud_ppu_controller import TrudPpuController
+    from src.controllers.uzbspravka_controller import UzbSpravkaController
     from src.database.repositories.template_profile_repo import (
         TemplateProfileRepository,
     )
@@ -1409,6 +1507,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.trud8_service import Trud8Service
     from src.services.trud_ppu_service import TrudPpuService
     from src.services.umumiy_service import UmumiyService
+    from src.services.uzbspravka_service import UzbSpravkaService
 
     ocr = container.resolve(OcrService)
     return {
@@ -1453,6 +1552,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "ndfl2": Ndfl2Controller(
             ocr, Ndfl2Service(container.resolve(SettingsService))),
         "medkniga": MedKnigaController(ocr, MedKnigaService()),
+        "uzbspravka": UzbSpravkaController(
+            ocr, UzbSpravkaService(container.resolve(SettingsService))),
         "trud": Trud8Controller(
             ocr, Trud8Service(container.resolve(SettingsService))),
         "svera": SveraController(

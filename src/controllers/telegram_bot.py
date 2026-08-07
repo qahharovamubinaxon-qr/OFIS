@@ -425,9 +425,17 @@ class TelegramBot:
                 self._menu(chat_id, f"Рўйхат олинмади: {str(exc)[:120]}")
                 return
             if not items and module.add_key is None:
-                # Nothing to pick — stay out of the module entirely, otherwise
-                # photos get accepted and «Тайёрла» dead-ends on a null target.
-                self._menu(chat_id, "Рўйхат бўш — аввал компютерда қўшинг.")
+                if not module.targets_optional:
+                    # Nothing to pick — stay out of the module entirely,
+                    # otherwise photos get accepted and «Тайёрла» dead-ends
+                    # on a null target.
+                    self._menu(chat_id, "Рўйхат бўш — аввал компютерда қўшинг.")
+                    return
+                # ...unless picking was only an offer: the module has its own
+                # fallback and worked without a list before there was one.
+                state.update({"mode": module.key, "step": "collect",
+                              "targets": [], "target": None})
+                self._send(chat_id, module.photo_prompt, _RUN_KB)
                 return
             rows = [[{"text": _label(t), "callback_data": f"pick:{i}"}]
                     for i, t in enumerate(items[:30])]
@@ -638,7 +646,8 @@ class TelegramBot:
         if module is None:
             self._menu(chat_id, "Аввал бўлимни танланг.")
             return
-        if module.targets is not None and state.get("target") is None:
+        if (module.targets is not None and state.get("target") is None
+                and not module.targets_optional):
             self._send(chat_id, f"«{module.button}» учун рўйхатдан танланг.")
             return
         if module.wants_pdf and len(state.get("pdfs") or []) < module.wants_pdf:
