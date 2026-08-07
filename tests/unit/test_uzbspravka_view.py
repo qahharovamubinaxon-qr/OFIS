@@ -215,6 +215,22 @@ def test_it_starts_on_today_so_the_usual_run_needs_no_typing(screen) -> None:
     view.deleteLater()
 
 
+def test_the_hour_the_minute_and_the_second_are_the_offices_too(screen) -> None:
+    """Two certificates «made» in the same second read as one press of a
+    button — so the office sets the clock as well as the day."""
+    from PySide6.QtCore import QDate, QTime
+    from src.pdf.uzbspravka_renderer import values
+
+    build, _app = screen
+    view = build(_Controller())
+    view._made.setDate(QDate(2026, 7, 9))
+    view._clock.setTime(QTime(10, 15, 8))
+    data = view._data()
+    assert values(data, 1)["issued_at"] == "2026-07-09 10:15:08"
+    assert values(data, 1)["made_at"] == "2026-07-09 10:15:08"
+    assert values(data, 4)["issued_at"] == "09.07.2026 10:15"
+
+
 # --------------------------------------------------------- the QR switch
 def test_the_qr_box_is_off_and_locked_without_the_keys(screen) -> None:
     class _NoKeys(_Controller):

@@ -22,7 +22,40 @@ from src.pdf.chek_renderer import ChekData, render_chek
 
 log = get_logger(__name__)
 
-TEMPLATES_DIR = Path("templates") / "chek"
+#: The blanks that ship WITH the program. A rebuild replaces this folder
+#: wholesale, so nothing the office uploads may live here.
+SHIPPED_DIR = Path("templates") / "chek"
+
+
+def user_dir() -> Path:
+    """Where the office's OWN blanks live — AppData, not the program folder.
+
+    They used to be copied in beside the shipped ones, and every rebuild of
+    the EXE swept them away: «ЧЕК бўлимига шаблон юкласам ҳар update
+    қилганимда учиб кетяпти». In AppData they stay until the office deletes
+    them itself, which is exactly what was asked for.
+    """
+    from src.config import paths
+
+    made = paths.user_templates_dir() / "chek"
+    made.mkdir(parents=True, exist_ok=True)
+    return made
+
+
+def _rescue_from_the_program_folder() -> None:
+    """Blanks uploaded before this change, carried to safety once.
+
+    Anything sitting in the program folder is copied across the first time
+    it is looked for. Copied and not moved: the shipped blanks belong there
+    and the program is not the place to be deleting its own files.
+    """
+    if not SHIPPED_DIR.exists():
+        return
+    for blank in SHIPPED_DIR.glob("*.pdf"):
+        target = user_dir() / blank.name
+        if not target.exists():
+            shutil.copy2(blank, target)
+            log.info("ЧЕК: «%s» бланкаси AppData'га кўчирилди", blank.name)
 
 #: The office's own company id, recorded once. It used to be generated at
 #: random on every receipt, which made the printed id belong to nobody.
@@ -80,8 +113,19 @@ class ChekController:
 
     # ── templates ────────────────────────────────────────────────────
     def templates(self) -> list[Path]:
-        TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-        return sorted(TEMPLATES_DIR.glob("*.pdf"))
+        """Every blank the office can print on, its own ones first.
+
+        A blank the office uploaded outranks a shipped one of the same
+        name: it replaced it on purpose.
+        """
+        _rescue_from_the_program_folder()
+        found: dict[str, Path] = {}
+        if SHIPPED_DIR.exists():
+            for blank in SHIPPED_DIR.glob("*.pdf"):
+                found[blank.name] = blank
+        for blank in user_dir().glob("*.pdf"):
+            found[blank.name] = blank
+        return [found[name] for name in sorted(found)]
 
     def default_template(self) -> Path | None:
         """The blank to print on when the caller does not name one.
@@ -103,16 +147,30 @@ class ChekController:
             self._settings.set(KEY_TEMPLATE, str(template) if template else "")
 
     def add_template(self, source: Path) -> Path:
-        """Copy an operator-supplied blank into templates/chek/ (never move)."""
-        TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-        dest = TEMPLATES_DIR / source.name
+        """Copy an operator-supplied blank into AppData (never move)."""
+        folder = user_dir()
+        dest = folder / source.name
         n = 1
         while dest.exists():
-            dest = TEMPLATES_DIR / f"{source.stem}-{n}{source.suffix}"
+            dest = folder / f"{source.stem}-{n}{source.suffix}"
             n += 1
         shutil.copy2(source, dest)
         log.info("chek template added: %s", dest)
         return dest
+
+    def remove_template(self, template: Path) -> None:
+        """The office's own blank, taken off the list because it said so.
+
+        Only its own: a shipped blank is left where it is, because deleting
+        it would only bring it back with the next rebuild.
+        """
+        template = Path(template)
+        if template.parent == user_dir():
+            template.unlink(missing_ok=True)
+            from src.services import blank_layout
+
+            blank_layout.reset(self.SECTION, template)
+            log.info("ЧЕК: «%s» бланкаси ўчирилди", template.name)
 
     # ── generation ───────────────────────────────────────────────────
     @staticmethod

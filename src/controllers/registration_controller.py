@@ -32,7 +32,16 @@ class RegistrationController:
         self._registration = registration
 
     def addresses(self) -> list[RegistrationAddress]:
-        return self._addresses.list()
+        """This section's OWN addresses — «regular» — and nobody else's.
+
+        Хостел and МВД РЕГИСТРАЦИЯ each keep their addresses under their own
+        kind and each shows only its own. This one asked for the lot, so a
+        hostel added next door turned up in the РЕГИСТРАЦИЯ list on a blank
+        that was never meant for it. The office said it plainly: «МВД
+        регистрациялар фақат МВД бўлимда, хостел регистрациялар фақат
+        хостел бўлимда».
+        """
+        return self._addresses.list(kind="regular")
 
     def ai_available(self) -> bool:
         return self._ocr.available()

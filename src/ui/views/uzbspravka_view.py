@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTime
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -123,6 +124,16 @@ class UzbSpravkaView(QWidget):
         self._made.setToolTip("Справкалар шу числода чиққан бўлади — "
                               "тепадаги сана, «создания» ва «выдачи»")
         form.addWidget(self._made, 4, 1)
+
+        # The certificates print a time to the second as well as a day, and
+        # the office sets that too: two certificates «made» in the same
+        # second read as one press of a button, which is not what happened.
+        form.addWidget(QLabel("Соат:минут:сония:"), 4, 2)
+        self._clock = QTimeEdit(QTime.currentTime())
+        self._clock.setDisplayFormat("HH:mm:ss")
+        self._clock.setToolTip("Справка чиққан вақт — «выдачи» ва тепадаги "
+                               "сананинг ёнида шу туради")
+        form.addWidget(self._clock, 4, 3)
 
         sheets_row = QHBoxLayout()
         sheets_row.addWidget(QLabel("Справкалар:"))
@@ -218,14 +229,14 @@ class UzbSpravkaView(QWidget):
             made_at=self._when())
 
     def _when(self) -> datetime:
-        """The date the office chose, at the hour it is printing.
+        """The day AND the second the office typed — the clock is not asked.
 
-        The certificates print a time as well as a day, and the office picks
-        the DAY — a справка dated last Tuesday is still made now, so the
-        clock supplies the hour and the box supplies everything else.
+        A справка dated last Tuesday was «issued» at some hour of last
+        Tuesday, not at the hour it is being printed, so both boxes are the
+        office's. They open on today and now, which is the usual run.
         """
         return datetime.combine(self._made.date().toPython(),
-                                datetime.now().time().replace(microsecond=0))
+                                self._clock.time().toPython())
 
     def _wanted(self) -> tuple[int, ...]:
         return tuple(s for s, tick in self._ticks.items() if tick.isChecked())

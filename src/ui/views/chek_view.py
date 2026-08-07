@@ -123,6 +123,11 @@ class ChekView(QWidget):
         add_btn = QPushButton("➕ Шаблон қўшиш")
         add_btn.clicked.connect(self._add_template)
         trow.addWidget(add_btn)
+        drop_btn = QPushButton("🗑")
+        drop_btn.setToolTip("Танланган шаблонни ўчириш — юкланган шаблон "
+                            "шундан бошқа ҳеч қачон йўқолмайди")
+        drop_btn.clicked.connect(self._remove_template)
+        trow.addWidget(drop_btn)
         arrange = QPushButton("📐 Матнларни жойлаш")
         arrange.setToolTip("Бланка ва унга ёзиладиган маълумотлар экранга "
                            "чиқади — сичқонча билан суриб, катта-кичик қилиб "
@@ -267,6 +272,22 @@ class ChekView(QWidget):
         self._tpl.clear()
         for p in self._c.templates():
             self._tpl.addItem(p.stem, str(p))
+
+    def _remove_template(self) -> None:
+        """The only thing that ever takes a blank off the list."""
+        chosen = self._tpl.currentData()
+        if not chosen:
+            self._warn("Ўчириш учун шаблонни танланг.")
+            return
+        template = Path(chosen)
+        if QMessageBox.question(
+                self, "Шаблонни ўчириш",
+                f"«{template.stem}» ўчирилсинми?\n\nЖойлаштирган матнлари "
+                "ҳам ўчади.") != QMessageBox.StandardButton.Yes:
+            return
+        self._c.remove_template(template)
+        self._reload_templates()
+        self._status.setText(f"✅ Шаблон ўчирилди: {template.stem}")
 
     def _add_template(self) -> None:
         src, _ = QFileDialog.getOpenFileName(
