@@ -300,63 +300,131 @@ def data_of(passport) -> AminaData:
 
 
 # ------------------------------------------------------------- the sheet
-#: A4 at 300 dpi — the size the office's own uploads are, and the reason
-#: this is not the ДОКУМЕНТ section's 150 dpi page.
-#:
-#: The app does not enlarge a picture smaller than its frame. A 1240-wide
-#: sheet therefore sat in the middle of a frame built for a 2480-wide one,
-#: with the app's own grey showing down both sides — «расмларни икки ёнида
-#: кулранг бўш майдон». Their scans are 2480×3507; matching that fills the
-#: frame edge to edge.
-PAGE_W, PAGE_H = 2480, 3507
+#: How large the finished picture is made. The app does not enlarge one
+#: smaller than its frame, and the office's own uploads are 2480×3507, so
+#: anything under this sits in the middle of the frame looking shrunken.
+LONG_SIDE = 3500
+#: A white hairline between two documents sharing a sheet — enough to see
+#: where one ends, not enough to read as empty space.
+GUTTER = 0.015
 
-#: White left around the document. Their own scans leave almost none — the
-#: measured ones cover 99% of the sheet — and a wide margin is what makes a
-#: document look lost in the frame even at the right size.
-MARGIN = 0.02
-#: Between two documents sharing a sheet.
-GUTTER = 0.025
+#: How much more textured than its background a document is. Measured off the
+#: office's own passport photograph: the wall behind it scored 3.5, the
+#: passport 19.0. Nine sits well clear of the paper and well under the print.
+_TEXTURE = 9.0
+#: A crop smaller than this share of the picture is not the document — it is
+#: a stamp, a photograph, a logo printed on it. Those are left alone.
+_MIN_SHARE = 0.25
+
+
+def _tighten(rgb):
+    """The document alone: the background found by TEXTURE, and cut away.
+
+    Brightness cannot do this. In the office's own photograph the desk is
+    BRIGHTER than the passport (168 against 148), and its colour is no help
+    either — a beige wall is slightly more saturated than a grey-pink
+    passport page. What separates them is detail: printing, guilloche and
+    the photograph give the document local variation everywhere, and a bare
+    surface has almost none.
+
+    So: local standard deviation, threshold, the largest region that leaves,
+    its minimum-area rectangle — which also gives the angle it was lying at,
+    so the crop straightens it at the same time.
+
+    A region too small to be the document is refused and the picture is
+    handed back whole. Cutting a passport down to its own portrait photo
+    would be far worse than leaving a margin of desk around it.
+    """
+    import cv2
+    import numpy as np
+
+    height, width = rgb.shape[:2]
+    grey = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    mean = cv2.blur(grey, (15, 15))
+    texture = np.sqrt(np.maximum(cv2.blur(grey ** 2, (15, 15)) - mean ** 2, 0))
+
+    mask = (texture > _TEXTURE).astype(np.uint8) * 255
+    close = max(9, int(min(height, width) * 0.03)) | 1
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((close, close), np.uint8))
+    opening = max(5, close // 2) | 1
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((opening, opening), np.uint8))
+
+    found, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    if found < 2:
+        return rgb
+    biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    if stats[biggest, cv2.CC_STAT_AREA] < _MIN_SHARE * height * width:
+        log.info("АМИНА: ҳужжат чегараси ишончсиз — расм бутун қолди")
+        return rgb
+
+    (mid_x, mid_y), (box_w, box_h), angle = cv2.minAreaRect(
+        cv2.findNonZero((labels == biggest).astype(np.uint8)))
+    if angle < -45:
+        angle, box_w, box_h = angle + 90, box_h, box_w
+    if abs(angle) > 15:                       # not a tilt — a bad reading
+        angle = 0.0
+    turned = cv2.warpAffine(
+        rgb, cv2.getRotationMatrix2D((mid_x, mid_y), angle, 1.0),
+        (width, height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    left, top = max(0, int(mid_x - box_w / 2)), max(0, int(mid_y - box_h / 2))
+    right = min(width, int(mid_x + box_w / 2))
+    bottom = min(height, int(mid_y + box_h / 2))
+    if right - left < 32 or bottom - top < 32:
+        return rgb
+    return turned[top:bottom, left:right]
+
+
+def cut(image: bytes):
+    """One photograph → the document alone, straight, as an RGB array."""
+    from src.services.doc_scan_service import scan_one
+
+    return _tighten(scan_one(image, grayscale=False))
 
 
 def sheet_jpeg(images: list[bytes]) -> bytes:
-    """One or two documents, cut out and laid on ONE white A4, as a JPEG.
+    """One or two documents, cut out, as ONE picture with nothing else in it.
 
-    The cutting is `doc_scan_service.scan_one` — the same one the ДОКУМЕНТ
-    section uses, so a passport photographed on a desk comes out square and
-    alone. In colour, not the photocopy grey: this is going into an app the
-    worker opens on his phone, where a grey passport looks like a bad copy.
+    There is no white page under this any more. The office was plain about
+    it — «полный саҳифа катакни эгалайдиган қилибер, бўш жой қолмасин» —
+    and a page is exactly what was making the empty space: a passport spread
+    is taller than A4, so fitting it onto one left a white band down either
+    side, and the desk it was photographed on filled the rest.
 
-    The document is laid out to FILL the sheet, because that is what fills
-    the app's frame: at 300 dpi, with the margin down to a hairline. Two
-    pictures share the sheet one above the other — an ID-card passport's
-    front and back are one document, and the office wants them on one page.
+    So the picture IS the document. Every pixel of it is passport, and the
+    app has nothing to letterbox.
+
+    Two pictures still share one sheet, one above the other with a hairline
+    between them — an ID-card passport's front and back are one document.
+    They are matched to the same width so neither looks the larger.
     """
     from PIL import Image
-
-    from src.services.doc_scan_service import _place, scan_one
 
     if not images:
         raise ValidationError("Камида битта расм керак.")
     if len(images) > 2:
         raise ValidationError("Битта майдонга кўпи билан 2 та расм.")
 
-    scans = [Image.fromarray(scan_one(one, grayscale=False)) for one in images]
-    margin_x, margin_y = int(PAGE_W * MARGIN), int(PAGE_H * MARGIN)
-    gutter = int(PAGE_H * GUTTER)
-    canvas = Image.new("RGB", (PAGE_W, PAGE_H), "white")
-    usable = PAGE_H - 2 * margin_y
+    cuts = [Image.fromarray(cut(one)) for one in images]
 
-    if len(scans) == 2:
-        slot = (usable - gutter) // 2
-        for row, one in enumerate(scans):
-            top = margin_y + row * (slot + gutter)
-            _place(canvas, one, (margin_x, top, PAGE_W - margin_x, top + slot))
+    if len(cuts) == 2:
+        width = max(one.width for one in cuts)
+        scaled = [one.resize((width, max(1, round(one.height * width / one.width))),
+                             Image.LANCZOS) for one in cuts]
+        gutter = max(2, int(width * GUTTER))
+        sheet = Image.new("RGB", (width, sum(s.height for s in scaled) + gutter),
+                          "white")
+        sheet.paste(scaled[0], (0, 0))
+        sheet.paste(scaled[1], (0, scaled[0].height + gutter))
     else:
-        _place(canvas, scans[0],
-               (margin_x, margin_y, PAGE_W - margin_x, PAGE_H - margin_y))
+        sheet = cuts[0]
+
+    scale = LONG_SIDE / max(sheet.width, sheet.height)
+    if scale > 1:                     # never shrink a picture that is already big
+        sheet = sheet.resize((max(1, round(sheet.width * scale)),
+                              max(1, round(sheet.height * scale))), Image.LANCZOS)
 
     buf = io.BytesIO()
-    canvas.save(buf, format="JPEG", quality=88, optimize=True)
+    sheet.save(buf, format="JPEG", quality=90, optimize=True)
     return buf.getvalue()
 
 

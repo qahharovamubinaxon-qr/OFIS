@@ -87,19 +87,31 @@ def _worker(**over) -> store.AminaData:
     return made
 
 
-def _photo(label: str = "DOC", tilt: float = 5) -> bytes:
-    """A card photographed on a desk: tilted, on a surface that is not white."""
+def _photo(label: str = "DOC", tilt: float = 5,
+           card: tuple[int, int] = (700, 460),
+           desk: tuple[int, int] = (1200, 900)) -> bytes:
+    """A card photographed on a desk: tilted, on a flat surface.
+
+    The desk is deliberately a plain mid grey with no detail in it, and the
+    card is covered in printing — because detail is what the cut goes by.
+    """
     from PIL import Image, ImageDraw
 
-    desk = Image.new("RGB", (1200, 900), (104, 99, 94))
-    card = Image.new("RGB", (700, 460), (250, 249, 245))
-    draw = ImageDraw.Draw(card)
-    draw.rectangle([0, 0, 699, 459], outline=(120, 130, 120), width=4)
+    surface = Image.new("RGB", desk, (104, 99, 94))
+    width, height = card
+    paper = Image.new("RGB", card, (250, 249, 245))
+    draw = ImageDraw.Draw(paper)
+    draw.rectangle([0, 0, width - 1, height - 1], outline=(120, 130, 120),
+                   width=4)
     draw.text((28, 26), label, fill=(20, 20, 20))
-    card = card.rotate(tilt, expand=True, fillcolor=(104, 99, 94))
-    desk.paste(card, ((1200 - card.width) // 2, (900 - card.height) // 2))
+    for row in range(6):                       # printing, so it has texture
+        y = int(height * 0.2) + row * int(height * 0.11)
+        draw.line([(30, y), (width - 40, y)], fill=(60, 70, 85), width=5)
+    paper = paper.rotate(tilt, expand=True, fillcolor=(104, 99, 94))
+    surface.paste(paper, ((desk[0] - paper.width) // 2,
+                          (desk[1] - paper.height) // 2))
     buf = io.BytesIO()
-    desk.save(buf, "JPEG", quality=92)
+    surface.save(buf, "JPEG", quality=92)
     return buf.getvalue()
 
 
@@ -203,55 +215,88 @@ def test_the_second_phone_falls_back_to_the_first() -> None:
 
 
 # ------------------------------------------------------------- the sheet
-def test_the_sheet_is_the_size_the_office_own_uploads_are() -> None:
-    """A4 at 300 dpi — 2480×3507, exactly what their own scans measure.
+def test_the_picture_is_big_enough_not_to_be_shrunk_by_the_app() -> None:
+    """The app does not enlarge one smaller than its frame.
 
-    The app does not enlarge a picture smaller than its frame, so a half-size
-    sheet sat in the middle of it with the app's grey down both sides. This
-    is the fix, and it is a size, not a guess: it was measured off the five
-    pictures the office had already uploaded by hand.
+    The office's own uploads are 2480×3507; anything much under that sits in
+    the middle of the frame looking shrunken, with the app's grey around it.
     """
     from PIL import Image
 
     with Image.open(io.BytesIO(store.sheet_jpeg([_photo()]))) as sheet:
-        assert sheet.size == (store.PAGE_W, store.PAGE_H) == (2480, 3507)
+        assert max(sheet.size) == store.LONG_SIDE == 3500
         assert sheet.mode == "RGB"
-        # the corners are the page, and the page is white
-        assert sheet.getpixel((10, 10)) > (240, 240, 240)
-        assert sheet.getpixel((2470, 3497)) > (240, 240, 240)
 
 
-def test_the_document_reaches_both_edges_of_the_sheet() -> None:
-    """«икки ёнида кулранг бўш жой бўлмаслиги керак» — and there is none.
+def test_the_picture_is_the_document_and_nothing_else() -> None:
+    """«полный саҳифа катакни эгалайдиган қилибер, бўш жой қолмасин».
 
-    Their own scans cover 99% of the sheet's width. A document floating in
-    the middle of a wide white margin is what made the app show grey either
-    side of it, so what is checked is the width actually covered.
+    No white page under it and no desk around it: every edge of the picture
+    is document, so there is nothing for the app to letterbox.
     """
     import numpy as np
     from PIL import Image
 
     with Image.open(io.BytesIO(store.sheet_jpeg([_photo()]))) as sheet:
         grey = np.asarray(sheet.convert("L"))
-    columns = np.where((grey < 235).any(axis=0))[0]
-    covered = (columns[-1] - columns[0]) / grey.shape[1]
-    assert covered > 0.90, f"варақнинг фақат {covered:.0%} эни тўлган"
-    assert columns[0] / grey.shape[1] < 0.05, "чапда кенг бўш жой"
+    ink = grey < 235
+    columns = np.where(ink.any(axis=0))[0]
+    rows = np.where(ink.any(axis=1))[0]
+    wide = (columns[-1] - columns[0]) / grey.shape[1]
+    tall = (rows[-1] - rows[0]) / grey.shape[0]
+    assert wide > 0.97, f"эни бўйича {wide:.0%} — ёнларида бўш жой бор"
+    assert tall > 0.97, f"бўйи бўйича {tall:.0%} — тепа-пастида бўш жой бор"
 
 
-def test_an_id_cards_two_sides_share_one_sheet() -> None:
-    """«олди ва орқасини битта А4 оқфонли қоғозга» — one page, both on it."""
+def test_the_desk_a_document_was_photographed_on_is_cut_away() -> None:
+    """Measured on the office's own passport: the wall scored 3.5 for local
+    texture and the passport 19.0. The desk is what the cut is looking for."""
+    import numpy as np
+    from PIL import Image
+
+    # a small card adrift in a wide grey desk — mostly background
+    photo = _photo(card=(560, 380), desk=(1600, 1200))
+    with Image.open(io.BytesIO(photo)) as before:
+        was = before.size
+    with Image.open(io.BytesIO(store.sheet_jpeg([photo]))) as after:
+        became = after.size
+
+    assert became[0] / became[1] > was[0] / was[1], "кенг стол кесилмади"
+    grey = np.asarray(Image.open(io.BytesIO(store.sheet_jpeg([photo])))
+                      .convert("L"))
+    # the desk is a flat mid grey; almost none of it should be left
+    desk = ((grey > 85) & (grey < 125)).mean()
+    assert desk < 0.10, f"стол фонининг {desk:.0%} и қолиб кетди"
+
+
+def test_a_document_that_fills_its_photograph_is_left_alone() -> None:
+    """A crop that would take a passport down to its own portrait photo is
+    worse than a margin of desk — so a small find is refused."""
+    from PIL import Image
+
+    flat = Image.new("RGB", (900, 1200), (247, 246, 244))
+    buf = io.BytesIO()
+    flat.save(buf, "JPEG", quality=92)
+    made = store.sheet_jpeg([buf.getvalue()])
+    with Image.open(io.BytesIO(made)) as sheet:
+        assert sheet.width / sheet.height == pytest.approx(0.75, abs=0.06)
+
+
+def test_an_id_cards_two_sides_share_one_picture() -> None:
+    """«олди ва орқасини битта қоғозга» — one picture, both on it, and the
+    two matched to the same width so neither looks the larger."""
+    import numpy as np
     from PIL import Image
 
     made = store.sheet_jpeg([_photo("FRONT", 6), _photo("BACK", -4)])
-    half = store.PAGE_H // 2
     with Image.open(io.BytesIO(made)) as sheet:
-        assert sheet.size == (store.PAGE_W, store.PAGE_H)
-        top = sheet.crop((0, 0, store.PAGE_W, half)).convert("L")
-        bottom = sheet.crop((0, half, store.PAGE_W, store.PAGE_H)).convert("L")
-    # each half carries a document: something darker than the white page
-    assert top.getextrema()[0] < 200, "юқориги ярмида ҳужжат йўқ"
-    assert bottom.getextrema()[0] < 200, "пастки ярмида ҳужжат йўқ"
+        assert sheet.height > sheet.width, "иккови устма-уст турмаган"
+        half = sheet.height // 2
+        top = np.asarray(sheet.crop((0, 0, sheet.width, half)).convert("L"))
+        bottom = np.asarray(
+            sheet.crop((0, half, sheet.width, sheet.height)).convert("L"))
+    assert top.min() < 200, "юқориги ярмида ҳужжат йўқ"
+    assert bottom.min() < 200, "пастки ярмида ҳужжат йўқ"
 
 
 def test_a_field_takes_at_most_two_pictures() -> None:
