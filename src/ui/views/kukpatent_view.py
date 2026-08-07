@@ -113,8 +113,20 @@ class KukPatentView(QWidget):
         self._issued.setToolTip("Картанинг орқасидаги «Дата выдачи»")
         form.addWidget(self._issued, 3, 3)
 
+        # The серия and the номер belong to the office's own run of blanks,
+        # not to the worker, so they are the same from one card to the next.
+        # Kept the moment the box is left: closing the program without
+        # printing must not lose them.
+        kept = self._c.typed()
         self._series = self._box(form, 4, 0, "Серия:", "88")
+        self._series.setText(kept.get("series", ""))
+        self._series.setToolTip("Ёзилгани сақланиб қолади — ўзингиз "
+                                "ўзгартирмагунингизча шу туради")
+        self._series.editingFinished.connect(self._remember_typed)
         self._number = self._box(form, 4, 2, "Номер:", "3259366")
+        self._number.setText(kept.get("number", ""))
+        self._number.setToolTip("Ёзилгани сақланиб қолади")
+        self._number.editingFinished.connect(self._remember_typed)
 
         form.addWidget(QLabel("Картанинг рақами:"), 5, 0)
         self._card_no = QLineEdit(self._c.next_number())
@@ -184,6 +196,11 @@ class KukPatentView(QWidget):
         return edit
 
     # --------------------------------------------------------------- state
+    def _remember_typed(self) -> None:
+        """The moment a number box is left, it is kept for the next run."""
+        self._c.remember_typed(series=self._series.text(),
+                               number=self._number.text())
+
     def _show_firms(self) -> None:
         """The saved firms, each shown on ONE line but kept as it was typed.
 
@@ -379,11 +396,11 @@ class KukPatentView(QWidget):
         self._card_no.setText(self._c.next_number())
         self._show_firms()
         self._status.setText(
-            f"✅ Тайёр: {result.surname} · № {result.card_no} · {result.firm}")
+            f"✅ Тайёр: {result.pdf.name} — 2 бет (олди ва орқаси) · "
+            f"№ {result.card_no} · {result.firm}")
         from src.ui.widgets.save_to import ask_save_dir
 
-        ask_save_dir(self, [result.pdfs[s] for s in self._c.sides()
-                            if s in result.pdfs])
+        ask_save_dir(self, [result.pdf])
 
     def _failed(self, error: Exception) -> None:
         self._progress.finish()

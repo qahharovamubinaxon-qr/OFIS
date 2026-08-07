@@ -23,7 +23,7 @@ from pathlib import Path
 from src.common.errors import ValidationError
 from src.common.logging import get_logger
 from src.config import paths
-from src.pdf.kukpatent_renderer import KukPatentData, output_stem, render
+from src.pdf.kukpatent_renderer import KukPatentData, output_stem, render_pair
 from src.pdf.kukpatent_spec import BACK, FRONT, SIDE_NAMES, SIDES
 
 log = get_logger(__name__)
@@ -31,6 +31,7 @@ log = get_logger(__name__)
 SECTION = "kukpatent"
 _FIRMS = "firms.json"
 _COUNTER = "number.json"
+_TYPED = "typed.json"
 _PICTURES = (".png", ".jpg", ".jpeg")
 _BLANK_KINDS = (".pdf", *_PICTURES)
 
@@ -112,6 +113,38 @@ def forget_firm(firm: str) -> None:
         json.dumps(kept, ensure_ascii=False), "utf-8")
 
 
+# ------------------------------------------------ what the office typed
+#: The серия and the номер printed at the top of the front. They belong to
+#: the office's own run of blanks, not to the worker, so they are the same
+#: from one card to the next — «киритган номерларим майдонда доим турсин,
+#: ўзим бошқасига ўзгартирмагунимча». Kept the moment the box is left, so
+#: closing the program without printing loses nothing.
+TYPED = ("series", "number")
+
+
+def typed() -> dict[str, str]:
+    store = folder() / _TYPED
+    if not store.exists():
+        return {}
+    try:
+        kept = json.loads(store.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(kept, dict):
+        return {}
+    return {k: str(kept.get(k, "") or "") for k in TYPED}
+
+
+def remember_typed(**boxes: str) -> None:
+    """Keep what the office typed. Only what is named is touched."""
+    kept = typed()
+    for key, value in boxes.items():
+        if key in TYPED:
+            kept[key] = (value or "").strip()
+    (folder() / _TYPED).write_text(
+        json.dumps(kept, ensure_ascii=False), "utf-8")
+
+
 # --------------------------------------------------------- the numbering
 def next_number() -> str:
     """The card number the office is up to — "" until it types one."""
@@ -163,9 +196,10 @@ def save_layout(layout: dict) -> None:
 # ------------------------------------------------------------ the making
 @dataclass(frozen=True)
 class KukPatentResult:
-    """One worker's card: where each side went and what number it carries."""
+    """One worker's card: where it went and what number it carries."""
 
-    pdfs: dict[str, Path]
+    #: ONE document — the front is its first page, the back its second
+    pdf: Path
     surname: str
     firm: str
     card_no: str
@@ -194,16 +228,14 @@ class KukPatentService:
         target_dir = output_dir if output_dir is not None else (
             paths.output_dir() / SECTION)
         target_dir.mkdir(parents=True, exist_ok=True)
-        made: dict[str, Path] = {}
-        for side in SIDES:
-            pdf = render(data, side, have[side])
-            made[side] = _write(target_dir, output_stem(data, side), pdf)
+        made = _write(target_dir, output_stem(data), render_pair(data, have))
 
         remember_firm(data.firm)
         remember_number(data.card_no)
+        remember_typed(series=data.series, number=data.number)
         log.info("КУК ПАТЕНТ: %s — %s, № %s", data.fio(), data.firm,
                  data.card_no)
-        return KukPatentResult(pdfs=made, surname=data.surname.strip(),
+        return KukPatentResult(pdf=made, surname=data.surname.strip(),
                                firm=data.firm.strip(),
                                card_no=(data.card_no or "").strip())
 
@@ -248,4 +280,5 @@ def data_of(passport, *, firm: str, series: str, number: str,
 __all__ = ["FRONT", "BACK", "KukPatentResult", "KukPatentService", "blank_of",
            "blanks", "clear_blank", "data_of", "firms", "folder",
            "forget_firm", "load_layout", "next_number", "remember_firm",
-           "remember_number", "save_layout", "set_blank", "step_number"]
+           "remember_number", "remember_typed", "save_layout", "set_blank",
+           "step_number", "typed"]

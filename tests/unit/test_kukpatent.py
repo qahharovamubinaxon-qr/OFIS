@@ -281,14 +281,19 @@ def test_every_firm_typed_is_kept_for_next_time() -> None:
 
 
 # ----------------------------------------------------------- the making
-def test_both_sides_are_saved_and_the_number_moves_on(tmp_path) -> None:
+def test_both_sides_come_out_as_one_document(tmp_path) -> None:
+    """«олди орқани битта PDF га сақлаберадиган қил» — front first, back second."""
     store.set_blank(FRONT, _pdf(tmp_path, "f.pdf"))
     store.set_blank(BACK, _pdf(tmp_path, "b.pdf"))
     made = store.KukPatentService().generate(_worker(photo_png=_png()))
-    assert sorted(made.pdfs) == [BACK, FRONT]
-    assert made.pdfs[FRONT].name == "ЭРГЕШОВ_ОМУРБЕК_oldi.pdf"
-    assert made.pdfs[BACK].name == "ЭРГЕШОВ_ОМУРБЕК_orqa.pdf"
-    assert all(p.exists() for p in made.pdfs.values())
+    assert made.pdf.name == "ЭРГЕШОВ_ОМУРБЕК.pdf"
+    assert made.pdf.exists()
+    with fitz.open(made.pdf) as doc:
+        assert doc.page_count == 2, "иккита бет бўлиши керак"
+        front = doc[0].get_text()
+        back = doc[1].get_text()
+    assert "Эргешов" in front and "Киргизия" not in front
+    assert "АА3915699" in back and "Эргешов" not in back
     assert store.next_number() == "АА3915701"
     assert store.firms()[0] == _worker().firm
 
@@ -312,8 +317,8 @@ def test_the_next_worker_never_writes_over_the_last(tmp_path) -> None:
     service = store.KukPatentService()
     first = service.generate(_worker())
     second = service.generate(_worker())
-    assert first.pdfs[FRONT] != second.pdfs[FRONT]
-    assert first.pdfs[FRONT].exists() and second.pdfs[FRONT].exists()
+    assert first.pdf != second.pdf
+    assert first.pdf.exists() and second.pdf.exists()
 
 
 # ------------------------------------------------------- from a passport
@@ -334,10 +339,29 @@ def test_the_passport_gives_the_card_everything_it_can() -> None:
     assert data.birth_date == date(1998, 6, 16)
 
 
-def test_the_file_is_named_by_the_worker_and_the_side() -> None:
+def test_the_file_is_named_by_the_worker() -> None:
+    assert output_stem(_worker()) == "ЭРГЕШОВ_ОМУРБЕК"
+    assert output_stem(KukPatentData()) == "KUKPATENT"
+    # ...and by the side too, for a caller that wants them apart
     assert output_stem(_worker(), FRONT) == "ЭРГЕШОВ_ОМУРБЕК_oldi"
     assert output_stem(_worker(), BACK) == "ЭРГЕШОВ_ОМУРБЕК_orqa"
-    assert output_stem(KukPatentData(), FRONT) == "KUKPATENT_oldi"
+
+
+def test_the_numbers_the_office_typed_survive_the_program_closing() -> None:
+    """«киритган номерларим майдонда доим турсин, ўзим ўзгартирмагунимча»."""
+    assert store.typed() == {}
+    store.remember_typed(series="88", number="3259366")
+    assert store.typed() == {"series": "88", "number": "3259366"}
+    # changing one leaves the other where it was
+    store.remember_typed(number="3259400")
+    assert store.typed() == {"series": "88", "number": "3259400"}
+
+
+def test_printing_a_card_keeps_its_numbers_too(tmp_path) -> None:
+    store.set_blank(FRONT, _pdf(tmp_path, "f.pdf"))
+    store.set_blank(BACK, _pdf(tmp_path, "b.pdf"))
+    store.KukPatentService().generate(_worker())
+    assert store.typed() == {"series": "88", "number": "3259366"}
 
 
 def test_a_worker_without_a_date_leaves_the_box_empty() -> None:

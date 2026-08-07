@@ -236,7 +236,7 @@ def _run_kukpatent(ctx: RunContext, state: dict) -> list[Path]:
     ctx.note(f"Ўқилди: {data.fio()}")
     result = ctl.generate(data)
     ctx.note(f"№ {result.card_no} · {result.firm}")
-    return [result.pdfs[s] for s in ctl.sides() if s in result.pdfs]
+    return [result.pdf]
 
 
 def _kukpatent_ready(ctl: dict) -> str:

@@ -190,15 +190,43 @@ def render(data: KukPatentData, side: str, blank: Path | None = None) -> bytes:
                 tuple(extra.get("colour") or (0.0, 0.0, 0.0))[:3],
                 str(extra.get("font") or "Times New Roman")),
                 str(extra.get("text") or ""))
-        return doc.tobytes()
+        return _packed(doc)
     finally:
         doc.close()
 
 
+def _packed(doc) -> bytes:
+    """The document, squeezed — losslessly, and it is worth a great deal.
+
+    The office's blanks are photographs, and a page carrying one came out at
+    14 MB with the picture stored raw. Zlib brings the same pixels down to
+    1.7 MB, so a card is a file that can be sent rather than one that fills
+    a disk. Nothing is re-encoded: what comes out is what went in.
+    """
+    return doc.tobytes(garbage=4, deflate=True, deflate_images=True)
+
+
 def render_both(data: KukPatentData,
                 blanks: dict[str, Path]) -> dict[str, bytes]:
-    """Both sides, each on its own blank."""
+    """Both sides, each on its own blank, as its own document."""
     return {side: render(data, side, blanks.get(side)) for side in SIDES}
+
+
+def render_pair(data: KukPatentData, blanks: dict[str, Path]) -> bytes:
+    """ONE document, the front its first page and the back its second.
+
+    The office asked for this in so many words: «олди орқани битта PDF га
+    сақлаберадиган қил». A card is one thing, and two files for it means two
+    things to find, two to attach and one to forget.
+    """
+    made = fitz.open()
+    try:
+        for side in SIDES:
+            with fitz.open("pdf", render(data, side, blanks.get(side))) as one:
+                made.insert_pdf(one)
+        return _packed(made)
+    finally:
+        made.close()
 
 
 def _lay_blank(page, blank: Path | None) -> None:
@@ -245,13 +273,17 @@ def _write(page, slot: Slot, text: str) -> None:
                      fill_opacity=OPACITY, stroke_opacity=OPACITY)
 
 
-def output_stem(data: KukPatentData, side: str) -> str:
-    """«ЭРГЕШОВ_ОМУРБЕК_олди» — the office asked which side is which."""
+def output_stem(data: KukPatentData, side: str | None = None) -> str:
+    """«ЭРГЕШОВ_ОМУРБЕК» — one card, one name, whichever way it is saved.
+
+    ``side`` is only given when the two sides are wanted as separate files;
+    the office prints them as one document with two pages, so the plain name
+    is what it sees.
+    """
     parts = [p.strip().upper() for p in (data.surname, data.name)
              if (p or "").strip()]
-    tail = "oldi" if side == FRONT else "orqa"
+    tail = "" if side is None else ("oldi" if side == FRONT else "orqa")
     if not parts:
-        return f"KUKPATENT_{tail}"
-    stem = "_".join([*parts, tail])
-    return "".join(c for c in stem if c.isalnum() or c in "_-") \
-        or f"KUKPATENT_{tail}"
+        return f"KUKPATENT_{tail}" if tail else "KUKPATENT"
+    stem = "_".join([*parts, tail] if tail else parts)
+    return "".join(c for c in stem if c.isalnum() or c in "_-") or "KUKPATENT"

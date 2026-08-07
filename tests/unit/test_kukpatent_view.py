@@ -57,6 +57,12 @@ class _Controller:
     def next_number(self):
         return store.next_number()
 
+    def typed(self):
+        return store.typed()
+
+    def remember_typed(self, **boxes):
+        store.remember_typed(**boxes)
+
     def layout(self):
         return store.load_layout()
 
@@ -145,6 +151,36 @@ def test_the_card_number_is_offered_already_moved_on(screen) -> None:
     view = build()
     assert view._card_no.text() == "АА3915701"
     view.deleteLater()
+
+
+def test_the_numbers_typed_are_still_there_next_time_the_screen_opens(
+        screen) -> None:
+    """«программани ёпиб очганимда ўчиб кетмасин» — and it does not."""
+    build, _app = screen
+    view = build()
+    view._series.setText("88")
+    view._number.setText("3259366")
+    view._remember_typed()
+    view.deleteLater()
+
+    again = build()
+    assert again._series.text() == "88"
+    assert again._number.text() == "3259366"
+    again.deleteLater()
+
+
+def test_changing_a_number_replaces_only_that_one(screen) -> None:
+    store.remember_typed(series="88", number="3259366")
+    build, _app = screen
+    view = build()
+    view._number.setText("3259400")
+    view._remember_typed()
+    view.deleteLater()
+
+    again = build()
+    assert again._series.text() == "88"
+    assert again._number.text() == "3259400"
+    again.deleteLater()
 
 
 # ----------------------------------------------------------- the reading

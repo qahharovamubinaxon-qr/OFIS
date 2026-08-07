@@ -65,6 +65,15 @@ class KukPatentController:
     def next_number() -> str:
         return kukpatent_service.next_number()
 
+    @staticmethod
+    def typed() -> dict[str, str]:
+        """The серия and номер the office last typed — they do not move."""
+        return kukpatent_service.typed()
+
+    @staticmethod
+    def remember_typed(**boxes: str) -> None:
+        kukpatent_service.remember_typed(**boxes)
+
     # ------------------------------------------------------------- layout
     @staticmethod
     def layout() -> dict:
