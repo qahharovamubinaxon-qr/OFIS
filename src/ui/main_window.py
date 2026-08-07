@@ -60,6 +60,8 @@ _NAV = [
      "Тиббий кўрик учун 4 бет → PDF", "🩺"),
     (None, "nav.uzbspravka", "УЗБ СПРАВКАЛАР",
      "Ўзбекистондан 4 справка — кодли QR билан → PDF", "🇺🇿"),
+    (None, "nav.kukpatent", "КУК ПАТЕНТ",
+     "Ишчи картаси — олди ва орқаси → PDF", "🟢"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -237,6 +239,15 @@ class MainWindow(QMainWindow):
             return UzbSpravkaView(UzbSpravkaController(
                 self._container.resolve(OcrService),
                 UzbSpravkaService(self._settings),
+            ))
+        if key == "nav.kukpatent":
+            from src.controllers.kukpatent_controller import KukPatentController
+            from src.services.kukpatent_service import KukPatentService
+            from src.ui.views.kukpatent_view import KukPatentView
+
+            return KukPatentView(KukPatentController(
+                self._container.resolve(OcrService),
+                KukPatentService(),
             ))
         if key == "nav.chek":
             from src.controllers.chek_controller import ChekController

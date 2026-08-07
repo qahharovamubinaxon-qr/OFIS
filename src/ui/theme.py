@@ -54,6 +54,7 @@ PAPER: dict[str, str] = {
     "nav.dover": "brass",          # нотариус — муҳр
     "nav.perevod": "brass",
     "nav.uzbspravka": "sage",      # ўзбек давлат портали — яшил муҳр
+    "nav.kukpatent": "sage",       # картанинг ўзи яшил-кўк
 }
 
 #: The text colours each theme sets its own ink in, for the parts of the window

@@ -214,6 +214,44 @@ def _run_medkniga(ctx: RunContext, state: dict) -> list[Path]:
     return [result.pdf_path]
 
 
+def _run_kukpatent(ctx: RunContext, state: dict) -> list[Path]:
+    """КУК ПАТЕНТ from the phone — both sides of the card, as on the desktop.
+
+    The firm is picked from the ones the office has already typed on the
+    computer, because a legal name across two lines is not something anyone
+    wants to type on a telephone.
+    """
+    ctl = ctx.ctl["kukpatent"]
+    images = state.get("photos") or []
+    if not images:
+        raise OfisError("Паспорт расмини юборинг.")
+    answers = state["answers"]
+    data = ctl.read_passport(
+        images[0], firm=str(state.get("target") or ""),
+        series=str(answers.get("series") or "").strip(),
+        number=str(answers.get("number") or "").strip(),
+        issued=answers.get("issued") or date.today(),
+        card_no=str(answers.get("card_no") or "").strip(),
+        photo=images[1] if len(images) > 1 else None)
+    ctx.note(f"Ўқилди: {data.fio()}")
+    result = ctl.generate(data)
+    ctx.note(f"№ {result.card_no} · {result.firm}")
+    return [result.pdfs[s] for s in ctl.sides() if s in result.pdfs]
+
+
+def _kukpatent_ready(ctl: dict) -> str:
+    section = ctl["kukpatent"]
+    missing = [section.side_names()[s] for s in section.sides()
+               if s not in section.blanks()]
+    if missing:
+        return (f"{', '.join(missing)} бланкаси йўқ — компютерда КУК ПАТЕНТ "
+                "бўлимида «📄 Бланкалар» орқали юкланг.")
+    if not section.firms():
+        return ("Фирма ёзилмаган — компютерда бир марта ёзиб қўйинг, "
+                "кейин телефондан танлайсиз.")
+    return ""
+
+
 def _uzb_ready(ctl: dict) -> str:
     """Why УЗБ СПРАВКАЛАР cannot run yet, said before any question is asked.
 
@@ -1117,6 +1155,18 @@ MODULES: tuple[Module, ...] = (
                      kind="text"),
                  Ask("city", "Адрес (Москва / Московская область):",
                      kind="text"))),
+    Module("kukpatent", "🟢 КУК ПАТЕНТ", _run_kukpatent,
+           targets=lambda c: c["kukpatent"].firms(),
+           target_prompt="Фирмани танланг:",
+           photo_prompt="Иккита расм: 1️⃣ Паспорт  2️⃣ Ишчининг расми\n\n"
+                        "Расм оқ фонда 3×4 қилиб кесилади ва рамкага тушади.",
+           photo_labels=("Паспорт", "Ишчи расми"),
+           ready=lambda c: _kukpatent_ready(c),
+           asks=(Ask("series", "Серия (масалан 88):", kind="text"),
+                 Ask("number", "Номер (масалан 3259366):", kind="text"),
+                 Ask("issued", "Берилган сана (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("card_no", "Картанинг рақами (бўш — навбатдагиси):",
+                     kind="text"))),
     Module("uzbspravka", "🇺🇿 УЗБ СПРАВКАЛАР", _run_uzbspravka,
            targets=lambda c: sorted(c["uzbspravka"].seals()),
            target_prompt="Фирмани танланг (печати ўшаники бўлади):",
@@ -1449,6 +1499,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.inn_controller import InnController
     from src.controllers.karta_controller import KartaController
     from src.controllers.kukchek_controller import KukChekController
+    from src.controllers.kukpatent_controller import KukPatentController
     from src.controllers.medkniga_controller import MedKnigaController
     from src.controllers.mig_controller import MigController
     from src.controllers.mvd_trud_controller import MvdTrudController
@@ -1484,6 +1535,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.inn_service import InnService
     from src.services.karta_service import KartaService
     from src.services.kukchek_service import KukChekService
+    from src.services.kukpatent_service import KukPatentService
     from src.services.medkniga_service import MedKnigaService
     from src.services.mig_service import MigService
     from src.services.mvd_trud_service import MvdTrudService
@@ -1530,6 +1582,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
             ocr, KartaService(container.resolve(SettingsService))),
         "kukchek": KukChekController(
             ocr, KukChekService(container.resolve(SettingsService))),
+        "kukpatent": KukPatentController(ocr, KukPatentService()),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(

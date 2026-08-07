@@ -132,6 +132,7 @@ _DESKTOP_TO_MODULE = {
     "nav.ndfl2": "ndfl2",
     "nav.medkniga": "medkniga",
     "nav.uzbspravka": "uzbspravka",
+    "nav.kukpatent": "kukpatent",
     "nav.trud": "trud",
     "nav.dms": "dms",
     "nav.strahovka": "insurance",
