@@ -211,9 +211,18 @@ def _lay_blank(page, blank: Path | None) -> None:
     if not blank.exists():
         raise OfisError(f"Бланка топилмади: {blank.name}")
     if blank.suffix.lower() == ".pdf":
-        with fitz.open(str(blank)) as source:
-            if source.page_count:
-                page.show_pdf_page(page.rect, source, 0)
+        with fitz.open(str(blank)) as raw:
+            # a page scanned by a phone often arrives named «.pdf» while
+            # being something else inside; whatever it is, it becomes a PDF
+            # here rather than stopping the run with «is no PDF»
+            source = raw if raw.is_pdf else fitz.open(
+                "pdf", raw.convert_to_pdf())
+            try:
+                if source.page_count:
+                    page.show_pdf_page(page.rect, source, 0)
+            finally:
+                if source is not raw:
+                    source.close()
         return
     page.insert_image(page.rect, filename=str(blank))
 

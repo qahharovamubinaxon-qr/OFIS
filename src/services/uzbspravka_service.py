@@ -22,6 +22,7 @@ else: the other three stay shut behind three other codes.
 
 from __future__ import annotations
 
+import re
 import secrets
 import shutil
 from dataclasses import dataclass, replace
@@ -162,7 +163,9 @@ class SheetNumbers:
 
     #: the four digits at the foot — the key to that certificate's QR
     code: str = ""
-    #: «1547-1548» — the tail of the №
+    #: «3578-5254-8552-2705» — the tail of the №, FOUR groups of four.
+    #: The office sets the first two once and they stay; the last two are
+    #: this worker's own.
     number_tail: str = ""
     #: «Номер заявки»
     request_no: str = ""
@@ -178,6 +181,33 @@ def new_code() -> str:
     return f"{secrets.randbelow(9000) + 1000:04d}"
 
 
+#: How many four-digit groups the № tail has, and how many of them are the
+#: office's own for good. It writes «3578-5254-8552-2705»: the first two
+#: groups are the office's and never change, the last two are this
+#: worker's and change with every one.
+TAIL_GROUPS = 4
+TAIL_KEPT = 2
+
+
+def _group() -> str:
+    return f"{secrets.randbelow(9000) + 1000:04d}"
+
+
+def next_tail(saved: str = "") -> str:
+    """This worker's №, keeping whatever the office fixed at the front.
+
+    Whatever it typed in «🔢 Рақамлар» is honoured as far as it goes: the
+    first two groups are copied from it and the last two are made fresh,
+    so one worker's number can never be another's. An empty box, or one
+    the office filled in short, is simply made up to length.
+    """
+    kept = [g for g in re.split(r"\D+", saved or "") if g][:TAIL_KEPT]
+    kept = [g[:4].rjust(4, "0") for g in kept]
+    while len(kept) < TAIL_KEPT:
+        kept.append(_group())
+    return "-".join([*kept, *(_group() for _ in range(TAIL_GROUPS - TAIL_KEPT))])
+
+
 def new_numbers(sheets=SHEETS) -> dict[int, SheetNumbers]:
     """A fresh set for one worker — offered to the office, not imposed.
 
@@ -186,9 +216,7 @@ def new_numbers(sheets=SHEETS) -> dict[int, SheetNumbers]:
     THAT number is the right one and the program must not overwrite it.
     """
     return {sheet: SheetNumbers(
-        code=new_code(),
-        number_tail=f"{secrets.randbelow(9000) + 1000:04d}-"
-                    f"{secrets.randbelow(9000) + 1000:04d}",
+        code=new_code(), number_tail=next_tail(),
         request_no=str(secrets.randbelow(900_000_000) + 100_000_000))
         for sheet in sheets}
 
@@ -273,7 +301,8 @@ class UzbSpravkaService:
             sheet_data = replace(
                 data, layout=layout, seal_png=seal_png, qr_png=None,
                 code=own.code or data.code or new_code(),
-                number_tail=own.number_tail or data.number_tail,
+                # the office's own first two groups, this worker's last two
+                number_tail=next_tail(own.number_tail or data.number_tail),
                 request_no=own.request_no or data.request_no)
             pdf = render(sheet_data, sheet, blank_of(sheet))
             if with_qr:
