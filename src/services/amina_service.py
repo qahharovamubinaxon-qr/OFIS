@@ -300,27 +300,40 @@ def data_of(passport) -> AminaData:
 
 
 # ------------------------------------------------------------- the sheet
+#: A4 at 300 dpi — the size the office's own uploads are, and the reason
+#: this is not the ДОКУМЕНТ section's 150 dpi page.
+#:
+#: The app does not enlarge a picture smaller than its frame. A 1240-wide
+#: sheet therefore sat in the middle of a frame built for a 2480-wide one,
+#: with the app's own grey showing down both sides — «расмларни икки ёнида
+#: кулранг бўш майдон». Their scans are 2480×3507; matching that fills the
+#: frame edge to edge.
+PAGE_W, PAGE_H = 2480, 3507
+
+#: White left around the document. Their own scans leave almost none — the
+#: measured ones cover 99% of the sheet — and a wide margin is what makes a
+#: document look lost in the frame even at the right size.
+MARGIN = 0.02
+#: Between two documents sharing a sheet.
+GUTTER = 0.025
+
+
 def sheet_jpeg(images: list[bytes]) -> bytes:
-    """One or two documents, cut out and centred on ONE white A4, as a JPEG.
+    """One or two documents, cut out and laid on ONE white A4, as a JPEG.
 
     The cutting is `doc_scan_service.scan_one` — the same one the ДОКУМЕНТ
     section uses, so a passport photographed on a desk comes out square and
     alone. In colour, not the photocopy grey: this is going into an app the
     worker opens on his phone, where a grey passport looks like a bad copy.
 
-    Two pictures share the sheet one above the other. That is what an
-    ID-card passport needs — its front and its back are one document, and the
-    office wants them on one page.
+    The document is laid out to FILL the sheet, because that is what fills
+    the app's frame: at 300 dpi, with the margin down to a hairline. Two
+    pictures share the sheet one above the other — an ID-card passport's
+    front and back are one document, and the office wants them on one page.
     """
     from PIL import Image
 
-    from src.services.doc_scan_service import (
-        MARGIN,
-        PAGE_H,
-        PAGE_W,
-        _place,
-        scan_one,
-    )
+    from src.services.doc_scan_service import _place, scan_one
 
     if not images:
         raise ValidationError("Камида битта расм керак.")
@@ -329,7 +342,7 @@ def sheet_jpeg(images: list[bytes]) -> bytes:
 
     scans = [Image.fromarray(scan_one(one, grayscale=False)) for one in images]
     margin_x, margin_y = int(PAGE_W * MARGIN), int(PAGE_H * MARGIN)
-    gutter = int(PAGE_H * 0.04)
+    gutter = int(PAGE_H * GUTTER)
     canvas = Image.new("RGB", (PAGE_W, PAGE_H), "white")
     usable = PAGE_H - 2 * margin_y
 

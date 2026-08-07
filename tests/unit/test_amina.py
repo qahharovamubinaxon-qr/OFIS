@@ -203,15 +203,40 @@ def test_the_second_phone_falls_back_to_the_first() -> None:
 
 
 # ------------------------------------------------------------- the sheet
-def test_one_document_is_cut_out_and_centred_on_white_a4() -> None:
+def test_the_sheet_is_the_size_the_office_own_uploads_are() -> None:
+    """A4 at 300 dpi — 2480×3507, exactly what their own scans measure.
+
+    The app does not enlarge a picture smaller than its frame, so a half-size
+    sheet sat in the middle of it with the app's grey down both sides. This
+    is the fix, and it is a size, not a guess: it was measured off the five
+    pictures the office had already uploaded by hand.
+    """
     from PIL import Image
 
     with Image.open(io.BytesIO(store.sheet_jpeg([_photo()]))) as sheet:
-        assert sheet.size == (1240, 1754), "А4"
+        assert sheet.size == (store.PAGE_W, store.PAGE_H) == (2480, 3507)
         assert sheet.mode == "RGB"
         # the corners are the page, and the page is white
         assert sheet.getpixel((10, 10)) > (240, 240, 240)
-        assert sheet.getpixel((1230, 1744)) > (240, 240, 240)
+        assert sheet.getpixel((2470, 3497)) > (240, 240, 240)
+
+
+def test_the_document_reaches_both_edges_of_the_sheet() -> None:
+    """«икки ёнида кулранг бўш жой бўлмаслиги керак» — and there is none.
+
+    Their own scans cover 99% of the sheet's width. A document floating in
+    the middle of a wide white margin is what made the app show grey either
+    side of it, so what is checked is the width actually covered.
+    """
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(io.BytesIO(store.sheet_jpeg([_photo()]))) as sheet:
+        grey = np.asarray(sheet.convert("L"))
+    columns = np.where((grey < 235).any(axis=0))[0]
+    covered = (columns[-1] - columns[0]) / grey.shape[1]
+    assert covered > 0.90, f"варақнинг фақат {covered:.0%} эни тўлган"
+    assert columns[0] / grey.shape[1] < 0.05, "чапда кенг бўш жой"
 
 
 def test_an_id_cards_two_sides_share_one_sheet() -> None:
@@ -219,10 +244,11 @@ def test_an_id_cards_two_sides_share_one_sheet() -> None:
     from PIL import Image
 
     made = store.sheet_jpeg([_photo("FRONT", 6), _photo("BACK", -4)])
+    half = store.PAGE_H // 2
     with Image.open(io.BytesIO(made)) as sheet:
-        assert sheet.size == (1240, 1754)
-        top = sheet.crop((0, 0, 1240, 877)).convert("L")
-        bottom = sheet.crop((0, 877, 1240, 1754)).convert("L")
+        assert sheet.size == (store.PAGE_W, store.PAGE_H)
+        top = sheet.crop((0, 0, store.PAGE_W, half)).convert("L")
+        bottom = sheet.crop((0, half, store.PAGE_W, store.PAGE_H)).convert("L")
     # each half carries a document: something darker than the white page
     assert top.getextrema()[0] < 200, "юқориги ярмида ҳужжат йўқ"
     assert bottom.getextrema()[0] < 200, "пастки ярмида ҳужжат йўқ"
@@ -303,10 +329,20 @@ def test_writing_the_excel_touches_nothing_else_in_their_folder(
 
 def test_the_untouched_original_is_kept_somewhere_of_ours(
         their_folder) -> None:
-    store.fill_excel(_worker().rows(), their_folder / store.EXCEL_NAME)
+    """Whatever the file said before, that is what the copy must say.
+
+    NOT compared against the sample: the office is using this section now,
+    so its live Excel holds whichever worker went through last. A test that
+    expects a particular name in there breaks every time they run one.
+    """
+    excel = their_folder / store.EXCEL_NAME
+    before = store.read_excel(excel)
+    store.fill_excel(_worker().rows(), excel)
+
     kept = paths.user_templates_dir() / store.SECTION / f"original_{store.EXCEL_NAME}"
     assert kept.exists(), "асл нусха сақланмади"
-    assert store.read_excel(kept) == SAMPLE, "сақлангани асл эмас"
+    assert store.read_excel(kept) == before, "сақлангани асл эмас"
+    assert store.read_excel(excel) != before, "эксел тўлмади"
 
 
 def test_an_excel_missing_a_row_is_refused_not_half_written(
@@ -378,14 +414,15 @@ def test_nothing_is_sent_anywhere_when_the_worker_is_incomplete(
         def get(key, default=None):
             return str(their_folder) if key == store.KEY_FOLDER else default
 
+    excel = their_folder / store.EXCEL_NAME
+    before = store.read_excel(excel)
     service = store.AminaService(_Settings())
     with pytest.raises(ValidationError, match="ФИО"):
         service.create(_worker(full_name=""), {}, run=False)
     with pytest.raises(ValidationError, match="Телефон"):
         service.create(_worker(phone=""), {}, run=False)
-    # the Excel is untouched by a refusal
-    assert store.read_excel(their_folder / store.EXCEL_NAME)["fullName"] \
-        == SAMPLE["fullName"]
+    # a refusal leaves the Excel exactly as it found it
+    assert store.read_excel(excel) == before
 
 
 def test_pictures_without_an_imgbb_key_are_refused_before_the_excel(
