@@ -113,6 +113,17 @@ class UzbSpravkaView(QWidget):
         form.addWidget(self._firm, 3, 3)
         self._show_firms()
 
+        # The office's own date. Everything the certificate says about WHEN
+        # follows this box and not the computer's clock: the top-right stamp,
+        # «Дата создания» and «Дата выдачи» on all four.
+        form.addWidget(QLabel("Справка санаси:"), 4, 0)
+        self._made = QDateEdit(QDate.currentDate())
+        self._made.setCalendarPopup(True)
+        self._made.setDisplayFormat("dd.MM.yyyy")
+        self._made.setToolTip("Справкалар шу числода чиққан бўлади — "
+                              "тепадаги сана, «создания» ва «выдачи»")
+        form.addWidget(self._made, 4, 1)
+
         sheets_row = QHBoxLayout()
         sheets_row.addWidget(QLabel("Справкалар:"))
         self._ticks: dict[int, QCheckBox] = {}
@@ -204,7 +215,17 @@ class UzbSpravkaView(QWidget):
             passport=self._passport_no.text().strip(),
             pinfl=self._pinfl.text().strip(),
             firm=self._firm.currentText().strip(),
-            made_at=datetime.now())
+            made_at=self._when())
+
+    def _when(self) -> datetime:
+        """The date the office chose, at the hour it is printing.
+
+        The certificates print a time as well as a day, and the office picks
+        the DAY — a справка dated last Tuesday is still made now, so the
+        clock supplies the hour and the box supplies everything else.
+        """
+        return datetime.combine(self._made.date().toPython(),
+                                datetime.now().time().replace(microsecond=0))
 
     def _wanted(self) -> tuple[int, ...]:
         return tuple(s for s, tick in self._ticks.items() if tick.isChecked())

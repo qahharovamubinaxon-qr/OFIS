@@ -175,6 +175,46 @@ def test_what_is_printed_is_what_is_in_the_boxes(screen) -> None:
     view.deleteLater()
 
 
+# ------------------------------------------------------------- the date
+def test_the_certificates_carry_the_date_the_office_typed(screen) -> None:
+    """«МЕН КИРИТГАН ЧИСЛО ДАН БОЛАДИ СПРАВКАЛАР» — the box, not the clock."""
+    from PySide6.QtCore import QDate
+
+    build, _app = screen
+    view = build(_Controller())
+    view._made.setDate(QDate(2026, 7, 9))
+    made = view._data()
+    assert made.made_at.date() == date(2026, 7, 9)
+    view.deleteLater()
+
+
+def test_every_date_on_the_paper_follows_that_one_box(screen) -> None:
+    """The stamp at the top, «Дата создания» and «Дата выдачи» — all three."""
+    from PySide6.QtCore import QDate
+    from src.pdf.uzbspravka_renderer import values
+
+    build, _app = screen
+    view = build(_Controller())
+    view._made.setDate(QDate(2026, 7, 9))
+    data = view._data()
+    for sheet in (1, 4):
+        written = values(data, sheet)
+        assert written["created"] == "2026-07-09"
+        assert written["made_at"].startswith("2026-07-09")
+        assert "2026" in written["issued_at"] and "07" in written["issued_at"]
+        assert "09" in written["issued_at"]
+    view.deleteLater()
+
+
+def test_it_starts_on_today_so_the_usual_run_needs_no_typing(screen) -> None:
+    from datetime import date as _date
+
+    build, _app = screen
+    view = build(_Controller())
+    assert view._made.date().toPython() == _date.today()
+    view.deleteLater()
+
+
 # --------------------------------------------------------- the QR switch
 def test_the_qr_box_is_off_and_locked_without_the_keys(screen) -> None:
     class _NoKeys(_Controller):
