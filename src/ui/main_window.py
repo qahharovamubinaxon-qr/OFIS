@@ -62,6 +62,8 @@ _NAV = [
      "Ўзбекистондан 4 справка — кодли QR билан → PDF", "🇺🇿"),
     (None, "nav.kukpatent", "КУК ПАТЕНТ",
      "Ишчи картаси — олди ва орқаси → PDF", "🟢"),
+    (None, "nav.amina", "АМИНА",
+     "Ишчига аккаунт — расмлар imgbb'га, Эксел, импорт", "📱"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -248,6 +250,15 @@ class MainWindow(QMainWindow):
             return KukPatentView(KukPatentController(
                 self._container.resolve(OcrService),
                 KukPatentService(),
+            ))
+        if key == "nav.amina":
+            from src.controllers.amina_controller import AminaController
+            from src.services.amina_service import AminaService
+            from src.ui.views.amina_view import AminaView
+
+            return AminaView(AminaController(
+                self._container.resolve(OcrService),
+                AminaService(self._settings),
             ))
         if key == "nav.chek":
             from src.controllers.chek_controller import ChekController

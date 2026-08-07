@@ -239,6 +239,68 @@ def _run_kukpatent(ctx: RunContext, state: dict) -> list[Path]:
     return [result.pdf]
 
 
+def _run_amina(ctx: RunContext, state: dict) -> list[Path]:
+    """АМИНА from the phone — the same account, opened the same way.
+
+    The pictures arrive in a fixed order and each goes to the row its label
+    names: the first is read for the passport, and the rest fill identityUrl,
+    innUrl, dmsUrl, educationUrl and patentUrl in turn. However many were
+    sent, only those rows are written — the office was explicit that two
+    photographs must not silently become five empty links.
+
+    Nothing is returned as a file. What the office wants back is the login and
+    the password, and those go into the chat as a note.
+    """
+    ctl = ctx.ctl["amina"]
+    images = state.get("photos") or []
+    if not images:
+        raise OfisError("Паспорт расмини юборинг.")
+    answers = state["answers"]
+
+    data = ctl.read_passport(images[0])
+    data.phone = str(answers.get("phone") or "").strip()
+    data.kig_number = str(answers.get("kig_number") or "").strip()
+    expires = answers.get("kig_expire")
+    data.kig_expire = expires.strftime("%Y-%m-%d") if expires else ""
+    data.street = str(answers.get("street") or "").strip()
+    data.house = str(answers.get("house") or "").strip()
+    data.apartment = str(answers.get("apartment") or "").strip()
+    kept = ctl.typed()
+    data.city = kept.get("city", "") or "Москва"
+    data.extra_phone = kept.get("extra_phone", "")
+    ctx.note(f"Ўқилди: {data.full_name}")
+
+    # photo 1 is the passport that was read; 2 onwards fill the document rows
+    sending: dict[str, list[bytes]] = {}
+    for index, key in enumerate(ctl.docs(), start=1):
+        if index < len(images):
+            sending[key] = [images[index]]
+    if sending:
+        names = ", ".join(ctl.doc_names()[k] for k in ctl.docs()
+                          if k in sending)
+        ctx.note(f"Расмлар: {names}")
+
+    result = ctl.create(data, sending)
+    ctx.note(f"✅ Аккаунт очилди\n\n{result.slip()}")
+    return []
+
+
+def _amina_ready(ctl: dict) -> str:
+    """Why АМИНА cannot run yet — said before a single question is asked."""
+    section = ctl["amina"]
+    try:
+        section.check()
+    except Exception as exc:                              # noqa: BLE001
+        return str(exc)
+    if section.excel_is_open():
+        return ("Эксел ҳозир компютерда очиқ турибди — ёпинг, кейин "
+                "уриниб кўринг.")
+    if not str(ctl["imgbb"].key() or "").strip():
+        return ("imgbb API калити йўқ — компютерда Sozlamalar'га киритинг, "
+                "расмлар ўшанга юкланади.")
+    return ""
+
+
 def _kukpatent_ready(ctl: dict) -> str:
     section = ctl["kukpatent"]
     missing = [section.side_names()[s] for s in section.sides()
@@ -1167,6 +1229,29 @@ MODULES: tuple[Module, ...] = (
                  Ask("issued", "Берилган сана (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("card_no", "Картанинг рақами (бўш — навбатдагиси):",
                      kind="text"))),
+    Module("amina", "📱 АМИНА", _run_amina,
+           photo_prompt="Расмларни ШУ ТАРТИБДА юборинг:\n"
+                        "1️⃣ Паспорт (ўқиш учун)\n"
+                        "2️⃣ identityUrl — паспорт\n"
+                        "3️⃣ innUrl — ИНН\n"
+                        "4️⃣ dmsUrl — DMS\n"
+                        "5️⃣ educationUrl — сертификат\n"
+                        "6️⃣ patentUrl — патент\n\n"
+                        "Нечта юборсангиз — ўшалар боради, қолгани бўш "
+                        "қолади. Биттаси (паспорт) етарли.",
+           photo_labels=("Паспорт", "identityUrl", "innUrl", "dmsUrl",
+                         "educationUrl", "patentUrl"),
+           ready=lambda c: _amina_ready(c),
+           asks=(Ask("phone", "Телефон рақами (парол шундан ясалади):",
+                     kind="text"),
+                 Ask("kig_number", "КИГ рақами (масалан АВ0461171):",
+                     kind="text"),
+                 Ask("kig_expire", "КИГ тугаш санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=0),
+                 Ask("street", "Кўча (масалан улица Беловежская):",
+                     kind="text"),
+                 Ask("house", "Уй рақами:", kind="text"),
+                 Ask("apartment", "Хонадон рақами:", kind="text"))),
     Module("uzbspravka", "🇺🇿 УЗБ СПРАВКАЛАР", _run_uzbspravka,
            targets=lambda c: sorted(c["uzbspravka"].seals()),
            target_prompt="Фирмани танланг (печати ўшаники бўлади):",
@@ -1491,6 +1576,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     background thread (the bot poller) as well as the HTTP server."""
     from src.config.settings_service import SettingsService
     from src.controllers.alpinist_controller import AlpinistController
+    from src.controllers.amina_controller import AminaController
     from src.controllers.beydjik_controller import BeydjikController
     from src.controllers.chek_controller import ChekController
     from src.controllers.dms_controller import DmsController
@@ -1526,6 +1612,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     )
     from src.ocr.service import OcrService
     from src.services.alpinist_service import AlpinistService
+    from src.services.amina_service import AminaService
     from src.services.beydjik_service import BeydjikService
     from src.services.company_service import CompanyService
     from src.services.dms_service import DmsService
@@ -1583,6 +1670,8 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "kukchek": KukChekController(
             ocr, KukChekService(container.resolve(SettingsService))),
         "kukpatent": KukPatentController(ocr, KukPatentService()),
+        "amina": AminaController(
+            ocr, AminaService(container.resolve(SettingsService))),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(
