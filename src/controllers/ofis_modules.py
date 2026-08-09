@@ -927,6 +927,43 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
+def _run_universal(ctx: RunContext, state: dict) -> list[Path]:
+    """УНИВЕРСАЛ from the phone — a saved form, filled off the passport.
+
+    The phone does the part the reader can do on its own. Anything a form
+    needs typed by hand — an address, a box the office invented — belongs to
+    the computer, where there is a keyboard and the whole form is in view.
+    """
+    ctl = ctx.ctl["universal"]
+    name = str(state.get("target") or "")
+    images = state.get("photos") or []
+    if not images:
+        raise OfisError("Паспорт расмини юборинг.")
+    data = ctl.read(images[0], images[1] if len(images) > 1 else None)
+    answers = state["answers"]
+    if answers.get("issued"):
+        data.issued = answers["issued"]
+    if answers.get("expires"):
+        data.expires = answers["expires"]
+    if len(images) > 2:
+        data.photo_png = ctl.portrait(images[2])
+    ctx.note(f"Ўқилди: {data.fio()}")
+    result = ctl.generate(name, data)
+    ctx.note(f"📄 {result.form}")
+    return [result.pdf]
+
+
+def _universal_ready(ctl: dict) -> str:
+    section = ctl["universal"]
+    if not section.names():
+        return ("Бланка юкланмаган — компютерда УНИВЕРСАЛ ИШЛАР бўлимида "
+                "бўш бланкани юклаб, матнларини қўйинг.")
+    if not any(section.fields(n) for n in section.names()):
+        return ("Бирорта бланкага матн қўйилмаган — компютерда "
+                "«📐 Созлаш» орқали қўйинг.")
+    return ""
+
+
 def _qrreg_addresses(ctl: dict, state: dict) -> list[str]:
     """The saved dormitories, named, for the phone to choose from.
 
@@ -1275,6 +1312,18 @@ MODULES: tuple[Module, ...] = (
                  Ask("issued", "Берилган сана (КК.ОО.ЙЙЙЙ):", default_days=0),
                  Ask("card_no", "Картанинг рақами (бўш — навбатдагиси):",
                      kind="text"))),
+    Module("universal", "🧩 УНИВЕРСАЛ", _run_universal,
+           targets=lambda c: c["universal"].names(),
+           target_prompt="Бланкани танланг:",
+           photo_prompt="Расмлар: 1️⃣ Паспорт  2️⃣ Патент (ихтиёрий)  "
+                        "3️⃣ Ишчининг расми (бланка талаб қилса)\n\n"
+                        "Адрес ва ўзингиз қўшган майдонлар компютерда "
+                        "тўлдирилади.",
+           photo_labels=("Паспорт", "Патент", "Ишчи расми"),
+           ready=lambda c: _universal_ready(c),
+           asks=(Ask("issued", "Берилган сана (КК.ОО.ЙЙЙЙ):", default_days=0),
+                 Ask("expires", "Тугаш санаси (КК.ОО.ЙЙЙЙ):",
+                     default_days=365))),
     Module("amina", "📱 АМИНА", _run_amina,
            photo_prompt="Расмларни ШУ ТАРТИБДА юборинг:\n"
                         "1️⃣ Паспорт (ўқиш учун)\n"
@@ -1655,6 +1704,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.controllers.template_controller import TemplateController
     from src.controllers.trud8_controller import Trud8Controller
     from src.controllers.trud_ppu_controller import TrudPpuController
+    from src.controllers.universal_controller import UniversalController
     from src.controllers.uzbspravka_controller import UzbSpravkaController
     from src.database.repositories.template_profile_repo import (
         TemplateProfileRepository,
@@ -1695,6 +1745,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
     from src.services.trud8_service import Trud8Service
     from src.services.trud_ppu_service import TrudPpuService
     from src.services.umumiy_service import UmumiyService
+    from src.services.universal_service import UniversalService
     from src.services.uzbspravka_service import UzbSpravkaService
 
     ocr = container.resolve(OcrService)
@@ -1721,6 +1772,7 @@ def build_controllers(container, key_getter: Callable[[], str]) -> dict:
         "kukpatent": KukPatentController(ocr, KukPatentService()),
         "amina": AminaController(
             ocr, AminaService(container.resolve(SettingsService))),
+        "universal": UniversalController(ocr, UniversalService()),
         "spr3": Spr3Controller(
             ocr, Spr3Service(container.resolve(SettingsService))),
         "mvd_trud": MvdTrudController(

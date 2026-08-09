@@ -45,6 +45,12 @@ NUDGE_Y = 0.0003
 #: One notch of the wheel, as a share of the page height — about a point.
 SIZE_STEP = 0.0012
 
+#: How far the page itself may be magnified. Out to a half for a whole A4 on
+#: a small screen, in to four times for lining a value up on a printed rule.
+MIN_ZOOM, MAX_ZOOM = 0.5, 4.0
+#: What one press of ＋ / － does.
+ZOOM_STEP = 0.25
+
 
 @dataclass
 class Item:
@@ -95,7 +101,11 @@ class _Canvas(QWidget):
     def __init__(self, page: QPixmap, items: list[Item],
                  rules: list[RuleItem], parent=None) -> None:
         super().__init__(parent)
+        #: The page as it arrived. Zooming never touches it, so no amount of
+        #: zooming in and out slowly degrades the picture.
+        self._source = page
         self._page = page
+        self._zoom = 1.0
         self.items = {i.key: i for i in items}
         self.order = [i.key for i in items]
         self.rules = {r.key: r for r in rules}
@@ -105,6 +115,32 @@ class _Canvas(QWidget):
         self._pixmaps: dict[str, QPixmap] = {}
         self.setMinimumSize(page.size())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    # -- zoom ----------------------------------------------------------
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def set_zoom(self, factor: float) -> None:
+        """Draw the page larger or smaller — and everything on it with it.
+
+        Every position, size and mouse test in this widget is a FRACTION of
+        the page, so scaling the page alone scales the whole scene and the
+        arithmetic stays true. What is saved is fractions, which is why the
+        office may zoom as it likes and the result is identical.
+        """
+        factor = max(MIN_ZOOM, min(MAX_ZOOM, float(factor)))
+        if abs(factor - self._zoom) < 1e-6:
+            return
+        self._zoom = factor
+        self._page = (self._source if factor == 1.0 else self._source.scaled(
+            max(1, round(self._source.width() * factor)),
+            max(1, round(self._source.height() * factor)),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation))
+        self.setMinimumSize(self._page.size())
+        self.resize(self._page.size())
+        self.update()
 
     # -- geometry ------------------------------------------------------
     def _font(self, item: Item) -> QFont:

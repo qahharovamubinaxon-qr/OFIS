@@ -64,6 +64,8 @@ _NAV = [
      "Ишчи картаси — олди ва орқаси → PDF", "🟢"),
     (None, "nav.amina", "АМИНА",
      "Ишчига аккаунт — расмлар imgbb'га, Эксел, импорт", "📱"),
+    (None, "nav.universal", "УНИВЕРСАЛ ИШЛАР",
+     "Ўз бланкангиз — матнларни ўзингиз қўясиз", "🧩"),
     (None, "nav.trud", "Трудовой-Уведомления", "Договор + Уведомление → 2 PDF", "📑"),
     (None, "nav.dms", "ДМС", "Полис «ДМС-Трудовой» → PDF", "🏥"),
     (None, "nav.strahovka", "СТРАХОВКА МАШИНАГА",
@@ -250,6 +252,15 @@ class MainWindow(QMainWindow):
             return KukPatentView(KukPatentController(
                 self._container.resolve(OcrService),
                 KukPatentService(),
+            ))
+        if key == "nav.universal":
+            from src.controllers.universal_controller import UniversalController
+            from src.services.universal_service import UniversalService
+            from src.ui.views.universal_view import UniversalView
+
+            return UniversalView(UniversalController(
+                self._container.resolve(OcrService),
+                UniversalService(),
             ))
         if key == "nav.amina":
             from src.controllers.amina_controller import AminaController

@@ -134,6 +134,7 @@ _DESKTOP_TO_MODULE = {
     "nav.uzbspravka": "uzbspravka",
     "nav.kukpatent": "kukpatent",
     "nav.amina": "amina",
+    "nav.universal": "universal",
     "nav.trud": "trud",
     "nav.dms": "dms",
     "nav.strahovka": "insurance",

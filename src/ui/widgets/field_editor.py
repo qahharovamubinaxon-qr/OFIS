@@ -29,7 +29,13 @@ from PySide6.QtWidgets import (
 
 from src.pdf.fonts import families
 from src.pdf.trud8_fields import CATALOGUE, Field
-from src.ui.widgets.layout_editor import Item, _Canvas
+from src.ui.widgets.layout_editor import (
+    MAX_ZOOM,
+    MIN_ZOOM,
+    ZOOM_STEP,
+    Item,
+    _Canvas,
+)
 
 WEIGHTS = ("Юпқа (оддий)", "Қалин (жирний)")
 #: Which way a text lies. Blanks that are written up their own edge — a
@@ -91,6 +97,8 @@ class FieldEditor(QDialog):
         self._page = 1
         self._canvas: _PickCanvas | None = None
         self._filling = False
+        #: How magnified the page is drawn. Kept across page turns.
+        self._zoom = 1.0
 
         outer = QVBoxLayout(self)
         hint = QLabel(
@@ -125,6 +133,26 @@ class FieldEditor(QDialog):
         drop.setToolTip("Танланган матнни ўчириш")
         drop.clicked.connect(self._drop)
         nav.addWidget(drop)
+        nav.addSpacing(16)
+        # Zooming the PAGE, not the text on it: lining a value up on a rule
+        # printed 0.3 mm thick is not something anyone can do at whole-page
+        # size, and the office asked for it by name.
+        nav.addWidget(QLabel("Кўриниш:"))
+        out_button = QPushButton("🔍－")
+        out_button.setToolTip("Узоқлаштириш")
+        out_button.clicked.connect(lambda: self._zoom_by(-ZOOM_STEP))
+        nav.addWidget(out_button)
+        self._zoom_shown = QLabel("100%")
+        self._zoom_shown.setMinimumWidth(48)
+        nav.addWidget(self._zoom_shown)
+        in_button = QPushButton("🔍＋")
+        in_button.setToolTip("Яқинлаштириш — чизиққа аниқ тўғрилаш учун")
+        in_button.clicked.connect(lambda: self._zoom_by(+ZOOM_STEP))
+        nav.addWidget(in_button)
+        whole = QPushButton("⤢ Бутун саҳифа")
+        whole.setToolTip("Саҳифа ойнага сиғадиган бўлсин")
+        whole.clicked.connect(self._zoom_fit)
+        nav.addWidget(whole)
         nav.addStretch(1)
         outer.addLayout(nav)
 
@@ -228,6 +256,7 @@ class FieldEditor(QDialog):
                  for i in mine]
         canvas = _PickCanvas(self._pixmaps[page - 1], items, [])
         canvas.picked_key.connect(self._on_canvas_pick)
+        canvas.set_zoom(self._zoom)      # a page turn keeps the magnification
         self._canvas = canvas
         self._scroll.setWidget(canvas)
 
@@ -244,6 +273,26 @@ class FieldEditor(QDialog):
             self._on_item(self._pick_item.currentIndex())
         else:
             self._show_style(None)
+
+    # --------------------------------------------------------------- zoom
+    def _zoom_by(self, delta: float) -> None:
+        self._set_zoom(self._zoom + delta)
+
+    def _zoom_fit(self) -> None:
+        """As large as the window will hold the whole page."""
+        page = self._pixmaps[self._page - 1]
+        room = self._scroll.viewport().size()
+        if not page.width() or not page.height():
+            return
+        self._set_zoom(min(room.width() / page.width(),
+                           room.height() / page.height()))
+
+    def _set_zoom(self, factor: float) -> None:
+        factor = max(MIN_ZOOM, min(MAX_ZOOM, factor))
+        self._zoom = factor
+        if self._canvas is not None:
+            self._canvas.set_zoom(factor)
+        self._zoom_shown.setText(f"{round(factor * 100)}%")
 
     # -------------------------------------------------------------- texts
     def _picked(self) -> int | None:
