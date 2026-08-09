@@ -284,7 +284,15 @@ def build_pdf(images: list[bytes], grayscale: bool = True) -> bytes:
     if not images:
         raise OfisError("Kamida bitta hujjat rasmini yuklang.")
 
-    scans = [Image.fromarray(scan_one(data, grayscale)) for data in images]
+    # In colour, the room comes with the document: a shadow down one side
+    # from the hand holding the phone, a bright patch by the window. The
+    # grey mode already flattens that in `_photocopy`; in colour it used to
+    # be left in. This is the same evening the office's own scanner does.
+    from src.services.doc_enhance import even_lighting
+
+    scans = [Image.fromarray(scan_one(data, grayscale) if grayscale
+                             else even_lighting(scan_one(data, False)))
+             for data in images]
     margin_x, margin_y = int(PAGE_W * MARGIN), int(PAGE_H * MARGIN)
     gutter = int(PAGE_H * GUTTER)
 

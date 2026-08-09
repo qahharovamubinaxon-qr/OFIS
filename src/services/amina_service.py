@@ -375,10 +375,21 @@ def _tighten(rgb):
 
 
 def cut(image: bytes):
-    """One photograph → the document alone, straight, as an RGB array."""
+    """One photograph → the document alone: found, straightened, finished.
+
+    Three steps, each somebody else's job. `scan_one` finds the document and
+    squares it up; `_tighten` takes off whatever desk it missed; and
+    `doc_enhance.finish` does what the office's own scanner at
+    qrixtools.com does — evens out the shadow the phone cast and sets the
+    picture to the document's real shape at 300 dpi.
+    """
+    import numpy as np
+
+    from src.services.doc_enhance import finish
     from src.services.doc_scan_service import scan_one
 
-    return _tighten(scan_one(image, grayscale=False))
+    page = _tighten(scan_one(image, grayscale=False))
+    return np.asarray(finish(page, min_long=LONG_SIDE).convert("RGB"))
 
 
 def sheet_jpeg(images: list[bytes]) -> bytes:
