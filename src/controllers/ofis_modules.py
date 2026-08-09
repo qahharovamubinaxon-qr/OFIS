@@ -62,11 +62,25 @@ class Ask:
 
     #: What a ``choice`` question accepts, when it is not the доверенность list.
     choices: tuple[str, ...] = ()
+    #: For a list that is not known until asking time — the addresses the
+    #: office has saved, say. Given the controllers and whatever the run has
+    #: gathered so far (the chosen blank, in particular), hands back the
+    #: options. ``state`` is ``{}`` when the list is wanted before a run.
+    choices_from: Callable[[dict, dict], list[str]] | None = None
 
-    def options(self) -> list[str]:
+    def options(self, ctl: dict | None = None,
+                state: dict | None = None) -> list[str]:
         """Values a ``choice`` question accepts (empty for other kinds)."""
         if self.kind != "choice":
             return []
+        if self.choices_from is not None and ctl is not None:
+            try:
+                return [str(o) for o in self.choices_from(ctl, state or {})]
+            except Exception:                              # noqa: BLE001
+                # An empty list draws a question with no answers rather than
+                # crashing the poller; the module's `ready` check is what
+                # tells the operator why.
+                return []
         if self.choices:
             return list(self.choices)
         from src.services.dover_service import DOVER_TYPES
@@ -913,12 +927,38 @@ def _code_from(label: str) -> str:
     return f"{latin[:24] or 'addr'}_{uuid.uuid4().hex[:6]}"
 
 
-def _run_qrreg(ctx: RunContext, state: dict) -> list[Path]:
-    """КРКОД РЕГ from the phone — the saved dormitory does the heavy lifting.
+def _qrreg_addresses(ctl: dict, state: dict) -> list[str]:
+    """The saved dormitories, named, for the phone to choose from.
 
-    The address, its code and its host come off the LAST SAVED dormitory (the
-    computer is where they are typed once); the phone supplies the worker's
-    two photographs and the dates.
+    The chosen blank's own address is moved to the FRONT. The office keeps
+    one blank per dormitory, so that is nearly always the right one — and
+    the bot takes option one when «Тайёрла» is pressed without choosing.
+    """
+    section = ctl["qrreg"]
+    known = section.addresses()
+    usual = section.address_for_blank(state.get("target"))
+    if usual is not None:
+        label = section.address_label(usual)
+        known = [a for a in known if section.address_label(a) != label]
+        known.insert(0, usual)
+    return [section.address_label(a) for a in known]
+
+
+def _qrreg_ready(ctl: dict) -> str:
+    if not ctl["qrreg"].addresses():
+        return ("Адрес ҳали сақланмаган — компютерда КРКОД РЕГ бўлимида "
+                "бир марта тўлдириб «Тайёрлаш» қилинг.")
+    return ""
+
+
+def _run_qrreg(ctx: RunContext, state: dict) -> list[Path]:
+    """КРКОД РЕГ from the phone.
+
+    The address is ASKED for now rather than assumed. It used to be taken
+    silently off whichever dormitory was saved last, which is right until
+    the office registers somebody at a different one and never sees that it
+    went to the wrong address — «ботда регистрация адресларини сорамайапти,
+    сорасин доим».
     """
     ctl = ctx.ctl["qrreg"]
     known = ctl.addresses()
@@ -931,7 +971,13 @@ def _run_qrreg(ctx: RunContext, state: dict) -> list[Path]:
     ctx.note(f"Ҳужжатлар ўқилди: {worker.surname or ''} "
              f"{worker.name or ''}".strip())
     answers = state["answers"]
-    entry = known[0]
+
+    chosen = str(answers.get("address") or "").strip()
+    entry = next((a for a in known if ctl.address_label(a) == chosen), None)
+    if entry is None:
+        entry = ctl.address_for_blank(state.get("target")) or known[0]
+    ctx.note(f"📍 {ctl.address_label(entry)}")
+
     result = ctl.generate(
         template=Path(state["target"]), passport=worker,
         valid_from=answers.get("valid_from") or date.today(),
@@ -1383,7 +1429,10 @@ MODULES: tuple[Module, ...] = (
            target_prompt="Бланкани танланг:",
            photo_prompt="Иккита расм: паспорт, кейин патент (русча ФИО).",
            photo_labels=("Паспорт", "Патент"),
-           asks=(Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ):",
+           ready=lambda c: _qrreg_ready(c),
+           asks=(Ask("address", "Адресни танланг:", kind="choice",
+                     choices_from=_qrreg_addresses),
+                 Ask("valid_from", "Бошланиш санаси (КК.ОО.ЙЙЙЙ):",
                      default_days=0),
                  Ask("valid_to", "Тугаш санаси (КК.ОО.ЙЙЙЙ):",
                      default_days=90))),

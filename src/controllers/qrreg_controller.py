@@ -53,6 +53,16 @@ class QrRegController:
     def addresses(self) -> list[dict]:
         return self._service.addresses()
 
+    def address_for_blank(self, template) -> dict | None:
+        """The address last registered on this blank — its usual one."""
+        return self._service.address_for_blank(template)
+
+    @staticmethod
+    def address_label(entry: dict) -> str:
+        from src.services.qrreg_service import address_label
+
+        return address_label(entry)
+
     # ------------------------------------------------------------ reading
     def read_documents(self, passport_image: bytes,
                        patent_image: bytes | None) -> Passport:

@@ -154,6 +154,10 @@ class QrRegView(QWidget):
 
         self._reload()
         self._restore()
+        # Connected only now: _reload() fills the combo, and every item it
+        # adds would otherwise fire this and overwrite the address boxes
+        # while the list is still being built.
+        self._template.currentIndexChanged.connect(self._on_blank)
 
     # ------------------------------------------------------------ helpers
     def _line(self, grid: QGridLayout, row: int, col: int, label: str) -> QLineEdit:
@@ -164,24 +168,53 @@ class QrRegView(QWidget):
 
     def _reload(self) -> None:
         current = self._template.currentData()
-        self._template.clear()
-        for blank in self._c.templates():
-            self._template.addItem(blank.stem, str(blank))
-        if self._template.count() == 0:
-            self._template.addItem("— бланка юкланмаган —", None)
-        elif current:
-            index = self._template.findData(current)
-            if index >= 0:
-                self._template.setCurrentIndex(index)
+        # Rebuilding the list fires currentIndexChanged for every item added,
+        # and each one would overwrite the address boxes the operator may be
+        # in the middle of typing. Silence it until the list is whole.
+        self._template.blockSignals(True)
+        try:
+            self._template.clear()
+            for blank in self._c.templates():
+                self._template.addItem(blank.stem, str(blank))
+            if self._template.count() == 0:
+                self._template.addItem("— бланка юкланмаган —", None)
+            elif current:
+                index = self._template.findData(current)
+                if index >= 0:
+                    self._template.setCurrentIndex(index)
+        finally:
+            self._template.blockSignals(False)
         podt = self._c.podt_template()
         self._podt_state.setText(
             "🖼 Подтверждение шаблони: юкланган ✅" if podt
             else "🖼 Подтверждение шаблони: ҳали юкланмаган ⚠️")
 
     def _restore(self) -> None:
-        known = self._c.addresses()
-        if known:
-            self._apply_address(known[0])
+        if not self._blank_address():
+            known = self._c.addresses()
+            if known:
+                self._apply_address(known[0])
+
+    def _blank_address(self) -> bool:
+        """The address this blank was last registered on, put back in place.
+
+        The office keeps one blank per dormitory, so choosing the blank all
+        but names the address — «бланка танлаганимда ўша бланка билан охирги
+        марта ишлатган адрес автоматик чиқсин». It is filled in, not locked:
+        typing over it is what changes it, and what is typed is what is used.
+        """
+        entry = self._c.address_for_blank(self._template.currentData())
+        if not entry:
+            return False
+        self._apply_address(entry)
+        self._status.setText(
+            f"📍 Бу бланканинг адреси: {self._c.address_label(entry)} "
+            "— ўзгартирмасангиз шунга қилинади.")
+        return True
+
+    def _on_blank(self) -> None:
+        """A different blank was picked — bring its own address back."""
+        self._blank_address()
 
     def _apply_address(self, entry: dict) -> None:
         self._subject.setText(str(entry.get("addr_subject") or ""))

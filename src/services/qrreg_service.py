@@ -37,7 +37,30 @@ PODT_SECTION = "qrreg_podt"
 BLANK_SUFFIXES = {".pdf"}
 
 KEY_ADDRESSES = "qrreg.addresses"
+#: Blank → the address last registered on it. The office keeps one blank per
+#: dormitory, so the blank all but names the address.
+KEY_BLANK_ADDRESS = "qrreg.blank_address"
 MAX_ADDRESSES = 30
+
+#: What makes two saved dormitories the same one. Not the label — the office
+#: renames those — but where the place actually is.
+_IDENTITY = ("addr_subject", "addr_street", "dom", "kvartira")
+
+
+def address_key(entry: dict) -> str:
+    """A saved dormitory's identity, for matching one against another."""
+    return json.dumps([" ".join(str(entry.get(k, "")).split()).upper()
+                       for k in _IDENTITY])
+
+
+def address_label(entry: dict) -> str:
+    """How a saved dormitory is named on screen and in the bot's list."""
+    said = " ".join(str(entry.get("label", "")).split())
+    if said:
+        return said
+    parts = [" ".join(str(entry.get(k, "")).split())
+             for k in ("addr_punkt", "addr_street", "dom", "kvartira")]
+    return ", ".join(p for p in parts if p) or "— номсиз —"
 
 #: What one saved dormitory carries — the address pieces, its code, its host.
 ADDRESS_FIELDS = ("label", "addr_subject", "addr_district", "addr_punkt",
@@ -175,15 +198,53 @@ class QrRegService:
                  for k in ADDRESS_FIELDS}
         if not entry["addr_street"] and not entry["addr_subject"]:
             return
-        key = json.dumps([entry[k].upper() for k in
-                          ("addr_subject", "addr_street", "dom", "kvartira")])
-        kept = [a for a in self.addresses()
-                if json.dumps([str(a.get(k, "")).upper() for k in
-                               ("addr_subject", "addr_street", "dom",
-                                "kvartira")]) != key]
+        key = address_key(entry)
+        kept = [a for a in self.addresses() if address_key(a) != key]
         kept.insert(0, entry)
         self._settings.set(KEY_ADDRESSES,
                            json.dumps(kept[:MAX_ADDRESSES], ensure_ascii=False))
+
+    # ------------------------------------------- which blank goes with which
+    def blank_addresses(self) -> dict[str, str]:
+        """Blank → the key of the address last registered on it."""
+        if self._settings is None:
+            return {}
+        raw = str(self._settings.get(KEY_BLANK_ADDRESS, "") or "")
+        try:
+            kept = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            return {}
+        return {str(k): str(v) for k, v in kept.items()} \
+            if isinstance(kept, dict) else {}
+
+    def remember_blank_address(self, template, entry: dict) -> None:
+        """Tie this address to this blank, so it comes back with it.
+
+        The office registers each dormitory on its own blank and hardly ever
+        crosses them, so which address a blank was last used with is nearly
+        always the address it wants next.
+        """
+        if self._settings is None or template is None:
+            return
+        key = address_key(entry)
+        if not key:
+            return
+        kept = self.blank_addresses()
+        kept[Path(template).stem] = key
+        self._settings.set(KEY_BLANK_ADDRESS,
+                           json.dumps(kept, ensure_ascii=False))
+
+    def address_for_blank(self, template) -> dict | None:
+        """The address last registered on this blank, if there is one."""
+        if template is None:
+            return None
+        wanted = self.blank_addresses().get(Path(template).stem, "")
+        if not wanted:
+            return None
+        for entry in self.addresses():
+            if address_key(entry) == wanted:
+                return entry
+        return None
 
     def imgbb_key(self) -> str:
         if self._settings is None:
@@ -223,7 +284,7 @@ class QrRegService:
             counter += 1
         target.write_bytes(pdf)
 
-        self.remember_address({
+        used = {
             "label": data.full_address(),
             "addr_subject": data.addr_subject,
             "addr_district": data.addr_district,
@@ -232,7 +293,11 @@ class QrRegService:
             "dom": data.dom, "korpus": data.korpus, "kvartira": data.kvartira,
             "code": data.code,
             "host_surname": data.host_surname, "host_name": data.host_name,
-            "host_patronymic": data.host_patronymic})
+            "host_patronymic": data.host_patronymic}
+        self.remember_address(used)
+        # …and which blank it went on, so choosing that blank next time
+        # brings this address back with it.
+        self.remember_blank_address(template, used)
         log.info("КРКОД РЕГ: %s — %s (%s)", data.fio(), target.name, link)
         return QrRegResult(pdf=pdf, saved=target,
                            surname=(data.surname or "").strip(), link=link)

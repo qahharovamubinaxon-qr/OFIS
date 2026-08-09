@@ -202,7 +202,7 @@ class WebAppServer:
                 "ready": (ai or not m.needs_ai) and not self._blocked(m, ctl),
                 "blocked": self._blocked(m, ctl),
                 "asks": [{"field": a.field, "prompt": a.prompt, "kind": a.kind,
-                          "options": a.options()}
+                          "options": a.options(ctl)}
                          for a in m.asks],
             })
         return out
@@ -263,7 +263,7 @@ class WebAppServer:
                     raise OfisError(f"Сана нотўғри: {ask.prompt}")
                 state["answers"][ask.field] = parsed
             elif ask.kind == "choice":
-                options = ask.options()
+                options = ask.options(ctl, state)
                 state["answers"][ask.field] = (
                     raw if raw in options else (options[0] if options else raw))
             else:

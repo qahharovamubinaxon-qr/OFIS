@@ -605,7 +605,7 @@ class TelegramBot:
                 return
             state["answers"][ask.field] = parsed
         elif ask.kind == "choice":
-            options = ask.options()
+            options = ask.options(self.ctl(), state)
             choice = options[0] if options else ""
             if text.strip().isdigit():
                 idx = int(text.strip()) - 1
@@ -632,7 +632,7 @@ class TelegramBot:
                 hint = (f"\n(масалан {suggested.strftime('%d.%m.%Y')} — ёки "
                         f"«{_BTN_RUN}» босинг, ўша сана қўйилади)")
             elif ask.kind == "choice":
-                options = ask.options()
+                options = ask.options(self.ctl(), state)
                 hint = "\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options, 1))
                 hint += f"\n(«{_BTN_RUN}» босилса — 1-вариант)"
             elif ask.kind == "text":
