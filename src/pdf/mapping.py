@@ -92,6 +92,15 @@ def with_layout(mapping: FieldMapping, layout: dict | None) -> FieldMapping:
 
     The saved numbers are FRACTIONS of the page, so a blank re-scanned at
     another resolution still lands right. A field nobody moved is untouched.
+
+    Two shapes are accepted, and both keep working:
+
+    ``[x, y, size]``
+        what every section saved before there was anything to save but a
+        position, and what most of them still hold;
+    ``{"x":…, "y":…, "size":…, "font":…, "bold":…, "colour":[r,g,b]}``
+        what the arranger writes now that the office can pick a face, a
+        weight and a colour as well as a place.
     """
     moved = (layout or {}).get("fields") or {}
     if not moved:
@@ -100,14 +109,42 @@ def with_layout(mapping: FieldMapping, layout: dict | None) -> FieldMapping:
     fields = []
     for field in mapping.fields:
         spot = moved.get(field.id)
-        if not spot or len(spot) != 3:
-            fields.append(field)
-            continue
-        x, y, size = (float(v) for v in spot)
-        anchor = "x0" if field.type == "grid" else "x"
-        fields.append(field.model_copy(update={
-            anchor: x * width, "y": y * height, "size": size * height}))
+        change = _placement(spot, field, width, height)
+        fields.append(field.model_copy(update=change) if change else field)
     return mapping.model_copy(update={"fields": fields})
+
+
+def _placement(spot, field: Field_, width: float,
+               height: float) -> dict | None:
+    """One saved entry turned into what a field has to change."""
+    anchor = "x0" if field.type == "grid" else "x"
+    if isinstance(spot, (list, tuple)):
+        if len(spot) != 3:
+            return None
+        x, y, size = (float(v) for v in spot)
+        return {anchor: x * width, "y": y * height, "size": size * height}
+    if not isinstance(spot, dict):
+        return None
+
+    change: dict = {}
+    if spot.get("x") is not None:
+        change[anchor] = float(spot["x"]) * width
+    if spot.get("y") is not None:
+        change["y"] = float(spot["y"]) * height
+    if spot.get("size") is not None:
+        change["size"] = float(spot["size"]) * height
+    if spot.get("font"):
+        change["font"] = str(spot["font"])
+    # `bold` and `colour` are not in the shared mapping's own vocabulary —
+    # Field_ allows extras, and the engine reads them from there.
+    if spot.get("bold") is not None:
+        change["bold"] = bool(spot["bold"])
+    colour = spot.get("colour")
+    if isinstance(colour, (list, tuple)) and len(colour) >= 3:
+        change["colour"] = tuple(float(c) for c in colour[:3])
+    if spot.get("rotate") is not None:
+        change["rotate"] = int(spot["rotate"])
+    return change or None
 
 
 def anchor_x(field: Field_) -> float:

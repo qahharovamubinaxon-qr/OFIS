@@ -33,6 +33,18 @@ def _ink(field: Field_) -> tuple[float, float, float]:
         return (0.0, 0.0, 0.0)
 
 
+def _stroked(stroke: float) -> dict:
+    """What `insert_text` needs to STROKE an outline as well as fill it.
+
+    A face that ships in one weight only cannot be printed bold, so it is
+    drawn twice over — filled and outlined — which is how the чек and the
+    МИГ card have always faked it.
+    """
+    if not stroke:
+        return {}
+    return {"render_mode": 2, "border_width": stroke}
+
+
 def _wrap_words(text: str, capacities: list[int]) -> list[str]:
     """Distribute ``text`` across rows of the given cell capacities, breaking on
     spaces so words are not split. A word longer than a row is hard-split.
@@ -71,15 +83,17 @@ def _wrap_words(text: str, capacities: list[int]) -> list[str]:
 
 
 def _draw_row(page, x0, y, pitch, chars, font, fontname, size,
-              colour=(0.0, 0.0, 0.0)) -> None:
+              colour=(0.0, 0.0, 0.0), stroke: float = 0.0) -> None:
     for i, ch in enumerate(chars):
         cx = x0 + i * pitch
         w = font.text_length(ch, fontsize=size)
         page.insert_text((cx - w / 2, y), ch, fontname=fontname, fontsize=size,
+                         **_stroked(stroke),
                          color=colour)
 
 
-def render_grid(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str) -> None:
+def render_grid(page: fitz.Page, field: Field_, value: str, font: fitz.Font,
+                fontname: str, stroke: float = 0.0) -> None:
     """Draw one glyph per cell, centered. Overflow continues onto ``wrap`` rows
     (word-aware) when the mapping defines them (e.g. long «Кем выдан»)."""
     if not value or field.x0 is None or field.y is None or field.pitch is None:
@@ -91,16 +105,17 @@ def render_grid(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
 
     if not wrap:
         _draw_row(page, field.x0, field.y, field.pitch, value[: field.max_cells or len(value)],
-                  font, fontname, field.size, _ink(field))
+                  font, fontname, field.size, _ink(field), stroke=stroke)
         return
 
     lines = _wrap_words(value, [r[3] for r in rows])
     for (x0, y, pitch, cap), line in zip(rows, lines, strict=False):
         _draw_row(page, x0, y, pitch, line[:cap], font, fontname, field.size,
-                  _ink(field))
+                  _ink(field), stroke=stroke)
 
 
-def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str) -> None:
+def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font,
+                fontname: str, stroke: float = 0.0) -> None:
     if not value:
         return
     x = field.x if field.x is not None else field.x0
@@ -111,7 +126,8 @@ def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
     # `line_height`. `\n` in the value forces a hard break. Used by the СФЕРА
     # certificate for long professions / multi-line ФИО.
     if extra.get("wrap_width") and field.width:
-        _render_paragraph(page, field, value, font, fontname, float(extra["wrap_width"]))
+        _render_paragraph(page, field, value, font, fontname,
+                          float(extra["wrap_width"]), stroke)
         return
     size = field.size
     if field.overflow == "shrink" and field.width:
@@ -120,11 +136,12 @@ def render_text(page: fitz.Page, field: Field_, value: str, font: fitz.Font, fon
         w = font.text_length(value, fontsize=size)
         x = x + (field.width - w) / 2 if field.align == "center" else x + field.width - w
     page.insert_text((x, field.y), value, fontname=fontname, fontsize=size,
-                     color=_ink(field))
+                     color=_ink(field), stroke_opacity=1.0, **_stroked(stroke))
 
 
 def _render_paragraph(
-    page: fitz.Page, field: Field_, value: str, font: fitz.Font, fontname: str, width: float
+    page: fitz.Page, field: Field_, value: str, font: fitz.Font,
+    fontname: str, width: float, stroke: float = 0.0
 ) -> None:
     extra = field.model_extra or {}
     size = field.size
@@ -151,6 +168,7 @@ def _render_paragraph(
             lw = font.text_length(line, fontsize=size)
             x = x0 + (width - lw) / 2 if field.align == "center" else x0 + width - lw
         page.insert_text((x, y), line, fontname=fontname, fontsize=size,
+                         **_stroked(stroke),
                          color=_ink(field))
         y += line_h
 

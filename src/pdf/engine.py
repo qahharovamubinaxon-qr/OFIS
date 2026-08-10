@@ -21,7 +21,7 @@ from src.common.errors import FontMissingError, TemplateMissingError
 from src.common.logging import get_logger
 from src.config import paths
 from src.pdf.formatters import apply_formatter, apply_transform
-from src.pdf.mapping import FieldMapping, Field_
+from src.pdf.mapping import Field_, FieldMapping
 from src.pdf.renderers import render_grid, render_image, render_mark, render_text
 
 log = get_logger(__name__)
@@ -95,7 +95,38 @@ def _fontname(family: str) -> str:
     return font_id(family)
 
 
-def _font_file(family: str) -> "Path":
+#: How thickly a one-weight face is stroked when bold was asked for — the
+#: same figure the чек and the МИГ card have always used.
+_FAUX_BOLD = 0.03
+
+
+def _wants_bold(field: Field_) -> bool:
+    """Did the office set this text bold in the arranger?
+
+    `bold` is not in the shared mapping's vocabulary — it arrives through
+    ``model_extra``, which is also how ``colour`` has always come.
+    """
+    return bool((field.model_extra or {}).get("bold"))
+
+
+def _face(family: str, bold: bool) -> tuple[Path, bool, str]:
+    """The file to print this family and weight with, and its PDF name.
+
+    The middle value says the weight has to be FAKED: many faces ship in one
+    weight only, and those are stroked rather than left looking unbolded.
+    """
+    if not bold:
+        return _font_file(family), False, _fontname(family)
+    from src.pdf.fonts import font_file, font_id, installed
+
+    if family in installed():
+        path, faux = font_file(family, bold=True)
+        return path, faux, font_id(family, bold=True)
+    # a bundled family: no separate bold on disk, so stroke the regular one
+    return _font_file(family), True, _fontname(family)
+
+
+def _font_file(family: str) -> Path:
     spec = _FONT_FAMILIES.get(family)
     if spec is None:
         # not one of the bundled families: look the name up among the fonts
@@ -181,28 +212,34 @@ def fill(
 
     fields = mapping.calibrated_fields() if only_calibrated else mapping.fields
 
-    # Load only the font families this mapping actually uses, register each on
-    # every page under its own name, and keep a fitz.Font for width measuring.
-    families = {f.font for f in fields} | {_DEFAULT_FAMILY}
-    fonts: dict[str, fitz.Font] = {}
-    for family in families:
-        path = _font_file(family)
+    # Load only the faces this mapping actually uses — a family AND a weight,
+    # because the office can now set a text bold in the arranger. Each is
+    # registered on every page under its own name, and a fitz.Font is kept
+    # for measuring widths.
+    wanted = {(f.font, _wants_bold(f)) for f in fields} | {(_DEFAULT_FAMILY, False)}
+    fonts: dict[tuple[str, bool], fitz.Font] = {}
+    faces: dict[tuple[str, bool], tuple[Path, bool, str]] = {}
+    for family, bold in wanted:
+        path, faux, name = _face(family, bold)
         if not path.exists():
             raise FontMissingError("Fill font missing", context={"path": str(path)})
-        fonts[family] = fitz.Font(fontfile=str(path))
+        fonts[(family, bold)] = fitz.Font(fontfile=str(path))
+        faces[(family, bold)] = (path, faux, name)
 
     doc = fitz.open(str(template_path))
     try:
         for page in doc:
-            for family in families:
-                page.insert_font(fontname=_fontname(family), fontfile=str(_font_file(family)))
+            for path, _faux, name in faces.values():
+                page.insert_font(fontname=name, fontfile=str(path))
 
         for field in fields:
             if not _visible(field, values):
                 continue
             page = doc[field.page - 1]
-            fam = field.font if field.font in fonts else _DEFAULT_FAMILY
-            fname = _fontname(fam)
+            key = (field.font, _wants_bold(field))
+            if key not in fonts:
+                key = (_DEFAULT_FAMILY, False)
+            _path, faux, fname = faces[key]
             if field.type == "mark":
                 render_mark(page, field, fname)
                 continue
@@ -217,10 +254,12 @@ def fill(
                 continue
             _clear_region(page, field)
             _clear_rects(page, field)
+            # a family Windows never shipped a bold for is stroked instead
+            stroke = _FAUX_BOLD if faux else 0.0
             if field.type == "grid":
-                render_grid(page, field, value, fonts[fam], fname)
+                render_grid(page, field, value, fonts[key], fname, stroke)
             elif field.type == "text":
-                render_text(page, field, value, fonts[fam], fname)
+                render_text(page, field, value, fonts[key], fname, stroke)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output_path), garbage=4, deflate=True)
