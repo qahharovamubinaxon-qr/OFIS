@@ -295,9 +295,17 @@ def test_the_filename_is_surname_name() -> None:
 
 
 def test_the_bot_needs_a_saved_dormitory_first() -> None:
+    """…and now ASKS which one, rather than taking the newest in silence.
+
+    It used to go straight to the dates and use whichever dormitory was
+    saved last. That is right until the office registers somebody at a
+    different one, and then it is wrong without anybody seeing it — so the
+    address became the first question.
+    """
     from src.controllers.ofis_modules import BY_KEY
 
     module = BY_KEY["qrreg"]
     assert module.photo_labels == ("Паспорт", "Патент")
     fields = [a.field for a in module.asks]
-    assert fields == ["valid_from", "valid_to"]
+    assert fields == ["address", "valid_from", "valid_to"]
+    assert module.asks[0].kind == "choice"
