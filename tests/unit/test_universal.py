@@ -59,6 +59,13 @@ def _worker(**over) -> UniversalData:
         gender="Мужской", citizenship="Таджикистан",
         birth_place="Таджикистан", birth_date=date(1999, 7, 25),
         documents={1: ("P", "405847273"), 2: ("77", "2400796702")},
+        pass_series="P", pass_number="405847273",
+        pass_pin="50707994120019", pass_issued_by="ХШБ дар Ч.Балхи",
+        pass_issued=date(2025, 1, 18), pass_expires=date(2035, 1, 17),
+        pat_series="77", pat_number="2400796702",
+        pat_blank_series="77", pat_blank_number="24012345678",
+        pat_issued_by="ГУ МВД России по г. Москве", pat_region="г. Москва",
+        pat_issued=date(2025, 3, 4), pat_expires=date(2026, 3, 3),
         issued=date(2025, 1, 18), expires=date(2035, 1, 17),
         issued_by="ХШБ дар Ч.Балхи", region="77",
         address="г Москва, ул Тагильская, д 45",
@@ -135,6 +142,73 @@ def test_an_empty_slot_prints_nothing() -> None:
 def test_a_slot_with_only_a_number_does_not_print_a_stray_space() -> None:
     said = values(_worker(documents={3: ("", "12345")}))
     assert said["doc3_full"] == "12345"
+
+
+# ------------------------------------------- the passport, by its own name
+def test_the_passport_has_its_own_named_boxes() -> None:
+    """The office asked for these by name, not as a numbered slot: «паспорт
+    серия номер бирга ва алоҳида, берилган сана, ПИН, кем выдан»."""
+    said = values(_worker())
+    assert said["pass_series"] == "P"
+    assert said["pass_number"] == "405847273"
+    assert said["pass_full"] == "P 405847273"
+    assert said["pass_pin"] == "50707994120019"
+    assert said["pass_issued_by"] == "ХШБ дар Ч.Балхи"
+    assert said["pass_issued"] == "18.01.2025"
+    assert said["pass_issued_words"] == "18 января 2025"
+    assert said["pass_expires"] == "17.01.2035"
+
+
+# --------------------------------------------- the patent, by its own name
+def test_the_patent_has_its_own_named_boxes() -> None:
+    """«патент серия номер бирга ва алохида, берилган число, кем выдан,
+    регион, патент бланка номер серия бирга ва алохида»."""
+    said = values(_worker())
+    assert said["pat_series"] == "77"
+    assert said["pat_number"] == "2400796702"
+    assert said["pat_full"] == "77 2400796702"
+    assert said["pat_blank_series"] == "77"
+    assert said["pat_blank_number"] == "24012345678"
+    assert said["pat_blank_full"] == "77 24012345678"
+    assert said["pat_issued"] == "04.03.2025"
+    assert said["pat_issued_short"] == "4 мар 2025"
+    assert said["pat_expires"] == "03.03.2026"
+    assert said["pat_issued_by"] == "ГУ МВД России по г. Москве"
+    assert said["pat_region"] == "г. Москва"
+
+
+def test_the_patent_region_is_worked_out_from_its_series() -> None:
+    """Not read off the card — the series IS the region, and reading it
+    twice is two chances to get it wrong."""
+    moscow = store.data_of(None, _Patent())
+    assert moscow.pat_region == "г. Москва"
+
+    class _Region50(_Patent):
+        series = "50"
+
+    assert store.data_of(None, _Region50()).pat_region == "Московская область"
+
+
+def test_a_named_box_left_empty_prints_nothing() -> None:
+    bare = UniversalData(surname="Исоев")
+    said = values(bare)
+    assert said["pass_full"] == "" and said["pat_full"] == ""
+    assert said["pat_region"] == "" and said["pass_pin"] == ""
+    assert said["pat_issued"] == "" and said["pat_issued_words"] == ""
+
+
+def test_the_passport_and_patent_also_fill_the_first_two_free_slots() -> None:
+    """A form arranged the old way — «Бошқа ҳужжат 1» — still prints."""
+    read = store.data_of(_Passport(), _Patent())
+    said = values(read)
+    assert said["doc1_full"] == said["pass_full"] == "P 405847273"
+    assert said["doc2_full"] == said["pat_full"] == "77 2400796702"
+
+
+def test_every_field_in_the_picker_has_something_to_show_while_dragging(
+) -> None:
+    missing = [k for k in fields.CATALOGUE if not fields.sample_of(k)]
+    assert missing == [], f"намунаси йўқ: {missing}"
 
 
 # --------------------------------------------------------- the whole name

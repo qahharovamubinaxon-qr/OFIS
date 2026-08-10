@@ -271,36 +271,68 @@ class UniversalService:
                                surname=(data.surname or "").strip())
 
 
+def _said(source, *names: str) -> str:
+    for name in names:
+        value = getattr(source, name, "") or ""
+        if str(value).strip():
+            return str(value).strip()
+    return ""
+
+
 def data_of(passport=None, patent=None) -> UniversalData:
     """What the reader found, in the shape the fields want.
 
     Both documents are optional: some forms need only a name, and the office
     said as much — «бази хужатларга ишчи расми керак, базисига керак эмас».
+
+    The passport and the patent each fill their OWN named boxes, and are
+    copied into the first two free slots as well, so a form arranged either
+    way prints. The patent's region is not read at all — it is worked out
+    from the series, which is what the series is for.
     """
     made = UniversalData()
     if passport is not None:
-        said = getattr(getattr(passport, "gender", None), "value",
-                       getattr(passport, "gender", "")) or ""
-        made.surname = (getattr(passport, "surname", "") or "").title()
-        made.name = (getattr(passport, "name", "") or "").title()
-        made.patronymic = (getattr(passport, "patronymic", "") or "").title()
-        made.gender = ("Женский" if str(said).lower().startswith(("f", "ж"))
+        gender = getattr(getattr(passport, "gender", None), "value",
+                         getattr(passport, "gender", "")) or ""
+        made.surname = _said(passport, "surname").title()
+        made.name = _said(passport, "name").title()
+        made.patronymic = _said(passport, "patronymic").title()
+        made.gender = ("Женский" if str(gender).lower().startswith(("f", "ж"))
                        else "Мужской")
-        made.citizenship = (getattr(passport, "nationality", "") or "").title()
-        made.birth_place = (getattr(passport, "birth_place", "")
-                            or made.citizenship or "").title()
+        made.citizenship = _said(passport, "nationality").title()
+        made.birth_place = (_said(passport, "birth_place")
+                            or made.citizenship).title()
         made.birth_date = getattr(passport, "birth_date", None)
-        series = (getattr(passport, "series", "") or "").strip()
-        number = (getattr(passport, "number", "") or "").strip()
-        if series or number:
-            made.documents[1] = (series, number)
+
+        made.pass_series = _said(passport, "series")
+        made.pass_number = _said(passport, "number")
+        made.pass_issued_by = _said(passport, "issued_by")
+        made.pass_issued = getattr(passport, "issue_date", None)
+        made.pass_expires = getattr(passport, "expiry_date", None)
+        if made.pass_series or made.pass_number:
+            made.documents[1] = (made.pass_series, made.pass_number)
+
     if patent is not None:
-        made.documents[2] = (
-            (getattr(patent, "series", "") or "").strip(),
-            (getattr(patent, "number", "") or "").strip())
-        made.issued = getattr(patent, "issue_date", None) or made.issued
-        made.expires = getattr(patent, "expire_date", None) or made.expires
-        made.position = (getattr(patent, "profession", "") or "").strip()
+        made.pat_series = _said(patent, "series")
+        made.pat_number = _said(patent, "number")
+        made.pat_blank_series = _said(patent, "blank_series")
+        made.pat_blank_number = _said(patent, "blank_number")
+        made.pat_issued_by = _said(patent, "issued_by")
+        made.pat_issued = getattr(patent, "issue_date", None) or getattr(
+            patent, "valid_from", None)
+        made.pat_expires = getattr(patent, "valid_to", None) or getattr(
+            patent, "expire_date", None)
+        made.position = _said(patent, "profession")
+        if made.pat_series or made.pat_number:
+            made.documents[2] = (made.pat_series, made.pat_number)
+
+        from src.domain.patent_regions import region_of_series
+
+        made.pat_region = region_of_series(made.pat_series)
+        # the plain «регион» box follows the patent when nothing else set it
+        made.region = made.region or made.pat_region
+        made.issued = made.issued or made.pat_issued
+        made.expires = made.expires or made.pat_expires
     return made
 
 

@@ -96,11 +96,35 @@ def _catalogue() -> dict[str, str]:
         "birth_place": "Туғилган жой",
     }
     made.update(_dates("birth", "Туғилган сана"))
-    # ---- the documents: six free series/number pairs
+    # ---- the passport, by name
+    made.update({
+        "pass_series": "Паспорт — серия",
+        "pass_number": "Паспорт — номер",
+        "pass_full": "Паспорт — серия ва номер бирга",
+        "pass_pin": "Паспорт — ПИН (ПИНФЛ)",
+        "pass_issued_by": "Паспорт — ким берган (кем выдан)",
+    })
+    made.update(_dates("pass_issued", "Паспорт — берилган сана"))
+    made.update(_dates("pass_expires", "Паспорт — амал қилиш охири"))
+    # ---- the patent, by name
+    made.update({
+        "pat_series": "Патент — серия",
+        "pat_number": "Патент — номер",
+        "pat_full": "Патент — серия ва номер бирга",
+        "pat_blank_series": "Патент — бланка серияси",
+        "pat_blank_number": "Патент — бланка номери",
+        "pat_blank_full": "Патент — бланка серия ва номер бирга",
+        "pat_issued_by": "Патент — ким берган (кем выдан)",
+        "pat_region": "Патент — регион (серия бўйича ўзи чиқади)",
+    })
+    made.update(_dates("pat_issued", "Патент — берилган сана"))
+    made.update(_dates("pat_expires", "Патент — амал қилиш охири"))
+    # ---- and six free pairs for everything else a worker arrives with:
+    # the migration card, the registration, the medical book…
     for slot in range(1, DOC_SLOTS + 1):
-        made[f"doc{slot}_series"] = f"Ҳужжат {slot} — серия"
-        made[f"doc{slot}_number"] = f"Ҳужжат {slot} — номер"
-        made[f"doc{slot}_full"] = f"Ҳужжат {slot} — серия ва номер бирга"
+        made[f"doc{slot}_series"] = f"Бошқа ҳужжат {slot} — серия"
+        made[f"doc{slot}_number"] = f"Бошқа ҳужжат {slot} — номер"
+        made[f"doc{slot}_full"] = f"Бошқа ҳужжат {slot} — серия ва номер бирга"
     # ---- the dates on the paper itself
     made.update(_dates("issued", "Берилган сана"))
     made.update(_dates("expires", "Тугаш санаси"))
@@ -135,6 +159,15 @@ SAMPLES: dict[str, str] = {
     "position": "Подсобный рабочий",
     "organisation": 'ООО "ГОРСТРОЙ"',
     "note": "изоҳ",
+    "pass_series": "P", "pass_number": "405847273",
+    "pass_full": "P 405847273", "pass_pin": "50707994120019",
+    "pass_issued_by": "ХШБ дар Ч.Балхи",
+    "pat_series": "77", "pat_number": "2400796702",
+    "pat_full": "77 2400796702",
+    "pat_blank_series": "77", "pat_blank_number": "24012345678",
+    "pat_blank_full": "77 24012345678",
+    "pat_issued_by": "ГУ МВД России по г. Москве",
+    "pat_region": "Москва",
     PHOTO: "РАСМ", STAMP: "ПЕЧАТЬ", SIGNATURE: "ИМЗО",
 }
 for _slot in range(1, DOC_SLOTS + 1):
@@ -142,7 +175,11 @@ for _slot in range(1, DOC_SLOTS + 1):
     SAMPLES[f"doc{_slot}_number"] = "2400796702"
     SAMPLES[f"doc{_slot}_full"] = "77 2400796702"
 for _prefix, _day in (("birth", date(1999, 7, 25)), ("issued", date(2025, 1, 18)),
-                      ("expires", date(2035, 1, 17)), ("today", date(2026, 8, 10))):
+                      ("expires", date(2035, 1, 17)), ("today", date(2026, 8, 10)),
+                      ("pass_issued", date(2025, 1, 18)),
+                      ("pass_expires", date(2035, 1, 17)),
+                      ("pat_issued", date(2025, 3, 4)),
+                      ("pat_expires", date(2026, 3, 3))):
     SAMPLES[_prefix] = _day.strftime("%d.%m.%Y")
     SAMPLES[f"{_prefix}_day"] = f"{_day.day:02d}"
     SAMPLES[f"{_prefix}_month"] = f"{_day.month:02d}"
@@ -216,7 +253,23 @@ class UniversalData:
     citizenship: str = ""
     birth_place: str = ""
     birth_date: date | None = None
-    #: slot → (series, number), 1…6
+    # ---- the passport, by name
+    pass_series: str = ""
+    pass_number: str = ""
+    pass_pin: str = ""
+    pass_issued_by: str = ""
+    pass_issued: date | None = None
+    pass_expires: date | None = None
+    # ---- the patent, by name
+    pat_series: str = ""
+    pat_number: str = ""
+    pat_blank_series: str = ""
+    pat_blank_number: str = ""
+    pat_issued_by: str = ""
+    pat_region: str = ""
+    pat_issued: date | None = None
+    pat_expires: date | None = None
+    #: slot → (series, number), 1…6 — for everything else a worker brings
     documents: dict[int, tuple[str, str]] = field(default_factory=dict)
     issued: date | None = None
     expires: date | None = None
@@ -278,10 +331,29 @@ def values(data: UniversalData) -> dict[str, str]:
         "organisation": (data.organisation or "").strip(),
         "note": (data.note or "").strip(),
     }
+    # the passport and the patent, each by its own name
+    for prefix, series, number in (
+        ("pass", data.pass_series, data.pass_number),
+        ("pat", data.pat_series, data.pat_number),
+        ("pat_blank", data.pat_blank_series, data.pat_blank_number),
+    ):
+        series, number = (series or "").strip(), (number or "").strip()
+        out[f"{prefix}_series"] = series
+        out[f"{prefix}_number"] = number
+        out[f"{prefix}_full"] = " ".join(p for p in (series, number) if p)
+    out["pass_pin"] = (data.pass_pin or "").strip()
+    out["pass_issued_by"] = (data.pass_issued_by or "").strip()
+    out["pat_issued_by"] = (data.pat_issued_by or "").strip()
+    out["pat_region"] = (data.pat_region or "").strip()
+
     _spread(out, "birth", data.birth_date)
     _spread(out, "issued", data.issued)
     _spread(out, "expires", data.expires)
     _spread(out, "today", date.today())
+    _spread(out, "pass_issued", data.pass_issued)
+    _spread(out, "pass_expires", data.pass_expires)
+    _spread(out, "pat_issued", data.pat_issued)
+    _spread(out, "pat_expires", data.pat_expires)
     for slot in range(1, DOC_SLOTS + 1):
         series, number = data.documents.get(slot, ("", ""))
         series, number = (series or "").strip(), (number or "").strip()

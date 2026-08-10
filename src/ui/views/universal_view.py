@@ -53,12 +53,35 @@ _BOXES: tuple[tuple[str, str, str], ...] = (
     ("patronymic", "Отчество:", "Холбердиевич"),
     ("citizenship", "Гражданство:", "Таджикистан"),
     ("birth_place", "Туғилган жой:", "Таджикистан"),
-    ("issued_by", "Ким берган:", "ГУ МВД России по г. Москве"),
-    ("region", "Регион:", "77"),
+    ("pass_pin", "Паспорт — ПИН:", "50707994120019"),
+    ("pass_issued_by", "Паспорт — ким берган:", "ХШБ дар Ч.Балхи"),
+    ("pat_issued_by", "Патент — ким берган:", "ГУ МВД России по г. Москве"),
+    ("pat_region", "Патент — регион:", "серия бўйича ўзи чиқади"),
+    ("issued_by", "Ким берган (умумий):", "ГУ МВД России по г. Москве"),
+    ("region", "Регион (умумий):", "77"),
     ("address", "Адрес:", "г Москва, ул Тагильская, д 45, кв 12"),
     ("position", "Должность:", "Подсобный рабочий"),
     ("organisation", "Ташкилот:", 'ООО "ГОРСТРОЙ"'),
     ("note", "Изоҳ:", "эркин матн"),
+)
+
+#: The series/number pairs that have a name of their own. The office asked
+#: for these by name — the six numbered slots are for everything else.
+_PAIRS: tuple[tuple[str, str], ...] = (
+    ("pass", "Паспорт серия-номер:"),
+    ("pat", "Патент серия-номер:"),
+    ("pat_blank", "Патент бланка серия-номер:"),
+)
+
+#: Every date box, and what it is called.
+_DATES: tuple[tuple[str, str], ...] = (
+    ("birth", "Туғилган сана:"),
+    ("pass_issued", "Паспорт берилган:"),
+    ("pass_expires", "Паспорт амал қилади:"),
+    ("pat_issued", "Патент берилган:"),
+    ("pat_expires", "Патент амал қилади:"),
+    ("issued", "Берилган сана (умумий):"),
+    ("expires", "Тугаш санаси (умумий):"),
 )
 #: A box is shown when the form prints ANY of these keys.
 _NEEDED_BY = {
@@ -199,23 +222,36 @@ class UniversalView(QWidget):
         self._rows["gender"] = [gender_label, self._gender]
         row += 1
 
-        for key, label, widget in (
-            ("birth", "Туғилган сана:", QDateEdit(QDate(2000, 1, 1))),
-            ("issued", "Берилган сана:", QDateEdit(QDate.currentDate())),
-            ("expires", "Тугаш санаси:",
-             QDateEdit(QDate.currentDate().addYears(1))),
-        ):
+        self._dates: dict[str, QDateEdit] = {}
+        for key, label in _DATES:
+            widget = QDateEdit(QDate(2000, 1, 1) if key == "birth"
+                               else QDate.currentDate())
             widget.setCalendarPopup(True)
             widget.setDisplayFormat("dd.MM.yyyy")
             name = QLabel(label)
             grid.addWidget(name, row, 0)
             grid.addWidget(widget, row, 1, 1, 3)
             self._rows[key] = [name, widget]
-            setattr(self, f"_{key}", widget)
+            self._dates[key] = widget
+            row += 1
+
+        # the passport's and the patent's own series and number, then the
+        # six free pairs for whatever else the worker brought
+        self._pairs: dict[str, tuple[QLineEdit, QLineEdit]] = {}
+        for prefix, label in _PAIRS:
+            name = QLabel(label)
+            series, number = QLineEdit(), QLineEdit()
+            series.setPlaceholderText("серия")
+            number.setPlaceholderText("номер")
+            grid.addWidget(name, row, 0)
+            grid.addWidget(series, row, 1)
+            grid.addWidget(number, row, 2, 1, 2)
+            self._pairs[prefix] = (series, number)
+            self._rows[prefix] = [name, series, number]
             row += 1
 
         for slot in range(1, DOC_SLOTS + 1):
-            label = QLabel(f"Ҳужжат {slot}:")
+            label = QLabel(f"Бошқа ҳужжат {slot}:")
             series = QLineEdit()
             series.setPlaceholderText("серия")
             number = QLineEdit()
@@ -298,11 +334,13 @@ class UniversalView(QWidget):
     @staticmethod
     def _keys_of(row: str) -> set[str]:
         """Which catalogue keys a row feeds — a date feeds nine of them."""
-        if row.startswith("doc"):
+        if row.startswith("doc") and row[3:].isdigit():
             slot = row[3:]
             return {f"doc{slot}_series", f"doc{slot}_number",
                     f"doc{slot}_full"}
-        if row in ("birth", "issued", "expires"):
+        if row in {key for key, _ in _PAIRS}:
+            return {f"{row}_series", f"{row}_number", f"{row}_full"}
+        if row in {key for key, _ in _DATES}:
             return _date_family(row)
         return _family(row)
 
@@ -457,18 +495,21 @@ class UniversalView(QWidget):
     def _filled(self, data: UniversalData) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
-        for key in ("surname", "name", "patronymic", "citizenship",
-                    "birth_place", "position"):
+        for key, box in self._boxes.items():
             said = getattr(data, key, "")
             if said:
-                self._boxes[key].setText(said)
+                box.setText(said)
         if data.gender:
             self._gender.setCurrentText(data.gender)
-        for widget, when in ((self._birth, data.birth_date),
-                             (self._issued, data.issued),
-                             (self._expires, data.expires)):
+        for key, widget in self._dates.items():
+            when = getattr(data, "birth_date" if key == "birth" else key, None)
             if when:
                 widget.setDate(QDate(when.year, when.month, when.day))
+        for prefix, (series, number) in self._pairs.items():
+            for box, said in ((series, getattr(data, f"{prefix}_series", "")),
+                              (number, getattr(data, f"{prefix}_number", ""))):
+                if said:
+                    box.setText(said)
         for slot, (series, number) in (data.documents or {}).items():
             if slot in self._docs:
                 self._docs[slot][0].setText(series)
@@ -478,13 +519,15 @@ class UniversalView(QWidget):
     # ------------------------------------------------------------- making
     def _data(self) -> UniversalData:
         """What is in the boxes — never what was read."""
-        made = UniversalData(
-            gender=self._gender.currentText(),
-            birth_date=self._birth.date().toPython(),
-            issued=self._issued.date().toPython(),
-            expires=self._expires.date().toPython())
+        made = UniversalData(gender=self._gender.currentText())
+        for key, widget in self._dates.items():
+            setattr(made, "birth_date" if key == "birth" else key,
+                    widget.date().toPython())
         for key, box in self._boxes.items():
             setattr(made, key, box.text().strip())
+        for prefix, (series, number) in self._pairs.items():
+            setattr(made, f"{prefix}_series", series.text().strip())
+            setattr(made, f"{prefix}_number", number.text().strip())
         for slot, (series, number) in self._docs.items():
             made.documents[slot] = (series.text().strip(),
                                     number.text().strip())
