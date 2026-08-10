@@ -337,7 +337,7 @@ class HostelView(QWidget):
         if arrange(self, section=hostel_service.SECTION,
                    template=address.template_path,
                    mapping_path=hostel_service._hostel_dir() / "mapping.v1.json",
-                   title="ХОСТЕЛ"):
+                   title="ХОСТЕЛ", rich=True):
             QMessageBox.information(
                 self, "OK",
                 f"«{address.label}» бланкасининг матн жойлари сақланди — "

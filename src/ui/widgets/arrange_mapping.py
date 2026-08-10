@@ -42,9 +42,45 @@ def sample_of(field) -> str:
     return label_of(field).upper()
 
 
+def _arrange_richly(parent, *, section: str, template: Path,
+                    mapping: FieldMapping, title: str,
+                    labels: dict[str, str] | None) -> bool:
+    """Every page at once, with the face, the weight, the colour and the rest.
+
+    The pages are drawn at 150 dpi rather than the walk's own resolution: the
+    office lines values up against printed rules here, and it can zoom.
+    """
+    from src.ui.widgets.mapping_arranger import arrange as arrange_fully
+
+    try:
+        with fitz.open(str(template)) as raw:
+            doc = raw if raw.is_pdf else fitz.open("pdf", raw.convert_to_pdf())
+            pages = [page.get_pixmap(dpi=150).tobytes("png") for page in doc]
+    except Exception as exc:                          # noqa: BLE001
+        QMessageBox.warning(parent, "Xato", f"Бланка очилмади: {exc}")
+        return False
+
+    made = arrange_fully(parent, pages=pages, mapping=mapping,
+                         layout=blank_layout.load(section, template),
+                         title=title, labels=labels)
+    if made is None:
+        return False
+    blank_layout.save(section, template, made)
+    log.info("%s: «%s» — %d майдон, %d ўз матни", section, Path(template).stem,
+             len(made["fields"]), len(made["texts"]))
+    return True
+
+
 def arrange(parent, *, section: str, template: Path, mapping_path: Path,
-            title: str) -> bool:
-    """Walk the office through this blank's pages. True when it saved."""
+            title: str, rich: bool = False,
+            labels: dict[str, str] | None = None) -> bool:
+    """Walk the office through this blank's pages. True when it saved.
+
+    ``rich`` opens the FULL window instead — the one that also picks a face,
+    sets a text bold, colours it, turns it, adds a text of the office's own
+    and zooms in on a printed rule. It is opt-in so that a section already
+    happy with the plain page-by-page walk is not changed under it.
+    """
     template, mapping_path = Path(template), Path(mapping_path)
     if not template.exists():
         QMessageBox.warning(parent, "Diqqat", "Бланка топилмади.")
@@ -54,6 +90,10 @@ def arrange(parent, *, section: str, template: Path, mapping_path: Path,
     except Exception as exc:                          # noqa: BLE001
         QMessageBox.warning(parent, "Xato", f"Мапинг ўқилмади: {exc}")
         return False
+
+    if rich:
+        return _arrange_richly(parent, section=section, template=template,
+                               mapping=mapping, title=title, labels=labels)
 
     kept = dict(blank_layout.load(section, template).get("fields") or {})
     width, height = mapping.page_size

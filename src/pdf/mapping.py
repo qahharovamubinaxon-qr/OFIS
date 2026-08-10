@@ -103,7 +103,8 @@ def with_layout(mapping: FieldMapping, layout: dict | None) -> FieldMapping:
         weight and a colour as well as a place.
     """
     moved = (layout or {}).get("fields") or {}
-    if not moved:
+    own = (layout or {}).get("texts") or []
+    if not moved and not own:
         return mapping
     width, height = mapping.page_size
     fields = []
@@ -111,7 +112,49 @@ def with_layout(mapping: FieldMapping, layout: dict | None) -> FieldMapping:
         spot = moved.get(field.id)
         change = _placement(spot, field, width, height)
         fields.append(field.model_copy(update=change) if change else field)
+    fields.extend(_own_fields(own, width, height))
     return mapping.model_copy(update={"fields": fields})
+
+
+#: What an office-added text's id starts with. Nothing in a shared mapping
+#: ever begins with this, so the two can never collide.
+OWN = "own:"
+
+
+def _own_fields(texts, width: float, height: float) -> list[Field_]:
+    """The texts the office added to THIS blank, as fields of its own.
+
+    A shared mapping is the same for every blank of its kind, so a text one
+    office wants on its own copy cannot go in there — it lives in that
+    blank's layout and is folded in here, at fill time, for that blank only.
+    """
+    made: list[Field_] = []
+    for index, raw in enumerate(texts):
+        if not isinstance(raw, dict) or not str(raw.get("text") or "").strip():
+            continue
+        made.append(Field_(
+            id=f"{OWN}{index}", type="text", page=int(raw.get("page") or 1),
+            x=float(raw.get("x") or 0.1) * width,
+            y=float(raw.get("y") or 0.1) * height,
+            size=float(raw.get("size") or 0.014) * height,
+            font=str(raw.get("font") or "OfisSerif"),
+            align="left",
+            **{k: v for k, v in (
+                ("bold", bool(raw.get("bold"))),
+                ("colour", tuple(float(c) for c in
+                                 (raw.get("colour") or (0.0, 0.0, 0.0))[:3])),
+                ("rotate", int(raw.get("rotate") or 0)),
+                ("_calibrated", True)) if v is not None}))
+    return made
+
+
+def own_values(layout: dict | None) -> dict[str, str]:
+    """What each office-added text says, ready to merge into ``values``."""
+    out: dict[str, str] = {}
+    for index, raw in enumerate((layout or {}).get("texts") or []):
+        if isinstance(raw, dict) and str(raw.get("text") or "").strip():
+            out[f"{OWN}{index}"] = str(raw["text"]).strip()
+    return out
 
 
 def _placement(spot, field: Field_, width: float,

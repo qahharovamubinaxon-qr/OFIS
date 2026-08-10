@@ -38,6 +38,14 @@ from src.ui.widgets.layout_editor import (
 )
 
 WEIGHTS = ("Юпқа (оддий)", "Қалин (жирний)")
+
+#: A text of the office's OWN — its key IS what it says. Sections built on a
+#: shared FieldMapping need this: a text one office wants on its own copy of
+#: a form cannot go into the mapping that every office shares.
+OWN_TEXT = "own:"
+#: The picker's «type your own» row. Not a real key — it is swapped for
+#: ``own:<what was typed>`` the moment the office answers.
+_OWN_PICK = "own:__ask__"
 #: Which way a text lies. Blanks that are written up their own edge — a
 #: медкнижка has several — are turned here rather than in code.
 TURNS: tuple[tuple[str, int], ...] = (
@@ -76,12 +84,16 @@ class FieldEditor(QDialog):
                  samples: dict[str, str] | None = None,
                  frozen: frozenset[str] | set[str] = frozenset(),
                  images: dict[str, bytes] | None = None,
-                 pitches: dict[str, float] | None = None) -> None:
+                 pitches: dict[str, float] | None = None,
+                 own_text: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{title} — матнларни қўйиш ва созлаш")
         self.setMinimumSize(1000, 820)
-        self._cat = CATALOGUE if catalogue is None else catalogue
-        self._samples = {} if samples is None else samples
+        self._cat = dict(CATALOGUE if catalogue is None else catalogue)
+        self._samples = dict({} if samples is None else samples)
+        #: When set, «➕ Матн» also offers a text the office types itself,
+        #: under this label. Sections that leave it empty are unaffected.
+        self._own_text = own_text
         self._frozen = set(frozen)
         #: key → the real PNG shown in place of a word (печать, имзо)
         self._images = images or {}
@@ -375,6 +387,8 @@ class FieldEditor(QDialog):
 
     def _add(self) -> None:
         offered = {k: v for k, v in self._cat.items() if k not in self._frozen}
+        if self._own_text:
+            offered = {_OWN_PICK: self._own_text, **offered}
         if not offered:
             # a section may hand in a catalogue where every value is the
             # blank's own — there is then nothing to add, and asking with an
@@ -393,6 +407,17 @@ class FieldEditor(QDialog):
         key = next((k for k, v in offered.items() if v == picked), "")
         if not key:
             return
+        if key == _OWN_PICK:
+            # a text of the office's own: what it SAYS is the whole of it, so
+            # the words typed here become its key, its label and its sample
+            said, ok = QInputDialog.getText(
+                self, "Ўз матним", "Бланкага нима ёзилсин?")
+            said = " ".join((said or "").split())
+            if not ok or not said:
+                return
+            key = OWN_TEXT + said
+            self._cat[key] = f"✎ {said}"
+            self._samples[key] = said
         model = self._drafts[self._picked()].field if self._picked() is not None \
             else None
         made = Field(key=key, page=self._page)
