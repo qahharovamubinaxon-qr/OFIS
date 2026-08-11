@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from src.common.threading import run_async
 from src.controllers.universal_controller import UniversalController
 from src.pdf.universal_fields import (
+    CUSTOM,
     DOC_SLOTS,
     SIGNATURE,
     STAMP,
@@ -466,14 +467,26 @@ class UniversalView(QWidget):
             return
         placed = self._c.fields(name)
         keys = [f.key for f in placed]
-        editor = FieldEditor(pages, placed, title=name, parent=self,
-                             catalogue=self._c.catalogue(keys),
-                             samples=self._c.samples(keys))
+        editor = FieldEditor(
+            pages, placed, title=name, parent=self,
+            catalogue=self._c.catalogue(keys),
+            samples=self._c.samples(keys),
+            # a box the office names itself. Every blank keeps its own, so a
+            # field one form needs never clutters another's screen — which is
+            # the whole reason the office asked for them.
+            own_text="✎ Ўз майдоним (ном бераман)",
+            own_prefix=CUSTOM,
+            own_prompt="Майдонга қандай ном берасиз?\n"
+                       "(масалан: Договор №, Смена, Бригада)")
         if editor.exec() != FieldEditor.DialogCode.Accepted:
             return
         self._c.save_fields(name, editor.fields())
         self._on_blank()
-        self._status.setText(f"✅ «{name}» — матнлар сақланди.")
+        added = [f.key for f in editor.fields() if self._c.is_custom(f.key)]
+        self._status.setText(
+            f"✅ «{name}» — матнлар сақланди."
+            + (f" Ўз майдонларингиз: {len(added)} та — пастдаги катакларга "
+               "ёзганингиз шу бланкага чиқади." if added else ""))
 
     # ------------------------------------------------------------ reading
     def _read(self) -> None:

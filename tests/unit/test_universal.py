@@ -87,8 +87,16 @@ def _stamp() -> bytes:
 
 
 def _printed(pdf: bytes, page: int = 0) -> str:
+    """What the page says, with the reader's own quirks evened out.
+
+    The hyphen is DRAWN correctly — the pixels are there — but PyMuPDF maps
+    the glyph back through this font's cmap and hands it over as a soft
+    hyphen. Same story for the non-breaking space. Neither is a printing
+    fault, so neither is allowed to fail a test about what was printed.
+    """
     with fitz.open("pdf", pdf) as doc:
-        return " ".join(doc[page].get_text().split())
+        said = doc[page].get_text().replace("\xad", "-").replace("\xa0", " ")
+    return " ".join(said.split())
 
 
 # --------------------------------------------------------------- the dates
@@ -241,6 +249,56 @@ def test_an_invented_box_joins_the_picker_list() -> None:
     assert key not in fields.CATALOGUE
     assert key in fields.catalogue_with([key])
     assert fields.samples_with([key])[key] == "Договор №"
+
+
+def test_each_blank_keeps_its_own_boxes(blank) -> None:
+    """«ҳар битта юклаган бланкамга ўзининг майдони сақлансин» — a field one
+    form needs must never clutter another form's screen."""
+    store.add("Договор", blank)
+    store.add("Уведомление", blank)
+    store.save_fields("Договор", [
+        Field(key="fio", page=1),
+        Field(key=fields.custom_key("Договор №"), page=1)])
+    store.save_fields("Уведомление", [
+        Field(key="fio", page=1),
+        Field(key=fields.custom_key("Смена"), page=1),
+        Field(key=fields.custom_key("Бригада"), page=1)])
+
+    assert store.custom_keys("Договор") == ["custom:Договор №"]
+    assert store.custom_keys("Уведомление") == ["custom:Смена",
+                                                "custom:Бригада"]
+    assert "custom:Смена" not in store.wants("Договор")
+
+
+def test_a_box_the_office_named_reaches_the_paper(blank, tmp_path) -> None:
+    """Naming it is only half — what is typed into it has to print."""
+    key = fields.custom_key("Договор №")
+    store.add("Договор", blank)
+    store.save_fields("Договор", [
+        Field(key=key, page=1, x=0.15, baseline=0.30, size=0.016, bold=True)])
+
+    made = store.UniversalService().generate(
+        "Договор", UniversalData(surname="Исоев", custom={key: "ТД-118"}))
+    assert "ТД-118" in _printed(made.pdf.read_bytes(), 0)
+
+
+def test_a_named_box_left_blank_prints_nothing(blank) -> None:
+    key = fields.custom_key("Договор №")
+    store.add("Договор", blank)
+    store.save_fields("Договор", [Field(key=key, page=1, x=0.15,
+                                        baseline=0.30)])
+    made = store.UniversalService().generate(
+        "Договор", UniversalData(surname="Исоев", custom={key: ""}))
+    assert _printed(made.pdf.read_bytes(), 0) == ""
+
+
+def test_renaming_a_blank_takes_its_boxes_with_it(blank) -> None:
+    store.add("Старое", blank)
+    store.save_fields("Старое", [Field(key=fields.custom_key("Смена"),
+                                       page=1)])
+    store.rename("Старое", "Новое")
+    assert store.custom_keys("Новое") == ["custom:Смена"]
+    assert store.custom_keys("Старое") == []
 
 
 # ------------------------------------------------------------- the library

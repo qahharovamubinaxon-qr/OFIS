@@ -85,15 +85,24 @@ class FieldEditor(QDialog):
                  frozen: frozenset[str] | set[str] = frozenset(),
                  images: dict[str, bytes] | None = None,
                  pitches: dict[str, float] | None = None,
-                 own_text: str = "") -> None:
+                 own_text: str = "", own_prefix: str = OWN_TEXT,
+                 own_prompt: str = "Бланкага нима ёзилсин?") -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{title} — матнларни қўйиш ва созлаш")
         self.setMinimumSize(1000, 820)
         self._cat = dict(CATALOGUE if catalogue is None else catalogue)
         self._samples = dict({} if samples is None else samples)
-        #: When set, «➕ Матн» also offers a text the office types itself,
+        #: When set, «➕ Матн» also offers something the office names itself,
         #: under this label. Sections that leave it empty are unaffected.
+        #:
+        #: Two sections use it for two different things, which is why the
+        #: prefix and the question are the caller's to choose. ХОСТЕЛ adds a
+        #: FIXED text — what it says is the whole of it. УНИВЕРСАЛ adds a
+        #: named BOX, filled afresh for each worker; there the name is what
+        #: is asked for and the value comes later, off the screen.
         self._own_text = own_text
+        self._own_prefix = own_prefix
+        self._own_prompt = own_prompt
         self._frozen = set(frozen)
         #: key → the real PNG shown in place of a word (печать, имзо)
         self._images = images or {}
@@ -408,14 +417,19 @@ class FieldEditor(QDialog):
         if not key:
             return
         if key == _OWN_PICK:
-            # a text of the office's own: what it SAYS is the whole of it, so
-            # the words typed here become its key, its label and its sample
-            said, ok = QInputDialog.getText(
-                self, "Ўз матним", "Бланкага нима ёзилсин?")
+            # something of the office's own — a fixed text, or a box it names
+            # and fills later. Either way what is typed here IS the key, so
+            # the same words come back with it every time.
+            said, ok = QInputDialog.getText(self, self._own_text.lstrip("✎ "),
+                                            self._own_prompt)
             said = " ".join((said or "").split())
             if not ok or not said:
                 return
-            key = OWN_TEXT + said
+            key = self._own_prefix + said
+            if key in self._cat:
+                QMessageBox.information(
+                    self, "Бор экан", f"«{said}» аллақачон қўшилган.")
+                return
             self._cat[key] = f"✎ {said}"
             self._samples[key] = said
         model = self._drafts[self._picked()].field if self._picked() is not None \
