@@ -34,6 +34,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 
+from src.domain.russian_case import (
+    CASE_NAMES,
+    CASES,
+    decline,
+    decline_fio,
+)
 from src.pdf.trud8_fields import (
     BLACK,
     DEFAULT_BASELINE,
@@ -95,6 +101,13 @@ def _catalogue() -> dict[str, str]:
         "citizenship": "Гражданство",
         "birth_place": "Туғилган жой",
     }
+    # ---- the name in the case the form asks it in
+    for case, said in CASE_NAMES.items():
+        short = said.split(" (")[0]
+        made[f"fio_{case}"] = f"ФИО — {said}"
+        made[f"surname_{case}"] = f"Фамилия — {short}"
+        made[f"name_{case}"] = f"Исм — {short}"
+        made[f"patronymic_{case}"] = f"Отчество — {short}"
     made.update(_dates("birth", "Туғилган сана"))
     # ---- the passport, by name
     made.update({
@@ -170,6 +183,13 @@ SAMPLES: dict[str, str] = {
     "pat_region": "Москва",
     PHOTO: "РАСМ", STAMP: "ПЕЧАТЬ", SIGNATURE: "ИМЗО",
 }
+for _case in CASES:
+    SAMPLES[f"fio_{_case}"] = decline_fio("Исоев", "Аслидин", "Холбердиевич",
+                                          _case, male=True)
+    SAMPLES[f"surname_{_case}"] = decline("Исоев", _case, kind="surname")
+    SAMPLES[f"name_{_case}"] = decline("Аслидин", _case, kind="name")
+    SAMPLES[f"patronymic_{_case}"] = decline("Холбердиевич", _case,
+                                             kind="patronymic")
 for _slot in range(1, DOC_SLOTS + 1):
     SAMPLES[f"doc{_slot}_series"] = "77"
     SAMPLES[f"doc{_slot}_number"] = "2400796702"
@@ -345,6 +365,19 @@ def values(data: UniversalData) -> dict[str, str]:
     out["pass_issued_by"] = (data.pass_issued_by or "").strip()
     out["pat_issued_by"] = (data.pat_issued_by or "").strip()
     out["pat_region"] = (data.pat_region or "").strip()
+
+    # the name in every case a Russian form might ask it in. Which endings
+    # go on depends on the SEX — «Саидову Сардору» against «Саидовой
+    # Гулноре» — and a woman's name ending in a consonant takes none at all.
+    male = not str(data.gender or "").lower().startswith(("ж", "f"))
+    for case in CASES:
+        out[f"fio_{case}"] = decline_fio(data.surname, data.name,
+                                         data.patronymic, case, male=male)
+        out[f"surname_{case}"] = decline(data.surname, case, male=male,
+                                         kind="surname")
+        out[f"name_{case}"] = decline(data.name, case, male=male, kind="name")
+        out[f"patronymic_{case}"] = decline(data.patronymic, case, male=male,
+                                            kind="patronymic")
 
     _spread(out, "birth", data.birth_date)
     _spread(out, "issued", data.issued)
