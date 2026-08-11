@@ -11,11 +11,16 @@ import re
 from datetime import date
 
 from src.ai.manager import AiManager
-from src.ai.prompts import inn_prompt, patent_back_prompt, prompt_for
+from src.ai.prompts import (
+    inn_prompt,
+    named_fields_prompt,
+    patent_back_prompt,
+    prompt_for,
+)
 from src.common.logging import get_logger
+from src.domain.document_number import strip_document_check_digit
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
-from src.domain.document_number import strip_document_check_digit
 from src.domain.passport_rules import same_name, series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
 from src.ocr.preprocess import prepare_image
@@ -260,6 +265,46 @@ class OcrService:
             or None,
             holder_citizenship=country or None,
         )
+
+    def read_named(self, images: list[bytes],
+                   names: list[str]) -> dict[str, str]:
+        """Whatever the office asked for, by the name it gave it.
+
+        The УНИВЕРСАЛ section lets the office invent its own boxes — «Патентни
+        ИНН рақами», «Виза №», «Номер зачисления» — and no prompt can be
+        written in advance for names nobody has thought of yet. So the names
+        ARE the request, and every page dropped is asked the same question.
+
+        The first page that answers a name wins; the rest are only asked what
+        is still missing, which keeps a passport from being asked about a visa
+        it has never heard of. Nothing found stays empty for the office to
+        type, and an unreadable page costs nothing but its turn.
+        """
+        wanted = [" ".join(str(n).split()) for n in names if str(n).strip()]
+        found: dict[str, str] = {name: "" for name in wanted}
+        if not wanted or not images:
+            return found
+
+        for image in images:
+            missing = [name for name in wanted if not found[name]]
+            if not missing:
+                break
+            try:
+                # UNKNOWN maps to the free-form schema: the answer's keys are
+                # the office's own words, which no document schema knows.
+                answer = self._ai.extract(prepare_image(image),
+                                          DocType.UNKNOWN,
+                                          named_fields_prompt(missing))
+            except Exception as exc:        # noqa: BLE001 - reading is optional
+                log.info("УНИВЕРСАЛ: майдонлар ўқилмади — %s", exc)
+                continue
+            for name in missing:
+                said = " ".join(str(answer.fields.get(name, "") or "").split())
+                if said:
+                    found[name] = said
+        log.info("УНИВЕРСАЛ: %d сўралди, %d топилди",
+                 len(wanted), sum(1 for v in found.values() if v))
+        return found
 
     def read_inn(self, image: bytes) -> str:
         """The individual's twelve-digit ИНН off a патент — or "" if it is not there.

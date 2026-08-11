@@ -288,3 +288,44 @@ _PINFL_STRIP = (
 
 def pinfl_prompt() -> str:
     return _PINFL_STRIP
+
+
+#: Whatever the office asked for, by the name it gave it.
+#:
+#: The УНИВЕРСАЛ section lets the office invent its own boxes — «Патентни ИНН
+#: рақами», «Виза №», «Номер зачисления», «Курс». No prompt can be written in
+#: advance for names nobody has thought of yet, so the names themselves are the
+#: prompt: the model is handed the list and asked to find each one on the page.
+#:
+#: The whole risk here is a confident wrong answer. A patent is covered in
+#: figures — its own series and number, the issuing office's ИНН and ОГРН — and
+#: a model asked for «the ИНН» will happily hand back the office's. So the
+#: instruction is written round that: copy only what is actually printed
+#: against that heading, and leave it empty otherwise. An empty box the office
+#: fills in five seconds; a wrong number goes out on a document.
+_NAMED_FIELDS = (
+    "You are reading one scanned document for a migration office.\n"
+    "Find ONLY the values listed below and return a JSON object whose keys "
+    "are EXACTLY the names as given — do not translate, shorten or rename "
+    "them. No explanation, no markdown.\n\n"
+    "WANTED:\n{wanted}\n\n"
+    "Rules, and they matter more than completeness:\n"
+    "* Copy what is PRINTED, character for character. Do not tidy, expand or "
+    "correct anything.\n"
+    "* If a value is not on this page, or you are not certain the printed "
+    "text belongs to that heading, return an EMPTY STRING for it. An empty "
+    "answer is right; a guessed one becomes somebody else's number on a "
+    "legal document.\n"
+    "* A page carries many numbers that are not the worker's — the issuing "
+    "office's ИНН and ОГРН, form numbers, series of the blank itself. Return "
+    "a number only when the heading beside it says it is the one asked for.\n"
+    "* Dates as printed on the page (DD.MM.YYYY if that is how it is set).\n"
+    "* Names in the alphabet they are printed in.\n"
+    'Answer shape: {{"Виза №":"12345","Курс":"2"}}\n'
+)
+
+
+def named_fields_prompt(names: list[str]) -> str:
+    """Ask for exactly these headings, by the office's own words for them."""
+    wanted = "\n".join(f"* {name}" for name in names if str(name).strip())
+    return _NAMED_FIELDS.format(wanted=wanted)

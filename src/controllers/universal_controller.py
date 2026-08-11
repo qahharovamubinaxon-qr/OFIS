@@ -16,6 +16,7 @@ from src.pdf.universal_fields import (
     UniversalData,
     catalogue_with,
     custom_key,
+    custom_name,
     is_custom,
     label_of,
     samples_with,
@@ -92,6 +93,11 @@ class UniversalController:
         return custom_key(name)
 
     @staticmethod
+    def custom_name(key: str) -> str:
+        """«custom:Виза №» → «Виза №» — the words the office typed."""
+        return custom_name(key)
+
+    @staticmethod
     def is_custom(key: str) -> bool:
         return is_custom(key)
 
@@ -114,11 +120,27 @@ class UniversalController:
 
     # ------------------------------------------------------- the reading
     def read(self, passport: bytes | None,
-             patent: bytes | None = None) -> UniversalData:
-        """Whatever was dropped, read. Both are optional."""
+             patent: bytes | None = None, *,
+             others: list[bytes] | None = None,
+             wanted: list[str] | None = None) -> UniversalData:
+        """Whatever was dropped, read. Everything is optional.
+
+        ``wanted`` are the boxes the office named itself — «Патентни ИНН
+        рақами», «Виза №», «Номер зачисления». They are looked for across
+        every page dropped, because no one page is bound to carry them, and
+        whatever no page carries is left for the office to type.
+        """
         read_passport = self._ocr.read_passport(passport) if passport else None
         read_patent = self._ocr.read_patent(patent) if patent else None
-        return universal_service.data_of(read_passport, read_patent)
+        made = universal_service.data_of(read_passport, read_patent)
+
+        pages = [p for p in ([passport, patent] + list(others or [])) if p]
+        names = [n for n in (wanted or []) if str(n).strip()]
+        if pages and names:
+            found = self._ocr.read_named(pages, names)
+            made.custom = {custom_key(name): said
+                           for name, said in found.items() if said}
+        return made
 
     @staticmethod
     def portrait(image: bytes) -> bytes | None:

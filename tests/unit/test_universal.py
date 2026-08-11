@@ -292,6 +292,115 @@ def test_a_named_box_left_blank_prints_nothing(blank) -> None:
     assert _printed(made.pdf.read_bytes(), 0) == ""
 
 
+# ------------------------------- the AI reads the office's own field names
+class _Ai:
+    """A reader that knows what each page happens to carry."""
+
+    def __init__(self, pages: list[dict[str, str]]) -> None:
+        self.pages = pages
+        self.asked: list[list[str]] = []
+        self.at = -1
+
+    def extract(self, image, doc_type, prompt):
+        from src.ai.base import AiRawResult
+
+        self.at += 1
+        self.asked.append(_wanted_in(prompt))
+        said = self.pages[self.at] if self.at < len(self.pages) else {}
+        return AiRawResult(document_type=doc_type, fields=said)
+
+
+def _wanted_in(prompt: str) -> list[str]:
+    """The names this call actually asked for — the «WANTED:» block alone.
+
+    The prompt's rules are bulleted too, so anything cruder than reading
+    that one block back would count them as questions.
+    """
+    lines = prompt.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("WANTED"))
+    out = []
+    for line in lines[start + 1:]:
+        if not line.startswith("* "):
+            break
+        out.append(line[2:])
+    return out
+
+
+def _reader(pages: list[dict[str, str]]):
+    from src.ocr.service import OcrService
+
+    made = OcrService.__new__(OcrService)
+    made._ai = _Ai(pages)                                    # noqa: SLF001
+    return made
+
+
+def test_the_ai_is_asked_for_the_office_own_names(monkeypatch) -> None:
+    """«АИ майдоними номига қараб ўша маълумотларни ҳужжатлардан олади»."""
+    monkeypatch.setattr("src.ocr.service.prepare_image", lambda b: b)
+    reader = _reader([{"Патентни ИНН рақами": "072501692992"}])
+    found = reader.read_named([b"patent"], ["Патентни ИНН рақами", "Виза №"])
+
+    assert found["Патентни ИНН рақами"] == "072501692992"
+    assert found["Виза №"] == "", "топилмагани бўш қолиши керак"
+    assert reader._ai.asked[0] == ["Патентни ИНН рақами", "Виза №"]
+
+
+def test_each_page_is_only_asked_what_is_still_missing(monkeypatch) -> None:
+    """A passport should not be quizzed about a visa it has never heard of."""
+    monkeypatch.setattr("src.ocr.service.prepare_image", lambda b: b)
+    reader = _reader([{"Патентни ИНН рақами": "072501692992"},
+                      {"Виза №": "TM-4417829"}])
+    found = reader.read_named([b"patent", b"visa"],
+                              ["Патентни ИНН рақами", "Виза №"])
+
+    assert found == {"Патентни ИНН рақами": "072501692992",
+                     "Виза №": "TM-4417829"}
+    assert reader._ai.asked[1] == ["Виза №"], "иккинчи саҳифа ортиқча сўралди"
+
+
+def test_a_page_that_cannot_be_read_costs_only_its_turn(monkeypatch) -> None:
+    monkeypatch.setattr("src.ocr.service.prepare_image", lambda b: b)
+
+    class _Broken(_Ai):
+        """The first page is unreadable; the second is fine."""
+
+        def extract(self, image, doc_type, prompt):
+            if not self.asked:
+                self.asked.append(_wanted_in(prompt))
+                raise RuntimeError("бу расм ўқилмади")
+            return super().extract(image, doc_type, prompt)
+
+    from src.ocr.service import OcrService
+
+    reader = OcrService.__new__(OcrService)
+    reader._ai = _Broken([{"Виза №": "TM-4417829"}])          # noqa: SLF001
+    assert reader.read_named([b"bad", b"visa"], ["Виза №"])["Виза №"] == \
+        "TM-4417829"
+
+
+def test_nothing_is_asked_when_there_is_nothing_to_ask(monkeypatch) -> None:
+    monkeypatch.setattr("src.ocr.service.prepare_image", lambda b: b)
+    reader = _reader([])
+    assert reader.read_named([], ["Виза №"]) == {"Виза №": ""}
+    assert reader.read_named([b"page"], []) == {}
+    assert reader._ai.asked == [], "бекорга сўралди"
+
+
+def test_what_the_ai_found_lands_in_the_office_own_boxes(monkeypatch) -> None:
+    """The whole point: a field the office invented, filled off a document."""
+    monkeypatch.setattr("src.ocr.service.prepare_image", lambda b: b)
+    from src.controllers.universal_controller import UniversalController
+
+    reader = _reader([{"Виза №": "TM-4417829", "Курс": "2"}])
+    reader.available = lambda: True
+    reader.read_passport = lambda image: None
+    reader.read_patent = lambda front, back=None: None
+
+    made = UniversalController(reader, store.UniversalService()).read(
+        None, None, others=[b"visa"], wanted=["Виза №", "Курс"])
+    assert made.custom == {"custom:Виза №": "TM-4417829", "custom:Курс": "2"}
+
+
 def test_renaming_a_blank_takes_its_boxes_with_it(blank) -> None:
     store.add("Старое", blank)
     store.save_fields("Старое", [Field(key=fields.custom_key("Смена"),

@@ -181,6 +181,16 @@ class UniversalView(QWidget):
         drops.addWidget(self._photo)
         self._signature = DropZone("✒️", "Имзо (шу ишчиники)")
         drops.addWidget(self._signature)
+        # anything else the worker brought: a visa, a study certificate, a
+        # migration card. The office's own named boxes are looked for here
+        # too, so a field it invented can come off a document nobody wrote
+        # a reader for.
+        self._others = DropZone("📎", "Бошқа ҳужжатлар (виза, справка…)",
+                                multiple=True)
+        self._others.setToolTip(
+            "Ўзингиз қўшган майдонлар шу ҳужжатлардан ҳам изланади — "
+            "масалан «Виза №» ёки «Номер зачисления»")
+        drops.addWidget(self._others)
         root.addLayout(drops)
 
         read_row = QHBoxLayout()
@@ -494,15 +504,23 @@ class UniversalView(QWidget):
                     if self._passport.path else None)
         patent_paths = self._patent.paths
         patent = (Path(patent_paths[0]).read_bytes() if patent_paths else None)
-        if passport is None and patent is None:
-            self._warn("Паспорт ёки патент расмини ташланг.")
+        others = [Path(p).read_bytes() for p in self._others.paths]
+        if passport is None and patent is None and not others:
+            self._warn("Паспорт, патент ёки бошқа ҳужжат расмини ташланг.")
             return
         if not self._c.ai_available():
             self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
             return
+        # the boxes THIS blank was given, by the names the office typed —
+        # the reader is asked for those by name
+        wanted = [self._c.custom_name(k) for k in self._customs]
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқиляпти…")
-        run_async(lambda: self._c.read(passport, patent),
+        self._progress.start(
+            "Ҳужжатлар ўқиляпти…"
+            + (f" Ўз майдонларингиз ({len(wanted)} та) ҳам изланяпти."
+               if wanted else ""))
+        run_async(lambda: self._c.read(passport, patent, others=others,
+                                       wanted=wanted),
                   on_success=self._filled, on_error=self._failed)
 
     def _filled(self, data: UniversalData) -> None:
@@ -527,7 +545,18 @@ class UniversalView(QWidget):
             if slot in self._docs:
                 self._docs[slot][0].setText(series)
                 self._docs[slot][1].setText(number)
-        self._status.setText("✅ Ўқилди — текширинг ва «Тайёрлаш».")
+
+        mine = 0
+        for key, said in (data.custom or {}).items():
+            if said and key in self._customs:
+                self._customs[key].setText(said)
+                mine += 1
+        blank = len(self._customs) - mine
+        self._status.setText(
+            "✅ Ўқилди — текширинг ва «Тайёрлаш»."
+            + (f" Ўз майдонларингиздан {mine} таси топилди"
+               + (f", {blank} таси топилмади — қўлда ёзинг." if blank
+                  else ".") if self._customs else ""))
 
     # ------------------------------------------------------------- making
     def _data(self) -> UniversalData:
@@ -586,7 +615,7 @@ class UniversalView(QWidget):
 
     def reset(self) -> None:
         for zone in (self._passport, self._patent, self._photo,
-                     self._signature):
+                     self._signature, self._others):
             zone.clear()
         self._portrait = None
         self._status.setText("")
