@@ -200,11 +200,17 @@ class HostelView(QWidget):
         add = QPushButton("+ Yangi xostel")
         add.clicked.connect(self._add)
         arrange = QPushButton("📐 Матнларни жойлаш")
-        arrange.setToolTip("Бланка ва унга ёзиладиган маълумотлар экранга "
-                           "чиқади — сичқонча билан суриб, катта-кичик қилиб "
-                           "жойига қўйинг. Шу бланка учун сақланиб қолади.")
+        arrange.setToolTip("Бланка экранга чиқади — матнларни суриб, "
+                           "катта-кичик қилиб, шрифт ва рангини танлаб, "
+                           "ўз матнингизни қўшиб жойлайсиз. Имзо ҳам шу "
+                           "ерда суриб қўйилади. Шу бланка учун сақланади.")
         arrange.clicked.connect(self._arrange)
         row.addWidget(arrange)
+        sign = QPushButton("✒️ Имзо")
+        sign.setToolTip("Шу бланкага босиладиган имзо расми — бир марта "
+                        "юкланади, кейин «📐» да жойига суриб қўйилади")
+        sign.clicked.connect(self._pick_signature)
+        row.addWidget(sign)
         row.addWidget(add)
         rm = QPushButton("🗑")
         rm.setToolTip("Tanlangan xostelni ro'yxatdan o'chirish")
@@ -324,6 +330,50 @@ class HostelView(QWidget):
         QMessageBox.information(self, "Saqlandi", _spot_text(spot)
                                 + f"\n«{address.label}» uchun eslab qolindi.")
 
+
+    def _pick_signature(self) -> None:
+        """The signature this hostel's papers carry — uploaded once.
+
+        Kept with the BLANK, not with the worker: it is the same signature on
+        every уведомление that goes out on that form, and asking for it with
+        each one would be a click a day for nothing.
+        """
+        from src.services import blank_layout, hostel_service
+
+        address = self._selected()
+        if address is None:
+            QMessageBox.information(self, "Diqqat", "Аввал рўйхатдан танланг.")
+            return
+        section = hostel_service.SECTION
+        have = blank_layout.mark_file(section, address.template_path,
+                                      "signature")
+        if have is not None:
+            asked = QMessageBox.question(
+                self, "Имзо",
+                f"«{address.label}» да имзо бор ({have.name}).\n"
+                "Янгисини юкласизми? «Йўқ» — эскисини ўчиради.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel)
+            if asked == QMessageBox.StandardButton.Cancel:
+                return
+            if asked == QMessageBox.StandardButton.No:
+                blank_layout.clear_mark(section, address.template_path,
+                                        "signature")
+                QMessageBox.information(self, "OK", "Имзо ўчирилди.")
+                return
+        source, _ = QFileDialog.getOpenFileName(
+            self, "Имзо расми", "", "Расм (*.png *.jpg *.jpeg)")
+        if not source:
+            return
+        try:
+            blank_layout.set_mark(section, address.template_path, "signature",
+                                  Path(source))
+        except Exception as exc:                       # noqa: BLE001
+            QMessageBox.warning(self, "Xato", str(exc))
+            return
+        QMessageBox.information(
+            self, "OK", "Имзо юкланди — энди «📐 Матнларни жойлаш» да уни "
+                        "жойига суриб қўйинг.")
 
     def _arrange(self) -> None:
         """Drag every printed value into place on THIS blank and keep it."""

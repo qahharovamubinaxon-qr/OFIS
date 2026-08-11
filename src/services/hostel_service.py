@@ -194,7 +194,7 @@ class HostelService:
         # Only the date — the registration number and the electronic-signature
         # certificate are applied by МВД/Госуслуги after a real submission.
         values[STAY_FROM] = (registration_start or date.today()).isoformat()
-        from src.pdf.mapping import own_values
+        from src.pdf.mapping import own_values, with_marks
         from src.services import blank_layout
 
         layout = blank_layout.load(SECTION, address.template_path)
@@ -204,6 +204,10 @@ class HostelService:
             with_layout(FieldMapping.load(_hostel_dir() / "mapping.v1.json"),
                         layout),
             address)
+        # …and the signature or stamp it placed there, kept with the blank
+        mapping, pictures = with_marks(
+            mapping, layout, blank_layout.marks(SECTION, address.template_path))
+        values.update(pictures)
         out_path = self._unique_output_path(address, passport, output_dir)
         fill(address.template_path, mapping, values, out_path)
         log.info("Generated hostel %s for %s", out_path.name, address.label)

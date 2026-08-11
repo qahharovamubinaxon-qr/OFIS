@@ -16,7 +16,13 @@ import fitz
 import pytest
 from src.config import paths
 from src.pdf.engine import fill
-from src.pdf.mapping import FieldMapping, own_values, with_layout
+from src.pdf.mapping import (
+    MARK,
+    FieldMapping,
+    own_values,
+    with_layout,
+    with_marks,
+)
 from src.ui.widgets.field_editor import OWN_TEXT
 from src.ui.widgets.mapping_arranger import (
     label_of,
@@ -164,6 +170,85 @@ def test_an_office_text_survives_the_whole_round_trip(mapping) -> None:
     assert mine[0].key == OWN_TEXT + "ИЗОҲ"
     assert mine[0].page == 2 and mine[0].bold is True
     assert to_layout(again)["texts"] == once["texts"]
+
+
+# ------------------------------------------------ the signature and stamp
+def _signature(tmp_path: Path, wide: int = 400, tall: int = 200) -> Path:
+    from PIL import Image, ImageDraw
+
+    made = tmp_path / "imzo.png"
+    picture = Image.new("RGBA", (wide, tall), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(picture)
+    draw.line([(20, tall - 40), (wide // 2, 30), (wide - 20, tall - 50)],
+              fill=(10, 20, 120, 255), width=9)
+    picture.save(made)
+    return made
+
+
+def test_a_signature_is_kept_with_the_blank_not_the_worker(
+        tmp_path, blank) -> None:
+    """It is the same signature on every paper that goes out on that form —
+    asking for it with each worker would be a click a day for nothing."""
+    from src.services import blank_layout
+
+    assert blank_layout.marks("hostel", blank) == {}
+    blank_layout.set_mark("hostel", blank, "signature", _signature(tmp_path))
+    assert set(blank_layout.marks("hostel", blank)) == {"signature"}
+
+    other = tmp_path / "boshqa.pdf"
+    other.write_bytes(blank.read_bytes())
+    assert blank_layout.marks("hostel", other) == {}, "бошқа бланкага ўтди"
+
+    blank_layout.clear_mark("hostel", blank, "signature")
+    assert blank_layout.marks("hostel", blank) == {}
+
+
+def test_a_placed_signature_is_drawn_and_keeps_its_shape(mapping, blank,
+                                                         tmp_path) -> None:
+    layout = {"marks": {"signature": {"x": 0.55, "y": 0.80, "size": 0.035,
+                                      "page": 2}}}
+    ready, pictures = with_marks(
+        mapping, layout, {"signature": _signature(tmp_path, 400, 200)})
+    out = fill(blank, ready, {**pictures}, tmp_path / "out.pdf",
+               only_calibrated=False)
+
+    with fitz.open(out) as doc:
+        assert not doc[0].get_images(full=True), "1-саҳифага тушиб қолди"
+        boxes = [doc[1].get_image_bbox(i)
+                 for i in doc[1].get_images(full=True)]
+    assert len(boxes) == 1, "имзо чиқмади"
+    assert boxes[0].width / boxes[0].height == pytest.approx(2.0, abs=0.05)
+
+
+def test_a_signature_nobody_placed_is_not_drawn(mapping, blank,
+                                                tmp_path) -> None:
+    """Uploaded but never dragged — it has nowhere to go, so it goes nowhere."""
+    ready, pictures = with_marks(
+        mapping, {}, {"signature": _signature(tmp_path)})
+    assert pictures == {}
+    assert [f.id for f in ready.fields] == [f.id for f in mapping.fields]
+
+
+def test_a_mark_the_office_moved_is_kept_as_place_and_size_only() -> None:
+    """A picture has no face, weight or colour of ours to set."""
+    from dataclasses import replace
+
+    from src.pdf.trud8_fields import Field as Placed
+
+    made = to_layout([replace(Placed(key=MARK + "signature", page=2),
+                              x=0.5, baseline=0.7, size=0.04)])
+    assert made["marks"] == {"signature": {"x": 0.5, "y": 0.7, "size": 0.04,
+                                           "page": 2}}
+    assert made["fields"] == {} and made["texts"] == []
+
+
+def test_a_placed_mark_comes_back_into_the_editor(mapping) -> None:
+    fields, _ = to_fields(mapping, {"marks": {"signature": {
+        "x": 0.5, "y": 0.7, "size": 0.04, "page": 2}}})
+    mine = [f for f in fields if f.key.startswith(MARK)]
+    assert len(mine) == 1
+    assert mine[0].page == 2 and mine[0].size == pytest.approx(0.04)
+    assert label_of(mine[0].key) == "✒️ Имзо"
 
 
 # ------------------------------------------------------------ and it prints

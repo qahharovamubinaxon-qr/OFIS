@@ -157,6 +157,57 @@ def own_values(layout: dict | None) -> dict[str, str]:
     return out
 
 
+#: What a placed picture's id starts with — «mark:signature», «mark:stamp».
+MARK = "mark:"
+#: How tall a mark is by default, as a share of the page. About 18 mm on A4.
+MARK_HEIGHT = 0.022
+
+
+def with_marks(mapping: FieldMapping, layout: dict | None,
+               pictures: dict[str, "Path"]) -> tuple[FieldMapping, dict]:
+    """The mapping with the office's signature and stamp placed on it.
+
+    A picture is put on a blank exactly the way a text is — the office drags
+    it where it belongs — but it is drawn as itself. The file lives with the
+    blank rather than with the worker, because a signature is the same on
+    every паспорт that goes out on that form.
+
+    Hands back the values to merge as well: the engine's image field takes
+    the path to draw from ``values``.
+    """
+    placed = (layout or {}).get("marks") or {}
+    if not placed or not pictures:
+        return mapping, {}
+    width, height = mapping.page_size
+    fields, values = list(mapping.fields), {}
+    for kind, source in pictures.items():
+        spot = placed.get(kind)
+        if not isinstance(spot, dict):
+            continue
+        tall = float(spot.get("size") or MARK_HEIGHT) * height
+        wide = float(spot.get("width") or 0) * width or tall * _shape(source)
+        left, top = float(spot.get("x") or 0.1) * width, \
+            float(spot.get("y") or 0.1) * height
+        fields.append(Field_(
+            id=f"{MARK}{kind}", type="image", page=int(spot.get("page") or 1),
+            x=left, y=top, width=wide, height=tall, _calibrated=True))
+        values[f"{MARK}{kind}"] = str(source)
+    if not values:
+        return mapping, {}
+    return mapping.model_copy(update={"fields": fields}), values
+
+
+def _shape(source: "Path") -> float:
+    """A picture's width over its height — a stamp must not come out oval."""
+    try:
+        from PIL import Image
+
+        with Image.open(source) as picture:
+            return (picture.width / picture.height) if picture.height else 1.0
+    except Exception:                                  # noqa: BLE001
+        return 1.0
+
+
 def _placement(spot, field: Field_, width: float,
                height: float) -> dict | None:
     """One saved entry turned into what a field has to change."""

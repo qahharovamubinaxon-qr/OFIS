@@ -60,9 +60,12 @@ def _arrange_richly(parent, *, section: str, template: Path,
         QMessageBox.warning(parent, "Xato", f"Бланка очилмади: {exc}")
         return False
 
+    # the signature and stamp this blank carries, so they can be dragged
+    marks = blank_layout.marks(section, template)
     made = arrange_fully(parent, pages=pages, mapping=mapping,
                          layout=blank_layout.load(section, template),
-                         title=title, labels=labels)
+                         title=title, labels=labels,
+                         images={k: v.read_bytes() for k, v in marks.items()})
     if made is None:
         return False
     blank_layout.save(section, template, made)

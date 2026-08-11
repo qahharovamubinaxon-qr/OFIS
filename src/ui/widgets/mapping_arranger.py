@@ -25,7 +25,7 @@ its own and can be deleted freely — it lives only in this blank's layout.
 from __future__ import annotations
 
 from src.common.logging import get_logger
-from src.pdf.mapping import FieldMapping, anchor_x
+from src.pdf.mapping import MARK, MARK_HEIGHT, FieldMapping, anchor_x
 from src.pdf.trud8_fields import Field
 from src.ui.widgets.field_editor import OWN_TEXT, FieldEditor
 
@@ -49,10 +49,16 @@ _WORDS: dict[str, str] = {
 }
 
 
+#: What a placed picture is called on screen.
+MARK_LABELS = {"signature": "✒️ Имзо", "stamp": "🔴 Печать"}
+
+
 def label_of(field_id: str, given: dict[str, str] | None = None) -> str:
     """«reg.passport.issue.d» → «Паспорт берилган куни»."""
     if given and field_id in given:
         return given[field_id]
+    if field_id.startswith(MARK):
+        return MARK_LABELS.get(field_id[len(MARK):], field_id)
     if field_id.startswith(OWN_TEXT):
         return f"✎ {field_id[len(OWN_TEXT):]}"
     said = [_WORDS.get(part, part) for part in field_id.split(".")]
@@ -100,6 +106,15 @@ def to_fields(mapping: FieldMapping, layout: dict | None
         if one.type == "grid" and one.pitch:
             pitches[one.id] = float(one.pitch) / width
 
+    for kind, spot in (layout.get("marks") or {}).items():
+        if not isinstance(spot, dict):
+            continue
+        made.append(Field(
+            key=MARK + kind, page=int(spot.get("page") or 1),
+            x=float(spot.get("x") or 0.1),
+            baseline=float(spot.get("y") or 0.1),
+            size=float(spot.get("size") or MARK_HEIGHT)))
+
     for raw in layout.get("texts") or []:
         if not isinstance(raw, dict) or not str(raw.get("text") or "").strip():
             continue
@@ -121,18 +136,25 @@ def to_layout(fields: list[Field]) -> dict:
     """What the editor left, in the shape the layout store keeps."""
     placed: dict[str, dict] = {}
     texts: list[dict] = []
+    marks: dict[str, dict] = {}
     for one in fields:
         body = {"x": round(one.x, 5), "y": round(one.baseline, 5),
                 "size": round(one.size, 5), "font": one.font,
                 "bold": bool(one.bold),
                 "colour": [round(c, 4) for c in one.colour],
                 "rotate": int(getattr(one, "rotate", 0) or 0)}
-        if one.key.startswith(OWN_TEXT):
+        if one.key.startswith(MARK):
+            # a picture keeps only where and how big — a signature has no
+            # face, no weight and no colour of ours to set
+            marks[one.key[len(MARK):]] = {
+                "x": body["x"], "y": body["y"], "size": body["size"],
+                "page": one.page}
+        elif one.key.startswith(OWN_TEXT):
             texts.append({**body, "page": one.page,
                           "text": one.key[len(OWN_TEXT):]})
         else:
             placed[one.key] = body
-    return {"fields": placed, "texts": texts}
+    return {"fields": placed, "texts": texts, "marks": marks}
 
 
 def arrange(parent, *, pages: list[bytes], mapping: FieldMapping,
@@ -146,6 +168,13 @@ def arrange(parent, *, pages: list[bytes], mapping: FieldMapping,
     stamp the office is placing rather than a value it is printing.
     """
     fields, pitches = to_fields(mapping, layout)
+    # a picture the office has uploaded but never placed still has to appear,
+    # or there is nothing on screen for it to drag
+    have = {f.key for f in fields}
+    for kind in images or {}:
+        if MARK + kind not in have:
+            fields.append(Field(key=MARK + kind, page=1, x=0.55,
+                                baseline=0.80, size=MARK_HEIGHT))
     catalogue = {f.key: label_of(f.key, labels) for f in fields}
     shown = {f.key: sample_of(f.key, samples) for f in fields}
     # the form's own values may be moved and restyled, never deleted: a
@@ -164,5 +193,5 @@ def arrange(parent, *, pages: list[bytes], mapping: FieldMapping,
     return made
 
 
-__all__ = ["OWN_LABEL", "arrange", "label_of", "sample_of", "to_fields",
-           "to_layout"]
+__all__ = ["MARK_LABELS", "OWN_LABEL", "arrange", "label_of", "sample_of",
+           "to_fields", "to_layout"]
