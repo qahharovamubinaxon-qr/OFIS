@@ -66,9 +66,6 @@ _J_IS_DZH = ("ТАДЖИКИСТАН", "ТОДЖИКИСТОН", "ТОЧИКИС
 #: Azerbaijani spells that same sound with C — Cəfər is ДЖАФАР — and its
 #: J is Ж (Jale is ЖАЛЯ).
 _AZERI = ("АЗЕРБАЙДЖАН", "AZERBAIJAN", "AZE", "ОЗАРБАЙЖОН")
-#: Turkmen y is ы, not й: Ýazmyrat is ЯЗМЫРАТ, Myrat is МЫРАТ.
-_TURKMEN = ("ТУРКМЕНИСТАН", "TURKMENISTAN", "TKM")
-
 
 def _is(country: str, names: tuple[str, ...]) -> bool:
     return any(name in country for name in names)
@@ -99,7 +96,6 @@ def to_cyrillic(text: str, country: str | None = None) -> str:
     upper = (country or "").upper()
     j_is_dzh = _is(upper, _J_IS_DZH)
     azeri = _is(upper, _AZERI)
-    turkmen = _is(upper, _TURKMEN)
     out: list[str] = []
     i = 0
     n = len(t)
@@ -122,8 +118,20 @@ def to_cyrillic(text: str, country: str | None = None) -> str:
         elif (char == "J" and j_is_dzh) or (char == "C" and azeri):
             # the same sound, spelled J by Tajikistan and C by Azerbaijan
             out.append("ДЖ")
-        elif char == "Y" and turkmen and before and before not in "AEIOUY":
-            # Turkmen y is ы after a consonant: Myrat is МЫРАТ
+        elif char == "Y" and before and before not in "AEIOUY":
+            # A Y standing after a CONSONANT is the vowel ы, not the
+            # semivowel й — and this is not one republic's habit but how the
+            # whole practical transcription works:
+            #
+            #   KYZY  → КЫЗЫ    the «daughter of» every republic prints
+            #   OGLY  → ОГЛЫ    and its «son of»
+            #   MYRAT → МЫРАТ · SADYKOV → САДЫКОВ · SYMBAT → СЫМБАТ
+            #
+            # It used to be applied to Turkmen passports only, so a Kyrgyz
+            # woman's patronymic went onto a registration as «КЙЗЙ». Russian
+            # does not put й after a consonant at all, which is why the plain
+            # rule is safe: after a VOWEL it is still й (БАЙРАМ, ХУДАЙБЕРДИЕВ,
+            # ДМИТРИЙ), and YA/YE/YO/YU are taken by the digraphs above.
             out.append("Ы")
         else:
             out.append(_SINGLE.get(char, char))

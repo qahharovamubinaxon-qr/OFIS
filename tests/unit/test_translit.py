@@ -127,3 +127,46 @@ def test_the_issuing_office_keeps_its_own_rule() -> None:
                         nationality="ТАДЖИКИСТАН", issued_by="ХШБ ВКД ҶТ")
     assert passport.issued_by == "МВД РТ"
     assert passport.surname == "Ходжаев"
+
+
+# --------------------------------------------------- Y after a consonant is ы
+# The office found this on a registration it had already filed: «KYZY» had
+# gone onto the paper as «КЙЗЙ». The rule existed but was applied to Turkmen
+# passports only, so a Kyrgyz woman's patronymic missed it.
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("KYZY", "КЫЗЫ"),            # «daughter of» — every republic prints it
+    ("OGLY", "ОГЛЫ"),            # and its «son of»
+    ("MYRAT", "МЫРАТ"),
+    ("SADYKOV", "САДЫКОВ"),
+    ("SYMBAT", "СЫМБАТ"),
+    ("KYRGYZ", "КЫРГЫЗ"),
+    ("NURYYEVA", "НУРЫЕВА"),
+])
+def test_a_y_standing_after_a_consonant_is_the_vowel(latin, russian) -> None:
+    assert to_cyrillic(latin) == russian
+
+
+@pytest.mark.parametrize("country", ["", "КИРГИЗИЯ", "ТУРКМЕНИСТАН",
+                                     "КАЗАХСТАН", "УЗБЕКИСТАН"])
+def test_it_is_the_same_for_every_republic(country) -> None:
+    """It used to depend on the citizenship, and that was the bug."""
+    assert to_cyrillic("GULNARA KYZY", country) == "ГУЛНАРА КЫЗЫ"
+
+
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("KHUDAYBERDIEV", "ХУДАЙБЕРДИЕВ"),   # after a VOWEL it is still й
+    ("BAYRAM", "БАЙРАМ"),
+    ("SEYITOV", "СЕЙИТОВ"),
+    ("DMITRIY", "ДМИТРИЙ"),
+    ("AYGUL", "АЙГУЛ"),
+    ("YUSUF", "ЮСУФ"),                   # …and the digraphs still win
+    ("YAKUBOV", "ЯКУБОВ"),
+    ("ILYAS", "ИЛЯС"),
+    ("NIYAZOV", "НИЯЗОВ"),
+    ("TYAN", "ТЯН"),
+])
+def test_a_y_after_a_vowel_or_in_a_digraph_is_untouched(latin,
+                                                        russian) -> None:
+    """Russian never puts й after a consonant, which is what makes the plain
+    rule safe — but it very much puts it after a vowel."""
+    assert to_cyrillic(latin) == russian
