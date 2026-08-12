@@ -101,6 +101,11 @@ class Field:
     #: writing up their edge — a медкнижка has several — are turned here
     #: rather than being fixed in code.
     rotate: int = 0
+    #: How far apart the LETTERS stand, as a share of the page width. Zero
+    #: is ordinary text, set the way the face was drawn. Anything above it
+    #: puts every character at a fixed interval, which is the only way a
+    #: value lands one letter per printed box on a celled blank.
+    pitch: float = 0.0
 
     def label(self) -> str:
         return CATALOGUE.get(self.key, self.key)
@@ -109,10 +114,17 @@ class Field:
         return SAMPLES.get(self.key, self.key)
 
     def as_dict(self) -> dict:
-        return {"key": self.key, "page": self.page, "x": round(self.x, 4),
+        made = {"key": self.key, "page": self.page, "x": round(self.x, 4),
                 "baseline": round(self.baseline, 4),
                 "size": round(self.size, 4), "bold": self.bold,
                 "font": self.font, "colour": list(self.colour)}
+        # written only when it is set, so a map saved before letter spacing
+        # existed stays byte-for-byte what it was
+        if self.rotate:
+            made["rotate"] = int(self.rotate)
+        if self.pitch:
+            made["pitch"] = round(self.pitch, 5)
+        return made
 
     @staticmethod
     def from_dict(raw: dict) -> Field:
@@ -127,4 +139,6 @@ class Field:
                      size=float(raw.get("size", DEFAULT_SIZE)),
                      bold=bool(raw.get("bold", False)),
                      font=str(font),
-                     colour=tuple(float(c) for c in colour[:3]))
+                     colour=tuple(float(c) for c in colour[:3]),
+                     rotate=int(raw.get("rotate") or 0),
+                     pitch=float(raw.get("pitch") or 0.0))

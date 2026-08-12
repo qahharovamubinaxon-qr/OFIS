@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 
+from src.domain.mrz import as_text, build
 from src.domain.russian_case import (
     CASE_NAMES,
     CASES,
@@ -63,6 +64,10 @@ PICTURE_LABELS = {
     STAMP: "🔴 Печать",
     SIGNATURE: "✒️ Имзо",
 }
+
+#: The two lines at the foot of a passport or a visa. Built, never typed:
+#: every line is exactly 44 characters and five of them are check digits.
+MRZ = "mrz"
 
 #: What a custom text's key starts with. Everything after it is the name the
 #: office typed, and that name is also what the box is called on screen.
@@ -151,6 +156,8 @@ def _catalogue() -> dict[str, str]:
         "organisation": "Ташкилот / фирма",
         "note": "Изоҳ (эркин матн)",
     })
+    made[MRZ] = ("🔡 Машина ўқийдиган матн — 2 қатор "
+                 "(паспорт-визадагидек, ўзи ҳисобланади)")
     for key in PICTURES:
         made[key] = PICTURE_LABELS[key]
     return made
@@ -182,6 +189,8 @@ SAMPLES: dict[str, str] = {
     "pat_issued_by": "ГУ МВД России по г. Москве",
     "pat_region": "Москва",
     PHOTO: "РАСМ", STAMP: "ПЕЧАТЬ", SIGNATURE: "ИМЗО",
+    MRZ: ("P<TJKISOEV<<ASLIDIN<<<<<<<<<<<<<<<<<<<<<<<<<\n"
+          "4058472736TJK9907250M3501173<<<<<<<<<<<<<<02"),
 }
 for _case in CASES:
     SAMPLES[f"fio_{_case}"] = decline_fio("Исоев", "Аслидин", "Холбердиевич",
@@ -393,6 +402,11 @@ def values(data: UniversalData) -> dict[str, str]:
         out[f"doc{slot}_series"] = series
         out[f"doc{slot}_number"] = number
         out[f"doc{slot}_full"] = " ".join(p for p in (series, number) if p)
+    out[MRZ] = as_text(build(
+        surname=data.surname, name=data.name, citizenship=data.citizenship,
+        born=data.birth_date, gender=data.gender,
+        number=data.pass_number or data.documents.get(1, ("", ""))[1],
+        expires=data.pass_expires, personal=data.pass_pin))
     for key, said in (data.custom or {}).items():
         out[key] = (said or "").strip()
     return out
@@ -406,7 +420,7 @@ def output_stem(data: UniversalData, blank: str = "") -> str:
     return "".join(c for c in stem if c.isalnum() or c in "_-") or "UNIVERSAL"
 
 
-__all__ = ["CATALOGUE", "CUSTOM", "DOC_SLOTS", "MONTHS_RU", "MONTHS_RU_SHORT",
+__all__ = ["CATALOGUE", "CUSTOM", "DOC_SLOTS", "MRZ", "MONTHS_RU", "MONTHS_RU_SHORT",
            "PHOTO", "PICTURES", "PICTURE_LABELS", "SAMPLES", "SIGNATURE",
            "STAMP", "BLACK", "DEFAULT_BASELINE", "DEFAULT_SIZE", "DEFAULT_X",
            "Field", "UniversalData", "catalogue_with", "custom_key",

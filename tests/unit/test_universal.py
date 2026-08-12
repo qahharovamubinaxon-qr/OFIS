@@ -490,6 +490,72 @@ def test_a_ruined_fields_file_is_not_a_crash(blank) -> None:
     assert store.fields("Форма") == []
 
 
+# ------------------------------------------------------- the letter spacing
+def test_letters_land_one_to_a_printed_box(blank) -> None:
+    """«баъзи бланкалар катакли бўлади» — the value has to sit IN the cells,
+    and no amount of moving the whole word will do that."""
+    cell = 22.0 / 595.0                        # one box, as a share of A4
+    pdf = render(_worker(), blank,
+                 [Field(key="surname", page=1, x=0.1, baseline=0.25,
+                        size=0.018, pitch=cell)])
+    with fitz.open("pdf", pdf) as doc:
+        # PyMuPDF invents a blank span wherever it finds a wide gap between
+        # characters, so only spans that actually carry a letter are counted
+        spans = [s for bl in doc[0].get_text("dict")["blocks"]
+                 for ln in bl.get("lines", []) for s in ln["spans"]
+                 if s["text"].strip()]
+
+    # every letter is drawn on its own, at a fixed interval
+    assert len(spans) == len("Исоев")
+    lefts = sorted(s["origin"][0] for s in spans)
+    steps = [round(b - a, 2) for a, b in zip(lefts, lefts[1:], strict=False)]
+    assert steps and all(abs(step - 22.0) < 0.6 for step in steps), steps
+
+
+def test_ordinary_text_is_left_to_the_face_that_drew_it(blank) -> None:
+    """Spacing off means the letters stand where the type says — one span."""
+    pdf = render(_worker(), blank,
+                 [Field(key="surname", page=1, x=0.1, baseline=0.25,
+                        size=0.018, pitch=0.0)])
+    with fitz.open("pdf", pdf) as doc:
+        spans = [s for bl in doc[0].get_text("dict")["blocks"]
+                 for ln in bl.get("lines", []) for s in ln["spans"]]
+    assert len(spans) == 1
+    assert "Исоев" in spans[0]["text"]
+
+
+def test_the_spacing_survives_being_saved_and_read_back(blank) -> None:
+    store.add("Катакли", blank)
+    store.save_fields("Катакли", [Field(key="surname", page=1, x=0.1,
+                                        baseline=0.25, pitch=0.037)])
+    assert store.fields("Катакли")[0].pitch == pytest.approx(0.037)
+
+
+def test_a_map_saved_before_spacing_existed_still_loads(blank) -> None:
+    """The office has blanks arranged already — none may shift."""
+    store.add("Эски", blank)
+    (store.folder() / "Эски" / store.FIELDS_FILE).write_text(
+        '[{"key":"surname","page":1,"x":0.1,"baseline":0.25,"size":0.014,'
+        '"bold":false,"font":"Arial","colour":[0,0,0]}]', encoding="utf-8")
+    back = store.fields("Эски")[0]
+    assert back.pitch == 0.0 and back.rotate == 0
+    assert back.x == pytest.approx(0.1)
+
+
+# ------------------------------------------------- the machine-readable zone
+def test_the_zone_prints_as_two_lines_one_under_the_other(blank) -> None:
+    pdf = render(_worker(), blank,
+                 [Field(key=fields.MRZ, page=1, x=0.1, baseline=0.85,
+                        size=0.012, font="Courier New")])
+    with fitz.open("pdf", pdf) as doc:
+        spans = [s for bl in doc[0].get_text("dict")["blocks"]
+                 for ln in bl.get("lines", []) for s in ln["spans"]]
+    assert len(spans) == 2, "иккита қатор бўлиши керак"
+    first, second = sorted(spans, key=lambda s: s["origin"][1])
+    assert second["origin"][1] > first["origin"][1], "иккинчиси пастда эмас"
+    assert first["text"].startswith("P<")
+
+
 # ------------------------------------------------------------ the printing
 def test_the_worker_is_printed_onto_the_office_own_blank(blank) -> None:
     placed = [Field(key="fio", page=1, x=0.15, baseline=0.20, size=0.016),

@@ -46,6 +46,14 @@ OWN_TEXT = "own:"
 #: The picker's «type your own» row. Not a real key — it is swapped for
 #: ``own:<what was typed>`` the moment the office answers.
 _OWN_PICK = "own:__ask__"
+
+#: One press of the letter-spacing buttons, as a share of the page width.
+#: About a fifth of a millimetre on A4 — fine enough to walk a value into
+#: its printed boxes, coarse enough to get there in a few presses.
+PITCH_STEP = 0.0004
+#: Where spacing starts from when a plain text is first spread out: roughly
+#: the type's own width, which is about where a celled blank's boxes stand.
+PITCH_START = 0.62
 #: Which way a text lies. Blanks that are written up their own edge — a
 #: медкнижка has several — are turned here rather than in code.
 TURNS: tuple[tuple[str, int], ...] = (
@@ -216,6 +224,30 @@ class FieldEditor(QDialog):
         style.addWidget(self._font, stretch=1)
         outer.addLayout(style)
 
+        # Letter spacing. A blank with printed boxes wants one character to a
+        # box, and no amount of moving the whole value will do that — the
+        # letters themselves have to stand at the box interval.
+        spacing = QHBoxLayout()
+        spacing.addWidget(QLabel("Ҳарфлар оралиғи:"))
+        self._spread = QPushButton("⇤ Торайтириш")
+        self._spread.setToolTip("Ҳарфларни бир-бирига яқинлаштириш")
+        self._spread.clicked.connect(lambda: self._nudge_pitch(-1))
+        spacing.addWidget(self._spread)
+        self._pitch_shown = QLabel("оддий")
+        self._pitch_shown.setMinimumWidth(120)
+        spacing.addWidget(self._pitch_shown)
+        wider = QPushButton("Кенгайтириш ⇥")
+        wider.setToolTip("Ҳарфларни узоқлаштириш — катакли бланка учун")
+        wider.clicked.connect(lambda: self._nudge_pitch(+1))
+        spacing.addWidget(wider)
+        plain = QPushButton("↺ Оддий матн")
+        plain.setToolTip("Ҳарфлар оралиғини бекор қилиш — шрифт ўзи "
+                         "қандай ёзса, шундай")
+        plain.clicked.connect(self._plain_pitch)
+        spacing.addWidget(plain)
+        spacing.addStretch(1)
+        outer.addLayout(spacing)
+
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(False)
         outer.addWidget(self._scroll, stretch=1)
@@ -261,12 +293,17 @@ class FieldEditor(QDialog):
         return self._samples.get(field.key) or field.sample()
 
     def _item_of(self, field: Field, tag: str) -> Item:
+        # the field's OWN spacing wins: it is what the office set here and
+        # what will be printed. The section's `pitches` only supply the
+        # starting value for a celled row it already knew about.
+        pitch = (getattr(field, "pitch", 0.0) or 0.0) \
+            or self._pitches.get(field.key)
         return Item(key=tag, label=self._label_of(field),
                     sample=self._sample_of(field), x=field.x,
                     baseline=field.baseline, size=field.size,
                     colour=field.colour, font_family=field.font,
                     bold=field.bold, image=self._images.get(field.key),
-                    pitch=self._pitches.get(field.key))
+                    pitch=pitch)
 
     def _show_page(self, page: int, keep: int | None = None) -> None:
         self._harvest()
@@ -294,6 +331,33 @@ class FieldEditor(QDialog):
             self._on_item(self._pick_item.currentIndex())
         else:
             self._show_style(None)
+
+    # ------------------------------------------------------ letter spacing
+    def _nudge_pitch(self, step: int) -> None:
+        """Widen or narrow the gap between letters by one notch."""
+        index = self._picked()
+        if index is None:
+            return
+        now = getattr(self._drafts[index].field, "pitch", 0.0) or 0.0
+        if not now:
+            # starting from ordinary text: begin at roughly the type's own
+            # width, which is about where a celled blank's boxes stand
+            now = self._drafts[index].field.size * PITCH_START
+        made = max(0.0, round(now + step * PITCH_STEP, 5))
+        self._restyle(pitch=made if made > PITCH_STEP / 2 else 0.0)
+        self._show_pitch(index)
+
+    def _plain_pitch(self) -> None:
+        if self._picked() is None:
+            return
+        self._restyle(pitch=0.0)
+        self._show_pitch(self._picked())
+
+    def _show_pitch(self, index: int | None) -> None:
+        pitch = 0.0 if index is None else (
+            getattr(self._drafts[index].field, "pitch", 0.0) or 0.0)
+        self._pitch_shown.setText(
+            "оддий" if not pitch else f"катакли · {pitch * 1000:.1f}")
 
     # --------------------------------------------------------------- zoom
     def _zoom_by(self, delta: float) -> None:
@@ -344,8 +408,10 @@ class FieldEditor(QDialog):
         """The bar always shows the picked text's own settings."""
         self._filling = True
         enabled = index is not None
-        for widget in (self._colour, self._weight, self._turn, self._font):
+        for widget in (self._colour, self._weight, self._turn, self._font,
+                       self._spread):
             widget.setEnabled(enabled)
+        self._show_pitch(index)
         if enabled:
             field = self._drafts[index].field
             self._weight.setCurrentIndex(1 if field.bold else 0)

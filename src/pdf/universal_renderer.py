@@ -83,16 +83,39 @@ def _draw_picture(page, item: Field, png: bytes) -> None:
                       stream=png, keep_proportion=True, overlay=True)
 
 
+#: How far apart two lines of a machine-readable zone stand, as a multiple of
+#: the type size. The standard sets the strip in OCR-B at a fixed pitch and
+#: this is what that spacing comes to.
+MRZ_LEADING = 1.35
+
+
 def _draw_text(page, item: Field, text: str) -> None:
+    """One value at its spot — as a line, as spaced letters, or as a strip."""
     width, height = page.rect.width, page.rect.height
     face, faux = font_file(item.font, item.bold)
     turn = item.rotate if item.rotate in TURNS else 0
-    page.insert_text((item.x * width, item.baseline * height), text,
-                     fontsize=item.size * height, fontfile=str(face),
-                     fontname=font_id(item.font, item.bold),
-                     color=item.colour, rotate=turn,
-                     render_mode=2 if faux else 0,
-                     border_width=FAUX_BOLD if faux else 0.0)
+    size = item.size * height
+    common = {
+        "fontsize": size, "fontfile": str(face),
+        "fontname": font_id(item.font, item.bold),
+        "color": item.colour, "rotate": turn,
+        "render_mode": 2 if faux else 0,
+        "border_width": FAUX_BOLD if faux else 0.0,
+    }
+    left, base = item.x * width, item.baseline * height
+
+    for row, line in enumerate(str(text).split("\n")):
+        y = base + row * size * MRZ_LEADING
+        if not item.pitch:
+            page.insert_text((left, y), line, **common)
+            continue
+        # one letter to a printed box: every character at a fixed interval,
+        # which is the only way a value lands in the cells a blank prints
+        step = item.pitch * width
+        for index, char in enumerate(line):
+            if char == " ":
+                continue
+            page.insert_text((left + index * step, y), char, **common)
 
 
 def render(data: UniversalData, template: Path | str,
