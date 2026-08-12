@@ -11,10 +11,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QComboBox,
     QDateEdit,
     QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -30,6 +33,36 @@ from src.controllers.dms_controller import DmsController
 from src.services.dms_service import DmsResult, policy_end_date
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+
+#: Everything the policy prints off the passport, so any of it can be
+#: corrected before it goes onto a document.
+_READ_BOXES: tuple[tuple[str, str, str], ...] = (
+    ("surname", "Фамилия:", "Исоев"),
+    ("name", "Исм:", "Аслидин"),
+    ("patronymic", "Отчество:", "Холбердиевич"),
+    ("nationality", "Гражданство:", "Таджикистан"),
+    ("series", "Паспорт серия:", "P"),
+    ("number", "Паспорт номер:", "405847273"),
+    ("issue_date", "Берилган сана:", "18.01.2025"),
+    ("issued_by", "Ким берган:", "ХШБ дар Ч.Балхи"),
+)
+
+
+def _date_text(when) -> str:
+    return when.strftime("%d.%m.%Y") if when else ""
+
+
+def _date_of(said: str):
+    """«18.01.2025» → a date, or nothing when it is not one."""
+    from datetime import datetime
+
+    said = (said or "").strip()
+    for shape in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(said, shape).date()
+        except ValueError:
+            continue
+    return None
 
 
 class DmsView(QWidget):
@@ -83,7 +116,40 @@ class DmsView(QWidget):
 
         # -- passport ----------------------------------------------------
         self._dz = DropZone("🛂", "Ишчининг паспортини юкланг")
+        # dropped, and read at once: the operator does not have to press
+        # anything and can go on typing the address while it works
+        self._dz.changed.connect(self._on_dropped)
         root.addWidget(self._dz, stretch=1)
+
+        # -- what was read, for the operator to check --------------------
+        # Reading and printing used to be one press, so nobody ever saw what
+        # had been read until the policy came out with it on. Everything the
+        # policy prints off the passport is shown here first.
+        self._read = QGroupBox("Паспортдан ўқилгани — текширинг, "
+                               "хатоси бўлса тўғриланг")
+        checks = QGridLayout(self._read)
+        checks.setHorizontalSpacing(10)
+        checks.setVerticalSpacing(6)
+        self._boxes: dict[str, QLineEdit] = {}
+        for at, (key, label, hint) in enumerate(_READ_BOXES):
+            box = QLineEdit()
+            box.setPlaceholderText(hint)
+            checks.addWidget(QLabel(label), at // 2, (at % 2) * 2)
+            checks.addWidget(box, at // 2, (at % 2) * 2 + 1)
+            self._boxes[key] = box
+
+        last = len(_READ_BOXES) // 2
+        checks.addWidget(QLabel("Жинси:"), last, 0)
+        self._gender = QComboBox()
+        self._gender.addItems(["Мужской", "Женский"])
+        checks.addWidget(self._gender, last, 1)
+        checks.addWidget(QLabel("Туғилган сана:"), last, 2)
+        self._born = QDateEdit(QDate(2000, 1, 1))
+        self._born.setCalendarPopup(True)
+        self._born.setDisplayFormat("dd.MM.yyyy")
+        checks.addWidget(self._born, last, 3)
+        self._read.setVisible(False)
+        root.addWidget(self._read)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ДМС)")
@@ -100,9 +166,9 @@ class DmsView(QWidget):
         self._progress = RunProgress()
         root.addWidget(self._progress)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        root.addWidget(line)
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        root.addWidget(rule)
 
         self._status = QLabel()
         self._status.setWordWrap(True)
@@ -135,12 +201,63 @@ class DmsView(QWidget):
         return date(q.year(), q.month(), q.day())
 
     # ------------------------------------------------------------------
-    def _run_ai(self) -> None:
-        if self._dz.path is None:
-            self._warn("Ишчининг паспорт расмини юкланг.")
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """A passport landed — read it now, without being asked to."""
+        if self._dz.path is None or not self._c.ai_available():
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
+        image = Path(self._dz.path).read_bytes()
+        self._status.setText("⏳ Паспорт ўқиляпти… (адресни ёзаверинг)")
+        self._progress.start("Паспорт ўқиляпти…")
+        run_async(self._c.read_passport, image,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        self._progress.finish()
+        self._passport = passport
+        for key, box in self._boxes.items():
+            said = getattr(passport, key, "") or ""
+            box.setText(_date_text(said) if hasattr(said, "year") else str(said))
+        gender = getattr(passport, "gender", None)
+        self._gender.setCurrentText(
+            "Женский" if str(getattr(gender, "value", gender) or "").lower()
+            .startswith(("f", "ж")) else "Мужской")
+        if passport.birth_date:
+            self._born.setDate(QDate(passport.birth_date.year,
+                                     passport.birth_date.month,
+                                     passport.birth_date.day))
+        self._read.setVisible(True)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._read.setVisible(True)          # so it can be typed by hand
+        self._status.setText(f"❌ Паспорт ўқилмади: {error}. Қўлда ёзинг.")
+
+    def _edited(self):
+        """The passport as it stands IN THE BOXES — never as it was read."""
+        from src.domain.documents import Passport
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return Passport(
+            surname=said.get("surname") or "—",
+            name=said.get("name") or "—",
+            patronymic=said.get("patronymic") or None,
+            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
+                    else Gender.MALE),
+            birth_date=self._born.date().toPython(),
+            nationality=said.get("nationality") or None,
+            series=said.get("series") or None,
+            number=said.get("number") or "—",
+            issue_date=_date_of(said.get("issue_date", "")),
+            issued_by=said.get("issued_by") or None)
+
+    # ------------------------------------------------------------ printing
+    def _run_ai(self) -> None:
+        if self._dz.path is None and not self._read.isVisible():
+            self._warn("Ишчининг паспорт расмини юкланг.")
             return
         if not self._address.text().strip():
             self._warn("Рўйхатдан ўтиш манзилини ёзинг.")
@@ -149,13 +266,18 @@ class DmsView(QWidget):
             self._warn("Полис рақами йўқ — Sozlamalar → ДМС бўлимига РЕСО "
                        "берган рақамлар оралиғини киритинг.")
             return
+        if not self._read.isVisible():
+            self._warn("Паспорт ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._boxes["surname"].text().strip():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
 
-        data = Path(self._dz.path).read_bytes()
         self._run.setEnabled(False)
-        self._status.setText("⏳ Паспорт ўқилаяпти ва полис тайёрланяпти…")
+        self._status.setText("⏳ Полис тайёрланяпти…")
         self._progress.start("Полис тайёрланяпти…")
         run_async(
-            self._c.generate_from_images, data,
+            self._c.generate, self._edited(),
             start_date=self._start_date(),
             phone=self._phone.text().strip(),
             address=self._address.text().strip(),
@@ -185,8 +307,8 @@ class DmsView(QWidget):
     def _open_folder(self) -> None:
         if self._result is None:
             return
-        from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._result.pdf_path.parent)))
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -92,6 +92,11 @@ _NEEDED_BY = {
 }
 
 
+#: How long to wait after a drop before reading. Long enough for a whole
+#: handful of pages to land, short enough that nobody notices the pause.
+SETTLE_MS = 400
+
+
 def _family(key: str) -> set[str]:
     """Every catalogue key a box feeds — a date feeds nine of them."""
     return _NEEDED_BY.get(key, {key})
@@ -112,6 +117,13 @@ class UniversalView(QWidget):
         self._docs: dict[int, tuple[QLineEdit, QLineEdit]] = {}
         self._customs: dict[str, QLineEdit] = {}
         self._rows: dict[str, list[QWidget]] = {}
+        #: True while a reading is in flight, so a second drop does not
+        #: start another on top of it
+        self._reading = False
+        #: Waits for a whole drop to land before reading it
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.timeout.connect(self._read)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -132,8 +144,9 @@ class UniversalView(QWidget):
             "Бўш бланкани юкланг → «📐 Созлаш» да матнларни қўйиб, жойини, "
             "рангини, шрифтини, катта-кичиклигини, тик-ётиғини белгиланг → "
             "ном билан сақланг. Кейин ўша бланкани танлаб, паспорт ва "
-            "патентни ташлаб «Ўқиш» босасиз — майдонлар ўзи тўлади, "
-            "текширасиз, «Тайёрлаш».")
+            "патентни ташланг — программа ЎЗИ ўқий бошлайди, сиз шу "
+            "орада бошқа катакларни тўлдириб турасиз. Ўқилгач текширасиз "
+            "ва «Тайёрлаш».")
         note.setWordWrap(True)
         note.setStyleSheet("color:#8a94a3;")
         root.addWidget(note)
@@ -193,9 +206,17 @@ class UniversalView(QWidget):
         drops.addWidget(self._others)
         root.addLayout(drops)
 
+        # Reading starts the moment something is dropped: the office asked
+        # for it — «расмларни юкладим, программа автоматик ўқишни бошласин,
+        # мен унгача бошқа майдонларни тўлдириб тураман». The button stays
+        # for a second try when a page came out badly.
+        for zone in (self._passport, self._patent, self._others):
+            zone.changed.connect(self._auto_read)
+
         read_row = QHBoxLayout()
-        read = QPushButton("📖 Ўқиш")
-        read.setToolTip("Паспорт ва патентдан майдонларни тўлдиради")
+        read = QPushButton("📖 Қайта ўқиш")
+        read.setToolTip("Расм ташланганда ўзи ўқийди — бу тугма қайта "
+                        "уриниб кўриш учун")
         read.clicked.connect(self._read)
         read_row.addWidget(read)
         self._only_used = QCheckBox("Фақат шу бланка ишлатадиган майдонлар")
@@ -499,6 +520,17 @@ class UniversalView(QWidget):
                "ёзганингиз шу бланкага чиқади." if added else ""))
 
     # ------------------------------------------------------------ reading
+    def _auto_read(self) -> None:
+        """Something was dropped. Read it — but not once per file.
+
+        Dropping three pages at once fires this three times, and each would
+        be its own trip to the reader. A short wait lets the whole drop land
+        first; the operator carries on typing the other boxes meanwhile.
+        """
+        if not self._c.ai_available() or self._reading:
+            return
+        self._settle.start(SETTLE_MS)
+
     def _read(self) -> None:
         passport = (Path(self._passport.path).read_bytes()
                     if self._passport.path else None)
@@ -514,6 +546,7 @@ class UniversalView(QWidget):
         # the boxes THIS blank was given, by the names the office typed —
         # the reader is asked for those by name
         wanted = [self._c.custom_name(k) for k in self._customs]
+        self._reading = True
         self._run.setEnabled(False)
         self._progress.start(
             "Ҳужжатлар ўқиляпти…"
@@ -524,6 +557,7 @@ class UniversalView(QWidget):
                   on_success=self._filled, on_error=self._failed)
 
     def _filled(self, data: UniversalData) -> None:
+        self._reading = False
         self._progress.finish()
         self._run.setEnabled(True)
         for key, box in self._boxes.items():
@@ -605,6 +639,7 @@ class UniversalView(QWidget):
         ask_save_dir(self, [result.pdf])
 
     def _failed(self, exc: Exception) -> None:
+        self._reading = False
         self._progress.finish()
         self._run.setEnabled(True)
         self._status.setText(f"❌ {exc}")

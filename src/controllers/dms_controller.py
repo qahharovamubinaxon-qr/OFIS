@@ -26,6 +26,22 @@ class DmsController:
     def remaining(self) -> int:
         return self._dms.remaining()
 
+    def read_passport(self, passport_image: bytes):
+        """What the passport says — for the operator to check before printing.
+
+        Reading and printing used to be one press, so nobody ever saw what
+        had been read until the policy came out with it on. The office asked
+        for the two to be separate, and they are.
+        """
+        return self._ocr.read_passport(passport_image)
+
+    def generate(self, passport, *, start_date: date, phone: str,
+                 address: str, region: str | None = None) -> DmsResult:
+        """The policy, from what is IN THE BOXES — not from what was read."""
+        return self._dms.generate(
+            passport, start_date=start_date, phone=phone, address=address,
+            region=region)
+
     def generate_from_images(
         self,
         passport_image: bytes,
@@ -35,10 +51,10 @@ class DmsController:
         address: str,
         region: str | None = None,
     ) -> DmsResult:
-        passport = self._ocr.read_passport(passport_image)
-        return self._dms.generate(
-            passport, start_date=start_date, phone=phone, address=address,
-            region=region)
+        """Read and print in one go — kept for the bot, which has no screen."""
+        return self.generate(
+            self.read_passport(passport_image), start_date=start_date,
+            phone=phone, address=address, region=region)
 
     @staticmethod
     def read_image(path: Path) -> bytes:

@@ -8,7 +8,6 @@ from datetime import date
 
 import fitz
 import pytest
-
 from src.config import paths
 from src.domain.documents import Passport
 from src.domain.enums import Gender
@@ -217,7 +216,6 @@ def test_text_is_small_enough_for_the_cells(svc) -> None:
 def test_the_blank_is_not_painted_over(svc) -> None:
     """The form's guilloche must show through — no flat filled patches."""
     import numpy as np
-
     from src.services.dms_service import blank_source
 
     blank, _own = blank_source()
@@ -293,3 +291,121 @@ def test_an_unreadable_file_is_refused(tmp_path) -> None:
     junk.write_bytes(b"not a pdf at all")
     with pytest.raises(OfisError):
         import_blank(junk)
+
+
+# ---------------------------------------------- what was read, before it prints
+# Reading and printing used to be one press, so nobody ever saw what had been
+# read until the policy came out with it on. The office asked for the two to be
+# separate: «натижани бўлимдаги майдонларда чиқарсин, хатоси бўлса қўлда
+# тўғрилайман».
+class _Reader:
+    """A reader that hands back one known passport."""
+
+    def __init__(self, passport=None, blow_up: bool = False) -> None:
+        self.passport = passport
+        self.blow_up = blow_up
+        self.reads = 0
+
+    def available(self) -> bool:
+        return True
+
+    def read_passport(self, image):
+        self.reads += 1
+        if self.blow_up:
+            raise RuntimeError("расм ўқилмади")
+        return self.passport
+
+
+def _worker_passport():
+    from datetime import date as _date
+
+    from src.domain.documents import Passport
+    from src.domain.enums import Gender
+
+    return Passport(surname="ИСОЕВ", name="АСЛИДИН",
+                    patronymic="ХОЛБЕРДИЕВИЧ", gender=Gender.MALE,
+                    birth_date=_date(1999, 7, 25), nationality="ТАДЖИКИСТАН",
+                    number="405847273", issue_date=_date(2025, 1, 18))
+
+
+def _screen(controller):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from src.ui.views.dms_view import DmsView
+
+    return DmsView(controller)
+
+
+class _Controller:
+    def __init__(self, reader) -> None:
+        self._reader = reader
+
+    def ai_available(self) -> bool:
+        return True
+
+    def next_number(self) -> str:
+        return "50682676096"
+
+    def remaining(self) -> int:
+        return 12
+
+    def read_passport(self, image):
+        return self._reader.read_passport(image)
+
+
+def test_the_reading_is_not_shown_until_there_is_one() -> None:
+    # isHidden, not isVisible: a widget whose window was never shown reports
+    # itself invisible either way, and what is under test is the explicit
+    # setVisible the view makes
+    view = _screen(_Controller(_Reader(_worker_passport())))
+    assert view._read.isHidden(), "бўш форма кўриниб турибди"
+    view.deleteLater()
+
+
+def test_what_was_read_lands_in_boxes_the_operator_can_see() -> None:
+    view = _screen(_Controller(_Reader(_worker_passport())))
+    view._filled(_worker_passport())
+
+    assert not view._read.isHidden()
+    assert view._boxes["surname"].text() == "ИСОЕВ"
+    assert view._boxes["name"].text() == "АСЛИДИН"
+    assert view._boxes["patronymic"].text() == "ХОЛБЕРДИЕВИЧ"
+    assert view._born.date().toString("dd.MM.yyyy") == "25.07.1999"
+    assert view._gender.currentText() == "Мужской"
+    assert view._boxes["issue_date"].text() == "18.01.2025"
+    view.deleteLater()
+
+
+def test_the_policy_is_printed_from_the_boxes_not_from_the_reading() -> None:
+    """The whole point of showing it: a correction has to reach the paper."""
+    view = _screen(_Controller(_Reader(_worker_passport())))
+    view._filled(_worker_passport())
+
+    view._boxes["surname"].setText("КАХХОРОВ")
+    view._boxes["number"].setText("999888777")
+    view._gender.setCurrentText("Женский")
+
+    edited = view._edited()
+    assert edited.surname == "КАХХОРОВ"
+    assert edited.number == "999888777"
+    assert str(getattr(edited.gender, "value", edited.gender)).startswith("f")
+    view.deleteLater()
+
+
+def test_a_page_that_cannot_be_read_still_gives_boxes_to_type_in() -> None:
+    """An unreadable scan must not leave the operator with nothing."""
+    view = _screen(_Controller(_Reader(blow_up=True)))
+    view._read_failed(RuntimeError("расм ўқилмади"))
+    assert not view._read.isHidden()
+    assert "қўлда" in view._status.text().lower()
+    view.deleteLater()
+
+
+def test_a_date_typed_by_hand_is_understood() -> None:
+    from src.ui.views.dms_view import _date_of
+
+    assert _date_of("18.01.2025").isoformat() == "2025-01-18"
+    assert _date_of("2025-01-18").isoformat() == "2025-01-18"
+    assert _date_of("") is None
+    assert _date_of("не дата") is None
