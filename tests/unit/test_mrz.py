@@ -134,10 +134,25 @@ def test_the_zone_is_a_field_the_office_can_place() -> None:
 
 
 @pytest.mark.parametrize("case", ["", "   "])
-def test_a_worker_with_no_documents_still_gives_a_well_formed_zone(
-        case) -> None:
-    """Empty is fine; malformed is not — the office may print it either way."""
-    from src.pdf.universal_fields import MRZ, UniversalData, values
+def test_a_worker_with_no_documents_gives_no_zone_at_all(case) -> None:
+    """A strip of filler is worse than no strip.
 
-    lines = values(UniversalData(surname=case, pass_number=case))[MRZ]
-    assert all(len(line) == 44 for line in lines.split("\n"))
+    This used to return a well-formed 44-character pair whatever it was
+    given, and the office found the result on a printed form: two rows
+    reading «<<<<<<<<<0<<<<<<<<<0…», which carry no information and are not
+    a valid zone either, since the numbers behind the check digits are
+    absent. With nothing to build from, nothing is printed.
+    """
+    from src.pdf.universal_fields import MRZ_KEYS, UniversalData, values
+
+    said = values(UniversalData(surname=case, pass_number=case))
+    assert all(said[key] == "" for key in MRZ_KEYS)
+
+
+def test_a_zone_that_is_built_at_all_is_built_whole() -> None:
+    """The guard above only silences it — it never half-builds one."""
+    from src.pdf.universal_fields import MRZ, MRZ_1, MRZ_2, UniversalData, values
+
+    said = values(UniversalData(surname="Исоев", pass_number="405847273"))
+    assert said[MRZ].split("\n") == [said[MRZ_1], said[MRZ_2]]
+    assert all(len(line) == 44 for line in said[MRZ].split("\n"))

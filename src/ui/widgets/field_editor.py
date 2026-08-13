@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -54,6 +55,18 @@ PITCH_STEP = 0.0004
 #: Where spacing starts from when a plain text is first spread out: roughly
 #: the type's own width, which is about where a celled blank's boxes stand.
 PITCH_START = 0.62
+#: The spacing is KEPT as a share of the page width — that is what survives
+#: a re-scan — but a share of a page is not a number anyone can type. On
+#: screen it is shown in THOUSANDTHS of the page width, so «96.5» means
+#: 0.0965, and one press of the buttons moves it by 0.4.
+PITCH_UNIT = 1000.0
+#: As wide as the spacing may be set. A fifth of the page between two
+#: letters is already far past anything a celled blank prints.
+PITCH_MAX = 0.2
+#: How wide an A4 sheet is, in millimetres — only ever used to SHOW the
+#: spacing in millimetres beside the number, so the office can check it
+#: against a ruler on the blank itself.
+A4_MM = 210.0
 #: Which way a text lies. Blanks that are written up their own edge — a
 #: медкнижка has several — are turned here rather than in code.
 TURNS: tuple[tuple[str, int], ...] = (
@@ -61,12 +74,29 @@ TURNS: tuple[tuple[str, int], ...] = (
 
 
 class _PickCanvas(_Canvas):
-    """The drag canvas, which now says out loud what the mouse picked."""
+    """The drag canvas, which says out loud what the mouse picked — and
+    remembers WHERE it was pressed, so a new text can be put there.
+
+    Pressing an empty patch of the blank counts: that is precisely how the
+    office points at the place it wants the next text to land.
+    """
 
     picked_key = Signal(str)
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        #: Where the mouse last went down, in FRACTIONS of the page — the
+        #: same units everything else here is kept in, so zoom and scan
+        #: resolution make no difference. None until the office clicks.
+        self.spot: tuple[float, float] | None = None
+
     def mousePressEvent(self, event) -> None:      # noqa: N802 - Qt override
         super().mousePressEvent(event)
+        point = event.position().toPoint()
+        wide, tall = self._page.width(), self._page.height()
+        if wide and tall:
+            self.spot = (min(1.0, max(0.0, point.x() / wide)),
+                         min(1.0, max(0.0, point.y() / tall)))
         self.picked_key.emit(self.picked[1] if self.picked else "")
 
 
@@ -128,14 +158,20 @@ class FieldEditor(QDialog):
         self._filling = False
         #: How magnified the page is drawn. Kept across page turns.
         self._zoom = 1.0
+        #: (page, x, baseline) — where the office last clicked on the blank.
+        #: A new text is put THERE rather than at the top of the page, which
+        #: is where every added text used to land however far down the form
+        #: the office was working.
+        self._spot: tuple[int, float, float] | None = None
 
         outer = QVBoxLayout(self)
         hint = QLabel(
-            "«➕ Матн» — бланкага янги матн қўшади ва у нимани англатишини "
-            "рўйхатдан танлайсиз. Матнни босиб ушлаб суринг; ғилдирак ёки "
-            "＋/－ — катта-кичик; ўқ тугмалари — аниқ суриш.\n"
-            "Танланган матннинг ранги, қалинлиги ва шрифти шу ердан "
-            "ўзгаради. Сақлаш — «OK».")
+            "Бланкада матн турадиган жойни сичқонча билан бир марта босинг, "
+            "кейин «➕ Матн» — янги матн ўша босган жойингизга тушади ва "
+            "нимани англатишини рўйхатдан танлайсиз.\n"
+            "Матнни босиб ушлаб суринг; ғилдирак ёки ＋/－ — катта-кичик; "
+            "ўқ тугмалари — аниқ суриш. Танланган матннинг ранги, қалинлиги "
+            "ва шрифти шу ердан ўзгаради. Сақлаш — «OK».")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#8a94a3;")
         outer.addWidget(hint)
@@ -233,9 +269,27 @@ class FieldEditor(QDialog):
         self._spread.setToolTip("Ҳарфларни бир-бирига яқинлаштириш")
         self._spread.clicked.connect(lambda: self._nudge_pitch(-1))
         spacing.addWidget(self._spread)
-        self._pitch_shown = QLabel("оддий")
-        self._pitch_shown.setMinimumWidth(120)
+        # The width itself, typed. Nudging it into place a notch at a time
+        # is fine once; a blank whose boxes the office has already measured
+        # deserves to have the number written straight in.
+        self._pitch_shown = QDoubleSpinBox()
+        self._pitch_shown.setDecimals(1)
+        self._pitch_shown.setRange(0.0, PITCH_MAX * PITCH_UNIT)
+        self._pitch_shown.setSingleStep(PITCH_STEP * PITCH_UNIT)
+        self._pitch_shown.setSpecialValueText("оддий")
+        self._pitch_shown.setMinimumWidth(110)
+        # so a half-typed «9» of «96.5» does not redraw the page under them
+        self._pitch_shown.setKeyboardTracking(False)
+        self._pitch_shown.setToolTip(
+            "Кенгликни рақам билан ёзиш мумкин: ёзинг ва Enter босинг.\n"
+            "0 — оддий матн. Рақам саҳифа энининг мингдан бир улуши, "
+            "ёнида миллиметри ҳам кўриниб туради.")
+        self._pitch_shown.valueChanged.connect(self._typed_pitch)
         spacing.addWidget(self._pitch_shown)
+        self._pitch_mm = QLabel()
+        self._pitch_mm.setMinimumWidth(96)
+        self._pitch_mm.setStyleSheet("color:#8a94a3;")
+        spacing.addWidget(self._pitch_mm)
         wider = QPushButton("Кенгайтириш ⇥")
         wider.setToolTip("Ҳарфларни узоқлаштириш — катакли бланка учун")
         wider.clicked.connect(lambda: self._nudge_pitch(+1))
@@ -307,16 +361,29 @@ class FieldEditor(QDialog):
 
     def _show_page(self, page: int, keep: int | None = None) -> None:
         self._harvest()
+        # Adding or restyling a text redraws the page, and redrawing used to
+        # throw the office back to the TOP of the blank — maddening when the
+        # work is at the foot of a form. Staying on the same page keeps the
+        # view exactly where it was; turning to another starts it at the top.
+        same = page == self._page
+        bars = (self._scroll.horizontalScrollBar(),
+                self._scroll.verticalScrollBar())
+        was_at = (bars[0].value(), bars[1].value())
         self._page = page
         mine = self._on_this_page()
         items = [self._item_of(self._drafts[i].field,
                                f"{self._drafts[i].field.key}#{i}")
                  for i in mine]
         canvas = _PickCanvas(self._pixmaps[page - 1], items, [])
+        if self._canvas is not None and same:
+            canvas.spot = self._canvas.spot    # the click outlives the redraw
         canvas.picked_key.connect(self._on_canvas_pick)
         canvas.set_zoom(self._zoom)      # a page turn keeps the magnification
         self._canvas = canvas
         self._scroll.setWidget(canvas)
+        if same:
+            bars[0].setValue(was_at[0])
+            bars[1].setValue(was_at[1])
 
         self._filling = True
         self._pick_item.clear()
@@ -353,11 +420,21 @@ class FieldEditor(QDialog):
         self._restyle(pitch=0.0)
         self._show_pitch(self._picked())
 
+    def _typed_pitch(self, shown: float) -> None:
+        """The office wrote the width in itself instead of nudging to it."""
+        if self._filling or self._picked() is None:
+            return
+        self._restyle(pitch=round(shown / PITCH_UNIT, 5))
+
     def _show_pitch(self, index: int | None) -> None:
         pitch = 0.0 if index is None else (
             getattr(self._drafts[index].field, "pitch", 0.0) or 0.0)
-        self._pitch_shown.setText(
-            "оддий" if not pitch else f"катакли · {pitch * 1000:.1f}")
+        was = self._filling
+        self._filling = True                    # showing it is not typing it
+        self._pitch_shown.setValue(round(pitch * PITCH_UNIT, 1))
+        self._filling = was
+        self._pitch_mm.setText(
+            "" if not pitch else f"≈ {pitch * A4_MM:.1f} мм (A4)")
 
     # --------------------------------------------------------------- zoom
     def _zoom_by(self, delta: float) -> None:
@@ -394,6 +471,10 @@ class FieldEditor(QDialog):
         self._show_style(index)
 
     def _on_canvas_pick(self, tag: str) -> None:
+        # Remembered even when the click hit nothing: an empty patch of the
+        # blank is exactly how the office points at where its next text goes.
+        if self._canvas is not None and self._canvas.spot is not None:
+            self._spot = (self._page, *self._canvas.spot)
         if not tag:
             return
         index = int(tag.rsplit("#", 1)[1])
@@ -409,7 +490,7 @@ class FieldEditor(QDialog):
         self._filling = True
         enabled = index is not None
         for widget in (self._colour, self._weight, self._turn, self._font,
-                       self._spread):
+                       self._spread, self._pitch_shown):
             widget.setEnabled(enabled)
         self._show_pitch(index)
         if enabled:
@@ -501,10 +582,20 @@ class FieldEditor(QDialog):
         model = self._drafts[self._picked()].field if self._picked() is not None \
             else None
         made = Field(key=key, page=self._page)
-        if model is not None:                 # a new text joins its neighbours
+        if model is not None:      # a new text is dressed like its neighbours
             made = replace(made, size=model.size, font=model.font,
-                           bold=model.bold, colour=model.colour,
-                           x=model.x, baseline=min(0.98, model.baseline + 0.03))
+                           bold=model.bold, colour=model.colour)
+        clicked = (self._spot[1:] if self._spot is not None
+                   and self._spot[0] == self._page else None)
+        if clicked is not None:
+            # WHERE THE OFFICE POINTED. It clicks the spot on the blank and
+            # then presses «➕ Матн»; the text belongs at that spot and not
+            # at the top of the page, which is where it used to appear.
+            made = replace(made, x=round(clicked[0], 5),
+                           baseline=round(clicked[1], 5))
+        elif model is not None:               # else just under its neighbour
+            made = replace(made, x=model.x,
+                           baseline=min(0.98, model.baseline + 0.03))
         self._harvest()
         self._drafts.append(_Draft(made))
         self._show_page(self._page, keep=len(self._drafts) - 1)

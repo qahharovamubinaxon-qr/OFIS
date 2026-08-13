@@ -556,6 +556,56 @@ def test_the_zone_prints_as_two_lines_one_under_the_other(blank) -> None:
     assert first["text"].startswith("P<")
 
 
+def test_each_line_of_the_zone_can_be_placed_on_its_own(blank) -> None:
+    """Some blanks rule a separate box for each line, far apart.
+
+    The office reported the strip landing where it did not want it; with the
+    two lines offered separately it marks each box itself.
+    """
+    pdf = render(_worker(),
+                 blank,
+                 [Field(key=fields.MRZ_1, page=1, x=0.08, baseline=0.80,
+                        size=0.012, font="Courier New"),
+                  Field(key=fields.MRZ_2, page=1, x=0.55, baseline=0.93,
+                        size=0.012, font="Courier New")])
+    with fitz.open("pdf", pdf) as doc:
+        page = doc[0]
+        wide, tall = page.rect.width, page.rect.height
+        spans = [s for bl in page.get_text("dict")["blocks"]
+                 for ln in bl.get("lines", []) for s in ln["spans"]]
+    where = {s["text"][:2]: s["origin"] for s in spans}
+    assert len(spans) == 2
+    top = where["P<"]
+    assert top[0] == pytest.approx(0.08 * wide, abs=1)
+    assert top[1] == pytest.approx(0.80 * tall, abs=1)
+    foot = next(o for t, o in where.items() if t != "P<")
+    assert foot[0] == pytest.approx(0.55 * wide, abs=1), "2-қатор ўз жойида эмас"
+    assert foot[1] == pytest.approx(0.93 * tall, abs=1)
+
+
+def test_the_zone_prints_nothing_at_all_when_the_passport_is_unread(blank) -> None:
+    """«2-қаторининг охирига ҳеч нима тушмасдан фақат < тушяпти».
+
+    With no passport number behind it the strip used to come out as a row of
+    filler — «<<<<<<<<<0<<<<<<<<<0…» — which means nothing on a printed form.
+    Nothing at all is the honest answer.
+    """
+    bare = UniversalData(surname="Исоев", name="Аслидин")
+    for key in fields.MRZ_KEYS:
+        assert fields.values(bare)[key] == "", key
+    pdf = render(bare, blank,
+                 [Field(key=key, page=1, x=0.1, baseline=0.80 + step * 0.05,
+                        size=0.012, font="Courier New")
+                  for step, key in enumerate(fields.MRZ_KEYS)])
+    assert "<" not in _printed(pdf, 0)
+
+
+def test_the_zone_still_prints_once_the_passport_is_there(blank) -> None:
+    """The guard above must not silence a strip that is genuinely wanted."""
+    for key in fields.MRZ_KEYS:
+        assert fields.values(_worker())[key], key
+
+
 # ------------------------------------------------------------ the printing
 def test_the_worker_is_printed_onto_the_office_own_blank(blank) -> None:
     placed = [Field(key="fio", page=1, x=0.15, baseline=0.20, size=0.016),

@@ -67,7 +67,14 @@ PICTURE_LABELS = {
 
 #: The two lines at the foot of a passport or a visa. Built, never typed:
 #: every line is exactly 44 characters and five of them are check digits.
+#:
+#: Offered three ways, because a blank does not always want them together:
+#: some print the two lines in one block, and some have a separate ruled
+#: box for each, which the office has to be able to place on its own.
 MRZ = "mrz"
+MRZ_1 = "mrz1"
+MRZ_2 = "mrz2"
+MRZ_KEYS = (MRZ, MRZ_1, MRZ_2)
 
 #: What a custom text's key starts with. Everything after it is the name the
 #: office typed, and that name is also what the box is called on screen.
@@ -156,8 +163,10 @@ def _catalogue() -> dict[str, str]:
         "organisation": "Ташкилот / фирма",
         "note": "Изоҳ (эркин матн)",
     })
-    made[MRZ] = ("🔡 Машина ўқийдиган матн — 2 қатор "
+    made[MRZ] = ("🔡 Машина ўқийдиган матн — ИККИ ҚАТОР бирга "
                  "(паспорт-визадагидек, ўзи ҳисобланади)")
+    made[MRZ_1] = "🔡 Машина зонаси — фақат 1-қатор"
+    made[MRZ_2] = "🔡 Машина зонаси — фақат 2-қатор"
     for key in PICTURES:
         made[key] = PICTURE_LABELS[key]
     return made
@@ -402,11 +411,20 @@ def values(data: UniversalData) -> dict[str, str]:
         out[f"doc{slot}_series"] = series
         out[f"doc{slot}_number"] = number
         out[f"doc{slot}_full"] = " ".join(p for p in (series, number) if p)
-    out[MRZ] = as_text(build(
-        surname=data.surname, name=data.name, citizenship=data.citizenship,
-        born=data.birth_date, gender=data.gender,
-        number=data.pass_number or data.documents.get(1, ("", ""))[1],
-        expires=data.pass_expires, personal=data.pass_pin))
+    # The strip is only worth printing when there is a document behind it.
+    # With nothing read it comes out «<<<<<<<<<0<<<<<<<<<0…» — a line of
+    # filler that means nothing, and the office saw exactly that on a blank
+    # it had placed the field on. An EMPTY strip is the honest answer.
+    number = data.pass_number or data.documents.get(1, ("", ""))[1]
+    lines = ["", ""]
+    if str(number).strip() and (data.surname or data.name):
+        lines = build(
+            surname=data.surname, name=data.name,
+            citizenship=data.citizenship, born=data.birth_date,
+            gender=data.gender, number=number,
+            expires=data.pass_expires, personal=data.pass_pin)
+    out[MRZ] = as_text(lines) if any(lines) else ""
+    out[MRZ_1], out[MRZ_2] = lines[0], lines[1]
     for key, said in (data.custom or {}).items():
         out[key] = (said or "").strip()
     return out
@@ -420,7 +438,8 @@ def output_stem(data: UniversalData, blank: str = "") -> str:
     return "".join(c for c in stem if c.isalnum() or c in "_-") or "UNIVERSAL"
 
 
-__all__ = ["CATALOGUE", "CUSTOM", "DOC_SLOTS", "MRZ", "MONTHS_RU", "MONTHS_RU_SHORT",
+__all__ = ["CATALOGUE", "CUSTOM", "DOC_SLOTS", "MRZ", "MRZ_1",
+           "MRZ_2", "MRZ_KEYS", "MONTHS_RU", "MONTHS_RU_SHORT",
            "PHOTO", "PICTURES", "PICTURE_LABELS", "SAMPLES", "SIGNATURE",
            "STAMP", "BLACK", "DEFAULT_BASELINE", "DEFAULT_SIZE", "DEFAULT_X",
            "Field", "UniversalData", "catalogue_with", "custom_key",
