@@ -330,6 +330,15 @@ def main() -> int:
     _threading.Thread(target=lambda: bg_segment.model_path(download=True),
                       daemon=True, name="ofis-model-warmup").start()
 
+    # Sweep yesterday's finished documents. Twice now output/ has filled the
+    # office machine's C: drive and stopped the program; the blanks in
+    # templates/ are never touched. In the background because it walks a
+    # folder of several hundred files and the window must not wait for it.
+    from src.services.housekeeping import keep_days, sweep_output
+
+    _threading.Thread(target=lambda: sweep_output(keep_days(settings)),
+                      daemon=True, name="ofis-sweep").start()
+
     log.info("UI ready (theme=%s, language=%s)", settings.theme, settings.language)
     return app.exec()
 

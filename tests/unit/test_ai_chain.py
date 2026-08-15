@@ -15,7 +15,6 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-
 from src.ai.base import AiRawResult, IAiProvider
 from src.ai.groq_provider import GroqProvider
 from src.ai.manager import AiManager
@@ -271,3 +270,106 @@ def test_each_provider_reads_its_key_from_settings_and_env(monkeypatch) -> None:
     assert GroqProvider().is_configured()
     # a live getter (Settings) wins, so entering a key takes effect at once
     assert GroqProvider(key_getter=lambda: "from-settings")._key() == "from-settings"
+
+
+# ------------------------------------------------- a key the service refused
+class _Keyed(IAiProvider):
+    """A provider whose key can change, as one in Settings does."""
+
+    def __init__(self, name: str, key: str, *, raises=None) -> None:
+        self.name = name
+        self.key = key
+        self._raises = raises
+        self.calls = 0
+
+    def _key(self) -> str:                   # what key_id() fingerprints
+        return self.key
+
+    def is_configured(self) -> bool:
+        return bool(self.key)
+
+    def extract(self, image, doc_type, prompt):
+        self.calls += 1
+        if self._raises:
+            raise self._raises
+        return AiRawResult(document_type=doc_type, provider=self.name,
+                           fields={"surname": "Исоев", "name": "Аслидин"})
+
+
+def _read(manager) -> None:
+    manager.extract(b"img", DocType.PASSPORT, "prompt")
+
+
+def test_a_refused_key_is_not_offered_again(monkeypatch) -> None:
+    """The office's «groq» slot held a key both services refused, and it was
+    re-offered to them on every single passport."""
+    dead = _Keyed("groq", "xai-dead", raises=AiAuthError("калит нотўғри"))
+    good = _Keyed("gemini", "AQ.good")
+    manager = AiManager([dead, good])
+
+    for _ in range(5):
+        _read(manager)
+    assert dead.calls == 1, "рад этилган калит қайта сўралибди"
+    assert good.calls == 5
+
+
+def test_pasting_a_new_key_gives_it_a_fresh_chance() -> None:
+    """Nothing to restart and nothing to clear — it is keyed on the KEY."""
+    provider = _Keyed("groq", "xai-dead", raises=AiAuthError("калит нотўғри"))
+    manager = AiManager([provider, _Keyed("gemini", "AQ.good")])
+    _read(manager)
+    _read(manager)
+    assert provider.calls == 1
+
+    provider.key = "gsk_the-right-one-this-time"
+    provider._raises = None
+    _read(manager)
+    assert provider.calls == 2, "янги калит синалмади"
+
+
+def test_only_the_refused_provider_is_skipped() -> None:
+    dead = _Keyed("groq", "xai-dead", raises=AiAuthError("калит нотўғри"))
+    slow = _Keyed("mistral", "m-key", raises=AiError("timeout"))
+    good = _Keyed("gemini", "AQ.good")
+    manager = AiManager([dead, slow, good])
+    for _ in range(3):
+        _read(manager)
+    assert dead.calls == 1
+    # a timeout is a bad moment, not a settled fact — it keeps its turn
+    assert slow.calls == 3
+    assert good.calls == 3
+
+
+def test_usable_lists_only_the_keys_still_worth_trying() -> None:
+    dead = _Keyed("groq", "xai-dead", raises=AiAuthError("калит нотўғри"))
+    manager = AiManager([dead, _Keyed("gemini", "AQ.good")])
+    assert manager.usable() == ["groq", "gemini"]
+    _read(manager)
+    assert manager.usable() == ["gemini"]
+    assert manager.configured() == ["groq", "gemini"], "калит ҳали ҳам бор"
+
+
+def test_when_every_key_is_refused_the_office_is_told_to_replace_one() -> None:
+    """«Бирорта провайдер созланмаган» would send it hunting an empty box."""
+    manager = AiManager([_Keyed("groq", "xai-dead",
+                                raises=AiAuthError("калит нотўғри"))])
+    with pytest.raises(AiAuthError):
+        _read(manager)                       # first time: the real refusal
+    with pytest.raises(AiUnavailableError, match="рад этилди"):
+        _read(manager)                       # after: says what to do
+
+
+def test_a_provider_that_cannot_be_fingerprinted_is_unaffected() -> None:
+    """_Fake has no key getter — it must behave exactly as it always did."""
+    dead = _Fake("groq", raises=AiAuthError("калит нотўғри"))
+    manager = AiManager([dead, _Keyed("gemini", "AQ.good")])
+    for _ in range(3):
+        _read(manager)
+    assert dead.calls == 3
+
+
+def test_the_key_itself_never_leaves_the_provider() -> None:
+    provider = _Keyed("groq", "xai-SECRET-VALUE")
+    assert "SECRET" not in provider.key_id()
+    assert provider.key_id() == _Keyed("groq", "xai-SECRET-VALUE").key_id()
+    assert provider.key_id() != _Keyed("groq", "xai-other").key_id()

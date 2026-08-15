@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -64,11 +65,12 @@ def _probe(provider: str, key: str) -> str:
     return GeminiProvider(api_key=key).check()
 
 
-def _right(widget: QWidget) -> QHBoxLayout:
-    """Push a single control to the right edge of its card."""
+def _right(*widgets: QWidget) -> QHBoxLayout:
+    """Push the controls to the right edge of their card, in order."""
     row = QHBoxLayout()
     row.addStretch(1)
-    row.addWidget(widget)
+    for widget in widgets:
+        row.addWidget(widget)
     return row
 
 
@@ -160,6 +162,41 @@ class SettingsView(QWidget):
         self._lang.currentTextChanged.connect(self._save_lang)
         look_form.addRow("Til / Язык:", self._lang)
         root.addWidget(look)
+
+        # -- disk ---------------------------------------------------------
+        # Twice now the finished documents have filled the office machine's
+        # C: drive and stopped the program. They are swept after a day — but
+        # a thing that deletes by itself must be visible and switchable, so
+        # it is here rather than buried.
+        from src.services.housekeeping import (
+            DEFAULT_KEEP_DAYS,
+            KEY_KEEP_DAYS,
+            sweep_output,
+        )
+
+        disk = Card("🧹", "Диск тозалаш",
+                    "Тайёрланган ҳужжатлар шунча кундан сўнг ўзи ўчади. "
+                    "Юклаган БЛАНКАЛАРИНГИЗГА тегмайди — улар бошқа папкада.")
+        dk = disk.form()
+        self._keep_days = QSpinBox()
+        self._keep_days.setRange(0, 365)
+        self._keep_days.setSuffix(" кун")
+        self._keep_days.setSpecialValueText("ўчирилмасин (0)")
+        self._keep_days.setValue(int(
+            self._settings.get(KEY_KEEP_DAYS, DEFAULT_KEEP_DAYS)
+            or DEFAULT_KEEP_DAYS))
+        self._keep_days.setToolTip(
+            "Нечи кун сақлансин. 0 — ҳеч қачон ўчирилмасин.")
+        dk.addRow("Ҳужжатлар сақланиши:", self._keep_days)
+        save_dk = QPushButton("Saqlash")
+        save_dk.setObjectName("primaryButton")
+        save_dk.clicked.connect(self._save_keep_days)
+        now_dk = QPushButton("🧹 Ҳозир тозалаш")
+        now_dk.clicked.connect(lambda: self._sweep_now(sweep_output))
+        disk.add(_right(save_dk, now_dk))
+        self._disk_state = disk.note("")
+        self._show_disk()
+        root.addWidget(disk)
         root.addStretch(1)
 
         # -- доверенность counters ---------------------------------------
@@ -713,6 +750,50 @@ class SettingsView(QWidget):
     def _save_key(self) -> None:
         """Kept for callers that still know only about the Gemini field."""
         self._save_ai_key("gemini")
+
+    # -- disk -----------------------------------------------------------
+    def _folder_size(self) -> tuple[int, int]:
+        """How much the finished documents are taking up, right now."""
+        from src.config import paths
+
+        files = [f for f in paths.output_dir().rglob("*") if f.is_file()]
+        return len(files), sum(f.stat().st_size for f in files)
+
+    def _show_disk(self) -> None:
+        try:
+            count, size = self._folder_size()
+        except OSError:
+            self._disk_state.setText("")
+            return
+        self._disk_state.setText(
+            f"Ҳозир: {count} та ҳужжат · {size / 1_073_741_824:.2f} GB")
+
+    def _save_keep_days(self) -> None:
+        from src.services.housekeeping import KEY_KEEP_DAYS
+
+        days = self._keep_days.value()
+        self._settings.set(KEY_KEEP_DAYS, days)
+        QMessageBox.information(
+            self, "OK", "Тайёрланган ҳужжатлар " + (
+                "ҳеч қачон ўчирилмайди." if not days else
+                f"{days} кундан сўнг ўзи ўчади.\n"
+                "Юклаган бланкаларингизга тегилмайди."))
+
+    def _sweep_now(self, sweep) -> None:
+        days = self._keep_days.value()
+        if not days:
+            QMessageBox.information(
+                self, "Diqqat", "0 турибди — ҳеч нима ўчирилмайди. "
+                "Аввал неча кун сақланишини белгиланг.")
+            return
+        made = sweep(days)
+        self._show_disk()
+        QMessageBox.information(
+            self, "Тозаланди",
+            f"{made.removed} та ҳужжат ўчди, {made.freed_mb:.0f} MB бўшади.\n"
+            f"{made.kept} та ҳужжат ҳали {days} кунлик эмас — қолдирилди."
+            + (f"\n{made.locked} таси очиқ турибди — ўчмади."
+               if made.locked else ""))
 
     def _save_theme(self, theme: str) -> None:
         self._settings.set("theme", theme)

@@ -8,6 +8,7 @@ validates it.
 
 from __future__ import annotations
 
+import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -38,3 +39,21 @@ class IAiProvider(ABC):
     @abstractmethod
     def extract(self, image: bytes, doc_type: DocType, prompt: str) -> AiRawResult:
         """Read one document image and return structured fields. Raises AiError."""
+
+    def key_id(self) -> str:
+        """A short fingerprint of the key in force, or ``""`` if unknowable.
+
+        The manager needs to tell «the same key that was refused a minute ago»
+        from «the office has just pasted a new one». It cannot hold the key
+        itself — a key must not travel further than the provider that uses it —
+        so it holds this instead: it changes when the key changes and says
+        nothing about the key otherwise.
+        """
+        getter = getattr(self, "_key", None)
+        if not callable(getter):
+            return ""
+        try:
+            key = (getter() or "").strip()
+        except Exception:                    # noqa: BLE001 - a key is never fatal
+            return ""
+        return hashlib.sha256(key.encode()).hexdigest()[:16] if key else ""
