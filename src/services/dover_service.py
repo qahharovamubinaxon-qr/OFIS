@@ -9,12 +9,11 @@ addressed for certification by the office's notary; the draft is saved as BOTH
 
 from __future__ import annotations
 
-import json
-import urllib.request
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from src.ai.text_client import ask
 from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.config import paths
@@ -22,6 +21,13 @@ from src.domain.documents import Passport
 from src.pdf.formatters import _date_dmy
 
 log = get_logger(__name__)
+
+#: How long one model gets to compose a notarial document. Longer than a
+#: reading, because this is not a lookup: the model has to read up to fifteen
+#: photographed documents and write a whole deed off them. A model that is
+#: gone or overloaded no longer costs this wait — it is dropped at once — so
+#: the only thing spending it is a model genuinely at work.
+_COMPOSE_TIMEOUT_S = 240
 
 NOTARY_FIO = "Друганова Маргарита Владимировна"
 NOTARY_SHORT = "Друганова М.В."
@@ -149,8 +155,6 @@ class DoverService:
         return self._save(text, "DOVER", output_dir)
 
     def _compose_images(self, images, *, doc_type, description, form_date) -> str:
-        import base64
-
         key = (self._key_getter() or "").strip()
         if not key:
             raise OfisError("AI kaliti yo'q — Sozlamalarga Gemini kalitini kiriting.")
@@ -163,13 +167,10 @@ class DoverService:
             "документов (паспорта, СТС и др.); нечитаемое оставь как «________». "
             f"Задание от оператора (кто, кому, для чего): {description or 'не указано'}"
         )
-        parts = [{"text": _SYSTEM + "\n\n" + user}]
-        for img in images[:15]:
-            parts.append({"inline_data": {
-                "mime_type": "image/jpeg",
-                "data": base64.b64encode(prepare_image(img)).decode(),
-            }})
-        return self._call(key, parts)
+        shrunk = [prepare_image(img) for img in images[:15]]
+        log.info("Dover: %d та расм, жами %d KB",
+                 len(shrunk), sum(len(i) for i in shrunk) // 1024)
+        return self._call(key, _SYSTEM + "\n\n" + user, shrunk)
 
     def _save(self, text: str, stem: str, output_dir: Path | None) -> DoverResult:
         from src.pdf.dover_renderer import finalize_notarial_text, render_dover_pdf
@@ -197,24 +198,16 @@ class DoverService:
         return DoverResult(docx_path=docx_path, pdf_path=pdf_path,
                            series=series, reestr=reestr)
 
-    def _call(self, key: str, parts: list) -> str:
-        body = json.dumps({"contents": [{"parts": parts}]}).encode()
-        last = ""
-        for model in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"):
-            url = ("https://generativelanguage.googleapis.com/v1beta/models/"
-                   f"{model}:generateContent?key={key}")
-            req = urllib.request.Request(url, data=body,
-                                         headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    payload = json.loads(resp.read().decode())
-                out = "\n".join(p.get("text", "") for p in
-                                payload["candidates"][0]["content"]["parts"]).strip()
-                if out:
-                    return out
-            except Exception as exc:  # noqa: BLE001
-                last = str(exc)[:150]
-        raise OfisError(f"AI javob bermadi: {last}")
+    def _call(self, key: str, prompt: str, images: list[bytes]) -> str:
+        """Compose through the shared client.
+
+        This used to be its own copy of the Gemini call, with its own list of
+        three models — and two of the three were retired out from under it, so
+        the section stopped working while passport reading, which had a longer
+        list of its own, carried on. One list, in :mod:`src.ai.gemini_models`,
+        is now the only one there is.
+        """
+        return ask(key, prompt, images, timeout=_COMPOSE_TIMEOUT_S)
 
     def generate(
         self,
@@ -245,25 +238,7 @@ class DoverService:
             f"{_passport_block('Представитель (поверенный)', agent)}. "
             f"Задание от оператора (кто, кому, для чего): {description or 'не указано'}"
         )
-        body = json.dumps({
-            "contents": [{"parts": [{"text": _SYSTEM + "\n\n" + user}]}],
-        }).encode()
-        last = ""
-        for model in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"):
-            url = ("https://generativelanguage.googleapis.com/v1beta/models/"
-                   f"{model}:generateContent?key={key}")
-            req = urllib.request.Request(url, data=body,
-                                         headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=90) as resp:
-                    payload = json.loads(resp.read().decode())
-                parts = payload["candidates"][0]["content"]["parts"]
-                text = "\n".join(p.get("text", "") for p in parts).strip()
-                if text:
-                    return text
-            except Exception as exc:  # noqa: BLE001 - try next model
-                last = str(exc)[:150]
-        raise OfisError(f"AI javob bermadi: {last}")
+        return self._call(key, _SYSTEM + "\n\n" + user, [])
 
     @staticmethod
     def _to_docx(text: str, out: Path) -> Path:

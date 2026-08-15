@@ -15,21 +15,13 @@ import json
 import time
 import urllib.request
 
+from src.ai.gemini_models import TEXT_MODELS, endpoint, move_on, why
 from src.common.errors import OfisError
 from src.common.logging import get_logger
 
 log = get_logger(__name__)
 
-# Free-tier friendly first; the newest model is tried last as a quality bump
-# when the key has quota for it.
-_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest")
-
 _RETRY_WAIT_S = 20
-
-
-def _endpoint(model: str, key: str) -> str:
-    return ("https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={key}")
 
 
 def ask(
@@ -62,11 +54,12 @@ def ask(
     body = json.dumps(payload).encode()
 
     last = ""
-    for model in _MODELS:
+    for model in TEXT_MODELS:
         for attempt in (1, 2):
             req = urllib.request.Request(
-                _endpoint(model, key), data=body,
+                endpoint(model, key), data=body,
                 headers={"Content-Type": "application/json"})
+            started = time.monotonic()
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read().decode())
@@ -75,15 +68,29 @@ def ask(
                     for p in data["candidates"][0]["content"]["parts"]
                 ).strip()
                 if text:
+                    log.info("Gemini OK via %s in %.1fs (%d belgi, %d расм)",
+                             model, time.monotonic() - started, len(text),
+                             len(images or []))
                     return _unfence(text) if json_out else text
-                last = "bo'sh javob"
+                last = f"{model}: бўш жавоб"
             except Exception as exc:  # noqa: BLE001 - try the next model
-                last = str(exc)[:160]
-                if "429" in last and attempt == 1:
+                said = why(exc)
+                last = f"{model}: {said}"
+                # A retired or overloaded model never improves by being waited
+                # on — and waiting on it is precisely how the office lost six
+                # minutes to a section whose first two models no longer exist.
+                if move_on(exc):
+                    log.warning("Gemini %s skipped (%.1fs): %s",
+                                model, time.monotonic() - started, said)
+                    break
+                if "429" in said and attempt == 1:
                     log.info("Rate limited on %s — waiting %ss", model, _RETRY_WAIT_S)
                     time.sleep(_RETRY_WAIT_S)
                     continue
+                log.warning("Gemini %s failed (%.1fs): %s",
+                            model, time.monotonic() - started, said)
             break
+    log.error("Gemini: ҳамма моделлар рад этди — охиргиси: %s", last)
     raise OfisError(f"AI javob bermadi: {last}")
 
 
