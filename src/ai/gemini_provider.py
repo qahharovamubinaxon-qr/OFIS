@@ -1,9 +1,14 @@
-"""Google Gemini vision provider.
+"""Google Gemini vision provider — the document reader.
 
 Reads the API key from settings (encrypted at rest) or the GEMINI_API_KEY env
-var. The google-generativeai package is imported lazily so the app runs — and
-tests pass — without it installed or without a key. Ready to go live the moment
-a key is entered in Settings.
+var, and goes live the moment a key is entered in Settings.
+
+It speaks to Google over plain HTTPS, through :mod:`src.ai.gemini_models`.
+It used to go through the `google-generativeai` SDK, which cost more than it
+gave on both counts: Google has ended support for the package, and the package
+pinned `protobuf < 6` — quietly holding the office's OTHER program, the one
+that talks to Firebase, below the protobuf version that program requires. The
+REST call is the same call the SDK was making.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import re
 import time
 from collections.abc import Callable
 
+from src.ai import gemini_models
 from src.ai.base import AiRawResult, IAiProvider
 from src.common.errors import AiAuthError, AiError, AiInvalidJsonError
 from src.common.logging import get_logger
@@ -23,19 +29,19 @@ log = get_logger(__name__)
 
 _MODEL = "auto"  # discover models from the key and prefer free-tier-friendly ones
 
-# Ordered preference when the key exposes several models. The *-lite / flash
-# models carry a free tier; -pro does not (that is why gemini-2.0-flash returned
-# "limit: 0" for a free key). Discovery (list_models) runs first; this list is
-# the fallback and the ranking key.
-_PREFERRED = (
-    "gemini-2.5-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-)
+#: How long one model gets to read one document. A reading is a lookup, not a
+#: composition — the lite models answer in three or four seconds.
+_READ_TIMEOUT_S = 90
+
+# Ordered preference when the key exposes several models, and the ranking key
+# for whatever discovery turns up. The lite models read a passport as
+# accurately as the big ones and answer in a third of the time.
+#
+# What is NOT here matters as much: `gemini-2.0-flash` is withdrawn and
+# `gemini-2.5-flash` is refused to accounts opened recently — both answer 404,
+# and a list whose head is 404 is how the ДОВЕРЕННОСТЬ section stopped working
+# while this one carried on.
+_PREFERRED = gemini_models.READ_MODELS
 _EXCLUDE = ("embedding", "aqa", "imagen", "-tts", "-pro", "vision", "learnlm")
 
 
@@ -81,25 +87,20 @@ class GeminiProvider(IAiProvider):
         api_key = self._key()
         if not api_key:
             raise AiAuthError("Gemini API key is not set")
-        try:
-            import google.generativeai as genai  # lazy: optional dependency
-        except ImportError as exc:  # pragma: no cover - env-dependent
-            raise AiError("google-generativeai is not installed") from exc
-
-        genai.configure(api_key=api_key)
         last_exc: Exception | None = None
 
         # Fast path: a model already proved itself this session — use it directly
         # (one retry on a transient rate-limit), never re-discovering.
         if self._chosen:
             try:
-                return self._call(genai, self._chosen, image, prompt, doc_type, retries=1)
+                return self._call(api_key, self._chosen, image, prompt, doc_type,
+                                  retries=1)
             except Exception as exc:  # noqa: BLE001 - fall back to a full search
                 last_exc = exc
                 self._chosen = None
 
         # Try the known-good names first (no network call). Only if every one of
-        # them fails do we spend a list_models() call to discover others.
+        # them fails do we spend a listing call to discover others.
         tried: set[str] = set()
 
         def _try(names: list[str]) -> AiRawResult | None:
@@ -109,17 +110,19 @@ class GeminiProvider(IAiProvider):
                     continue
                 tried.add(model_name)
                 try:
-                    result = self._call(genai, model_name, image, prompt, doc_type, retries=1)
+                    result = self._call(api_key, model_name, image, prompt,
+                                        doc_type, retries=1)
                     self._chosen = model_name  # remember the winner for next time
                     return result
                 except Exception as exc:  # noqa: BLE001 - provider boundary
                     last_exc = exc
-                    log.warning("Gemini model %s failed: %s", model_name, str(exc)[:120])
+                    log.warning("Gemini model %s failed: %s", model_name,
+                                gemini_models.why(exc))
             return None
 
         result = _try(self._candidates())
         if result is None:
-            result = _try(self._discover(genai))  # last resort — costs one API call
+            result = _try(self._discover(api_key))  # last resort — one API call
         if result is not None:
             return result
         raise AiError(_friendly(last_exc)) from last_exc
@@ -129,30 +132,33 @@ class GeminiProvider(IAiProvider):
         api_key = self._key()
         if not api_key:
             raise AiAuthError("Gemini калити киритилмаган")
-        try:
-            import google.generativeai as genai  # lazy: optional dependency
-        except ImportError as exc:  # pragma: no cover - env-dependent
-            raise AiError("google-generativeai ўрнатилмаган") from exc
-        genai.configure(api_key=api_key)
         last: Exception | None = None
         for model_name in self._candidates()[:3]:
             try:
-                genai.GenerativeModel(model_name).generate_content("ping")
+                gemini_models.generate(api_key, model_name,
+                                       [{"text": "ping"}], timeout=30)
                 return f"Gemini ишлаяпти ({model_name})"
             except Exception as exc:  # noqa: BLE001 - try the next model
                 last = exc
         raise AiError(_friendly(last))
 
-    def _call(self, genai, model_name, image, prompt, doc_type, *, retries: int) -> AiRawResult:
+    def _call(self, api_key: str, model_name: str, image: bytes, prompt: str,
+              doc_type: DocType, *, retries: int) -> AiRawResult:
         for attempt in range(retries + 1):
             try:
-                model = genai.GenerativeModel(model_name)
-                resp = model.generate_content([prompt, {"mime_type": "image/jpeg", "data": image}])
+                text = gemini_models.generate(
+                    api_key, model_name,
+                    gemini_models.parts_of(prompt, [image]), timeout=_READ_TIMEOUT_S)
                 log.info("Gemini OK via %s", model_name)
-                return _parse((resp.text or "").strip(), doc_type, self.name)
+                return _parse(text, doc_type, self.name)
             except Exception as exc:  # noqa: BLE001
-                if _is_rate_limit(str(exc)) and attempt < retries:
-                    time.sleep(min(_retry_after(str(exc)), 8.0))
+                said = gemini_models.why(exc)
+                # A model that is gone or overloaded never improves by being
+                # waited on — the next name in the list usually answers at once.
+                if gemini_models.move_on(exc):
+                    raise
+                if _is_rate_limit(said) and attempt < retries:
+                    time.sleep(min(_retry_after(said), 8.0))
                     continue
                 raise
 
@@ -162,19 +168,16 @@ class GeminiProvider(IAiProvider):
             return [self._model, *[c for c in _PREFERRED if c != self._model]]
         return list(_PREFERRED)
 
-    def _discover(self, genai) -> list[str]:
-        """list_models() results, computed once and cached, used only when every
-        known model already failed."""
+    def _discover(self, api_key: str) -> list[str]:
+        """What the key may actually call, computed once and cached, used only
+        when every known model already failed."""
         if self._discovered is None:
             discovered: list[str] = []
             try:
-                for m in genai.list_models():
-                    methods = getattr(m, "supported_generation_methods", []) or []
-                    short = m.name.split("/")[-1]
-                    if "generateContent" in methods and not any(x in short for x in _EXCLUDE):
-                        discovered.append(short)
+                discovered = [name for name in gemini_models.offered(api_key)
+                              if not any(x in name for x in _EXCLUDE)]
             except Exception as exc:  # noqa: BLE001 - discovery is best-effort
-                log.warning("Gemini list_models failed: %s", str(exc)[:120])
+                log.warning("Gemini listing failed: %s", gemini_models.why(exc))
             self._discovered = sorted(dict.fromkeys(discovered), key=_rank)
         return self._discovered
 

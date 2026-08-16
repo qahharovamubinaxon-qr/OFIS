@@ -4,7 +4,10 @@ PyMuPDF>=1.24
 opencv-python-headless>=4.9
 Pillow>=10.3
 python-dotenv>=1.0
-google-generativeai>=0.7
+# google-generativeai — ОЛИБ ТАШЛАНДИ. Google уни ташлаб қўйган,
+# ва у protobuf<6 ни мажбурлаб, офиснинг Firebase дастурини
+# синдирар эди. Gemini энди тўғридан-тўғри HTTPS орқали
+# чақирилади — src/ai/gemini_models.py.
 openai>=1.30
 python-docx>=1.1
 docx2pdf>=0.1.8; sys_platform == "win32"
