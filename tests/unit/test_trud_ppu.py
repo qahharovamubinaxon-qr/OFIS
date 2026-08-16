@@ -343,8 +343,7 @@ def test_a_broken_ai_answer_leaves_the_form_empty_not_crashed(monkeypatch):
     monkeypatch.setattr(mod, "ask", lambda *a, **k: "не JSON, а извинения")
     controller = mod.TrudPpuController(ocr=None, service=None,
                                        key_getter=lambda: "k")
-    assert controller.read_uved(doc.tobytes()) == {"uved_number": "",
-                                                   "uved_fio": ""}
+    assert all(value == "" for value in controller.read_uved(doc.tobytes()).values())
 
 
 # ------------------------------------------------- the firm, cut down to size
@@ -499,3 +498,81 @@ def test_values_land_on_their_labels_whatever_blank_was_uploaded(
         assert abs(nearest - top) < 0.005, (
             f"row {label}: label {top:.4f}, nearest value {nearest:.4f} — "
             "the value column does not sit on the labels")
+
+
+# ------------------------- the patent, when the patent card is not to hand
+def _uved_pdf(text: str = "UVEDOMLENIE " + "x" * 200) -> bytes:
+    doc = fitz.open()
+    doc.new_page(width=595, height=842).insert_text((60, 80), text, fontsize=11)
+    return doc.tobytes()
+
+
+def _contract_pdf() -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 80), "TRUDOVOY DOGOVOR ot 20.09.2024", fontsize=11)
+    for line in range(20):
+        page.insert_text((60, 120 + line * 14), "punkt " + "x" * 60, fontsize=9)
+    return doc.tobytes()
+
+
+def _controller(monkeypatch, answer: str):
+    from src.controllers import trud_ppu_controller as mod
+
+    monkeypatch.setattr(mod, "ask", lambda *a, **k: answer)
+    return mod.TrudPpuController(ocr=None, service=None, key_getter=lambda: "k")
+
+
+def test_the_contract_gives_up_the_patent_it_names(monkeypatch) -> None:
+    """«агар патент йукламасам шуларни ичидеги малумотлардан фойдалансин».
+
+    A трудовой договор names the worker's patent in its opening paragraph.
+    The office often has the contract and the notification but not the patent
+    card, and the three patent boxes came out blank.
+    """
+    controller = _controller(monkeypatch, (
+        '{"contract_date":"20.09.2024","firm":"ООО \\"СОЗВЕЗДИЕ\\"",'
+        '"surname":"АСРАНОВ","patent_series":"77",'
+        '"patent_number":"2400328451","patent_issued":"18.07.2024"}'))
+    fields = controller.read_contract(_contract_pdf())
+    assert fields["weak_patent_series"] == "77"
+    assert fields["weak_patent_number"] == "2400328451"
+    assert fields["weak_patent_issued"] == "18.07.2024"
+
+
+def test_the_notification_gives_up_the_patent_it_names(monkeypatch) -> None:
+    controller = _controller(monkeypatch, (
+        '{"number":"4785796716","surname":"АСРАНОВ","patent_series":"77",'
+        '"patent_number":"2400328451","patent_issued":"18.07.2024"}'))
+    fields = controller.read_uved(_uved_pdf())
+    assert fields["uved_number"] == "4785796716"
+    assert fields["weak_patent_number"] == "2400328451"
+
+
+def test_the_notifications_own_number_is_not_taken_for_the_patents(monkeypatch):
+    """The one confusion the prompt warns about, refused in code as well."""
+    controller = _controller(monkeypatch, (
+        '{"number":"4785796716","patent_series":"77",'
+        '"patent_number":"4785796716","patent_issued":"18.07.2024"}'))
+    fields = controller.read_uved(_uved_pdf())
+    assert fields["uved_number"] == "4785796716"
+    assert fields["weak_patent_number"] == ""
+    assert fields["weak_patent_series"] == ""
+
+
+def test_a_document_that_names_no_patent_offers_nothing(monkeypatch) -> None:
+    """Nothing invented: a contract that is silent about the patent stays so."""
+    controller = _controller(monkeypatch, (
+        '{"contract_date":"20.09.2024","firm":"ООО \\"СОЗВЕЗДИЕ\\""}'))
+    fields = controller.read_contract(_contract_pdf())
+    assert all(fields[key] == "" for key in
+               ("weak_patent_series", "weak_patent_number",
+                "weak_patent_issued"))
+
+
+def test_the_patent_is_asked_for_in_both_prompts() -> None:
+    from src.controllers import trud_ppu_controller as mod
+
+    for prompt in (mod._CONTRACT_PROMPT, mod._UVED_PROMPT):
+        assert "patent_series" in prompt and "patent_number" in prompt
+        assert "НЕ ВЫДУМЫВАЙ" in prompt, "ўйлаб топмаслик айтилмаган"

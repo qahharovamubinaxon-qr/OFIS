@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -55,8 +56,21 @@ class TrudPpuView(QWidget):
         self._ppu_templates = ppu_templates
         self._last: Path | None = None
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
+        # This screen carries five drop zones, fifteen boxes, two blank
+        # pickers and a preview. Laid straight into the window they had
+        # nowhere to go on the office's screen and Qt squeezed the rows into
+        # each other until the labels were unreadable. It scrolls, like every
+        # other screen this long does.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        outer.addWidget(scroll)
+        body = QWidget()
+        scroll.setWidget(body)
+        root = QVBoxLayout(body)
+        root.setContentsMargins(28, 24, 28, 16)
         root.setSpacing(12)
 
         title = QLabel("ТРУД ППУ — трудовой + уведомление + патент → 3 саҳифа")
@@ -82,6 +96,7 @@ class TrudPpuView(QWidget):
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(8)
         self._surname = self._line(grid, 0, 0, "Фамилия:")
         self._name = self._line(grid, 0, 2, "Имя:")
         self._patronymic = self._line(grid, 1, 0, "Отчество:")
@@ -97,6 +112,7 @@ class TrudPpuView(QWidget):
 
         patent = QGridLayout()
         patent.setHorizontalSpacing(14)
+        patent.setVerticalSpacing(8)
         self._series = self._line(patent, 0, 0, "① Патент серияси:")
         self._series.setPlaceholderText("77")
         self._series.textChanged.connect(self._recalc)
@@ -299,6 +315,22 @@ class TrudPpuView(QWidget):
                 (self._uved_fio, "uved_fio")):
             if fields.get(key):
                 edit.setText(fields[key])
+
+        # The patent as the трудовой and the уведомление report it. The office
+        # very often has those two and not the patent card, and both name the
+        # patent — so rather than leave the boxes blank they are filled from
+        # there. Only boxes STILL EMPTY are touched: a scanned patent card is
+        # the patent itself and always outranks a mention of it, whichever
+        # order the files happen to be dropped in.
+        borrowed: list[str] = []
+        for edit, key, said in ((self._series, "weak_patent_series", "серия"),
+                                (self._number, "weak_patent_number", "номер"),
+                                (self._issue, "weak_patent_issued",
+                                 "олинган сана")):
+            if fields.get(key) and not edit.text().strip():
+                edit.setText(fields[key])
+                borrowed.append(said)
+
         self._recalc()
         missing = [t for t, k in (("патент серияси", "patent_series"),
                                   ("патент номери", "patent_number"),
@@ -309,6 +341,8 @@ class TrudPpuView(QWidget):
                    if k in fields and not fields.get(k)]
         self._status.setText(
             "✅ Ўқилди — текшириб RUN босинг."
+            + (f"  🔎 Патент юкланмади — {', '.join(borrowed)} трудовой/"
+               "уведомлениядан олинди, текширинг." if borrowed else "")
             + (f"  ⚠️ Ўқилмади: {', '.join(missing)} — қўлда киритинг."
                if missing else ""))
 

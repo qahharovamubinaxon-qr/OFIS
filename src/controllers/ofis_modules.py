@@ -823,6 +823,14 @@ def _run_trud_ppu(ctx: RunContext, state: dict) -> list[Path]:
     fields.update({k: v for k, v in ctl.read_uved(pdfs[1]).items() if v})
     patent = ctl.read_patent(photos[0], photos[1] if len(photos) > 1 else None)
     fields.update({k: v for k, v in patent.items() if v})
+    # Whatever the patent card did not give up, the трудовой and the
+    # уведомление already named — both carry the patent's series, number and
+    # issue date. The card itself always wins; this only fills what is blank.
+    for key, weak in (("patent_series", "weak_patent_series"),
+                      ("patent_number", "weak_patent_number"),
+                      ("patent_issue", "weak_patent_issued")):
+        if not fields.get(key) and fields.get(weak):
+            fields[key] = fields[weak]
     ctx.note(f"Ўқилди: {fields.get('surname', '')} · патент "
              f"{fields.get('patent_series', '')} {fields.get('patent_number', '')} · "
              f"{fields.get('firm', '')}".strip())

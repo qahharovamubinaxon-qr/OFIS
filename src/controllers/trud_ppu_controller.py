@@ -43,7 +43,10 @@ _CONTRACT_PROMPT = RUSSIAN_RULES + """Ты читаешь ТРУДОВОЙ ДО�
  "birth_date": "<дата рождения работника, ДД.ММ.ГГГГ>",
  "gender": "<Мужской или Женский>",
  "citizenship": "<гражданство работника>",
- "passport": "<серия и номер паспорта РОВНО как напечатано; серию НЕ выдумывать>"
+ "passport": "<серия и номер паспорта РОВНО как напечатано; серию НЕ выдумывать>",
+ "patent_series": "<серия патента, если она указана в договоре, например 77>",
+ "patent_number": "<номер патента, если он указан в договоре>",
+ "patent_issued": "<дата выдачи патента, ДД.ММ.ГГГГ, если указана>"
 }}
 
 ПРАВИЛА:
@@ -51,7 +54,11 @@ _CONTRACT_PROMPT = RUSSIAN_RULES + """Ты читаешь ТРУДОВОЙ ДО�
 - если чего-то в документе нет — верни пустую строку "";
 - дата заключения договора — та, что стоит рядом с городом в начале договора, \
 а НЕ дата начала работы и НЕ дата рождения;
-- работодатель — организация, а не работник.
+- работодатель — организация, а не работник;
+- ПАТЕНТ: договор почти всегда называет патент работника — «патент серия 77 \
+№ 2400328451, выдан 18.07.2024». Возьми его оттуда. НИЧЕГО НЕ ВЫДУМЫВАЙ: если \
+патент в договоре не назван — верни пустые строки. Не путай номер патента с \
+номером договора, с ИНН и с номером уведомления.
 
 {payload}"""
 
@@ -63,13 +70,20 @@ _UVED_PROMPT = """Ты читаешь УВЕДОМЛЕНИЕ о заключен
  "number": "<номер уведомления — длинное число сверху документа, только цифры>",
  "surname": "<фамилия работника>",
  "name": "<имя работника>",
- "patronymic": "<отчество работника, если есть>"
+ "patronymic": "<отчество работника, если есть>",
+ "patent_series": "<серия патента из графы о документе на право работы, например 77>",
+ "patent_number": "<номер патента из той же графы>",
+ "patent_issued": "<дата выдачи патента, ДД.ММ.ГГГГ>"
 }}
 
 ПРАВИЛА:
 - любое значение — СТРОКА; ведущие нули НЕ терять — номер часто начинается с 0;
 - номер уведомления — это одно число из 8-14 цифр наверху документа. Не путай \
 его с ИНН (12 цифр внутри таблицы), с номером патента и с датами;
+- ПАТЕНТ: в уведомлении есть графа «Документ, подтверждающий право на \
+осуществление трудовой деятельности» — там стоят серия, номер и дата выдачи \
+патента. Возьми их оттуда. Это ДРУГОЕ число, не номер уведомления сверху. \
+Если графа пустая — верни пустые строки, НИЧЕГО НЕ ВЫДУМЫВАЙ;
 - если чего-то в документе нет — верни пустую строку "".
 
 {payload}"""
@@ -187,6 +201,28 @@ class TrudPpuController:
         return self._service.add_template(name, page2, page3)
 
     # ------------------------------------------------------------ readers
+    #: The patent's own three values, wherever they were found. Prefixed
+    #: ``weak_`` because they came off a document ABOUT the patent rather
+    #: than off the patent card: the screen writes them only into boxes that
+    #: are still empty, so a scanned patent always outranks them.
+    WEAK = ("weak_patent_series", "weak_patent_number", "weak_patent_issued")
+
+    @staticmethod
+    def _weak_patent(answer: dict) -> dict[str, str]:
+        """The patent as a second-hand document reports it.
+
+        The office asked for this by name: it very often has the трудовой and
+        the уведомление but not the patent card, and both of those name the
+        patent — the contract in its opening paragraph, the notification in
+        the box for the document giving the right to work. Leaving the patent
+        boxes blank made it retype what was already on the screen's own input.
+        """
+        return {
+            "weak_patent_series": str(answer.get("patent_series", "") or "").strip(),
+            "weak_patent_number": _digits(answer.get("patent_number", "")),
+            "weak_patent_issued": str(answer.get("patent_issued", "") or "").strip(),
+        }
+
     def read_contract(self, pdf: bytes) -> dict[str, str]:
         """The contract's date, the firm, and the worker it names."""
         answer = _answer(self._key_getter(), _CONTRACT_PROMPT, pdf)
@@ -200,6 +236,7 @@ class TrudPpuController:
             "gender": answer.get("gender", ""),
             "citizenship": answer.get("citizenship", ""),
             "document": answer.get("passport", ""),
+            **self._weak_patent(answer),
         }
 
     def read_uved(self, pdf: bytes) -> dict[str, str]:
@@ -210,9 +247,15 @@ class TrudPpuController:
         number = _digits(answer.get("number", ""))
         if not number:
             number = uved_number_from_text(_pdf_text(pdf))
+        weak = self._weak_patent(answer)
+        if number and weak["weak_patent_number"] == number:
+            # the model read the notification's own number back as the
+            # patent's — the one confusion the prompt warns it about
+            weak = dict.fromkeys(self.WEAK, "")
         return {
             "uved_number": number,
             "uved_fio": " ".join(p for p in parts if p),
+            **weak,
         }
 
     def read_patent(self, front: bytes, back: bytes | None = None) -> dict[str, str]:
