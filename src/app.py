@@ -107,16 +107,18 @@ def build_container() -> Container:
     container.register_instance(TrudFirmService, TrudFirmService(trud_firm_repo))
     container.register_instance(TrudService, TrudService())
 
-    # AI / OCR — a chain of three, tried in this order, each keyed from settings
+    # AI / OCR — a chain of four, tried in this order, each keyed from settings
     # (or its own env var). Mistral does document OCR, so it reads small print
-    # and the machine-readable zone best; Groq answers fastest; Gemini stays as
-    # the backstop the office has been using all along. A provider with no key
-    # is skipped, and the service degrades to «use manual fill» only when none
-    # of the three has one.
+    # and the machine-readable zone best; Groq answers fastest; Gemini is the
+    # one the office has been using all along; OpenRouter sits behind all of
+    # them with many models on one key, for the day one provider withdraws a
+    # model or runs out. A provider with no key is skipped, and the service
+    # degrades to «use manual fill» only when not one of the four has a key.
     from src.ai.gemini_provider import GeminiProvider
     from src.ai.groq_provider import GroqProvider
     from src.ai.manager import AiManager
     from src.ai.mistral_provider import MistralProvider
+    from src.ai.openrouter_provider import OpenRouterProvider
     from src.ocr.service import OcrService
 
     def _key_getter(name: str):
@@ -126,6 +128,11 @@ def build_container() -> Container:
         MistralProvider(key_getter=_key_getter("mistral")),
         GroqProvider(key_getter=_key_getter("groq")),
         GeminiProvider(key_getter=_key_getter("gemini")),
+        # Last, deliberately: Gemini answers a passport in under a second and
+        # should keep the job. OpenRouter is the door that stays open when
+        # Google withdraws a model or the day's quota runs out — which is the
+        # very thing the office asked for after a day of both.
+        OpenRouterProvider(key_getter=_key_getter("openrouter")),
     ])
     container.register_instance(AiManager, ai_manager)
     container.register_instance(OcrService, OcrService(ai_manager))

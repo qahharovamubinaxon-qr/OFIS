@@ -1,6 +1,7 @@
 """Settings screen — AI keys, theme, language, output folder.
 
-Three provider keys (Mistral · Groq · Gemini) are stored via SettingsService,
+Four provider keys (Mistral · Groq · Gemini · OpenRouter) are stored via
+SettingsService,
 the same settings table the Gemini key has always used. Entering one takes
 effect on the next read — no restart — and «Tekshirish» proves it with a tiny
 live request. Keys are shown masked and are never logged or written to a file.
@@ -43,6 +44,8 @@ AI_PROVIDERS: tuple[tuple[str, str, str], ...] = (
     ("mistral", "Mistral API kalit:", "hujjat-OCR — eng aniq"),
     ("groq", "Groq API kalit:", "gsk_… — eng tez"),
     ("gemini", "Gemini API kalit:", "AIza… — zaxira"),
+    ("openrouter", "OpenRouter API kalit:",
+     "sk-or-… — bitta kalit, ko'p bepul model"),
 )
 
 
@@ -60,6 +63,10 @@ def _probe(provider: str, key: str) -> str:
         from src.ai.groq_provider import GroqProvider
 
         return GroqProvider(api_key=key).check()
+    if provider == "openrouter":
+        from src.ai.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(api_key=key).check()
     from src.ai.gemini_provider import GeminiProvider
 
     return GeminiProvider(api_key=key).check()
@@ -131,9 +138,10 @@ class SettingsView(QWidget):
         # -- AI ---------------------------------------------------------
         root = self._section("🤖", "Sun'iy intellekt")
         ai = Card("🤖", "Sun'iy intellekt",
-                  "Hujjatlarni o'qish uchun uchta provayder. Yuqoridagisi "
+                  "Hujjatlarni o'qish uchun to'rtta provayder. Yuqoridagisi "
                   "birinchi ishlaydi; xato bersa yoki kaliti bo'lmasa "
-                  "keyingisiga o'tiladi.")
+                  "keyingisiga o'tiladi. Bittasi yetarli — hammasi shart "
+                  "emas.")
         self._keys: dict[str, QLineEdit] = {}
         self._key_states: dict[str, QLabel] = {}
         for provider, label, hint in AI_PROVIDERS:
@@ -143,7 +151,7 @@ class SettingsView(QWidget):
         self._key = self._keys["gemini"]
         self._ai_state = ai.note("")
         ai.note("Kalitlar: console.mistral.ai · console.groq.com · "
-                "aistudio.google.com/apikey")
+                "aistudio.google.com/apikey · openrouter.ai/keys")
         root.addWidget(ai)
         root.addStretch(1)
 
