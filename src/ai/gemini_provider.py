@@ -197,14 +197,19 @@ def _friendly(exc: Exception | None) -> str:
     """Short, actionable message instead of Google's multi-line quota dump."""
     text = str(exc or "")
     low = text.lower()
+    # 404 FIRST. Google's «no longer available to new users» body ends
+    # «…for the latest features and improved QUOTA limits», so the quota
+    # test below matched it and the office was told its limit had run out
+    # while the real answer was that the model had been withdrawn.
+    if "not found" in low or "no longer available" in low or "404" in text:
+        return ("Gemini modeli endi mavjud emas (Google o'chirgan). "
+                "Dasturni yangilang — «Обновить» tugmasi.")
     if "429" in text or "quota" in low or "rate" in low:
         return ("Gemini limiti tugadi yoki bepul tarifda bu model yo'q. Bir "
                 "daqiqadan keyin urinib ko'ring, yoki «Qo'lda to'ldirish» dan "
                 "foydalaning. (Free tier limit / quota.)")
     if "api key" in low or "permission" in low or "401" in text or "403" in text:
         return "Gemini kaliti noto'g'ri yoki ruxsat yo'q. Sozlamalarda kalitni tekshiring."
-    if "not found" in low or "404" in text:
-        return "Gemini modeli topilmadi. Dasturni yangilang yoki keyinroq urinib ko'ring."
     return f"Gemini xatosi: {text[:160]}"
 
 

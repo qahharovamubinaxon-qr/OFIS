@@ -16,6 +16,13 @@ from src.common.errors import AiAuthError, AiError, AiRateLimitError
 
 DEFAULT_TIMEOUT = 60.0
 
+#: Groq sits behind Cloudflare, and Cloudflare refuses urllib's own
+#: «Python-urllib/3.12» with «error code: 1010» — a browser-signature ban,
+#: not an API error and not a bad key. So Groq never once answered: the
+#: office had a valid gsk_ key in Settings and every document still fell
+#: through to Gemini. ANY User-Agent gets past it; this one says who we are.
+USER_AGENT = "OFIS/1.0 (+https://github.com/qahharovamubinaxon-qr/OFIS)"
+
 
 def post_json(url: str, payload: dict, *, api_key: str, provider: str,
               timeout: float = DEFAULT_TIMEOUT,
@@ -30,6 +37,7 @@ def post_json(url: str, payload: dict, *, api_key: str, provider: str,
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Authorization": f"Bearer {api_key}",
+        "User-Agent": USER_AGENT,
         **(extra_headers or {}),
     }
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
