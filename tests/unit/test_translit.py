@@ -170,3 +170,90 @@ def test_a_y_after_a_vowel_or_in_a_digraph_is_untouched(latin,
     """Russian never puts й after a consonant, which is what makes the plain
     rule safe — but it very much puts it after a vowel."""
     assert to_cyrillic(latin) == russian
+
+
+# ------------------------------------------------- Turkmen: J is the affricate
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("JEREN", "ДЖЕРЕН"),
+    ("OGULJAN", "ОГУЛДЖАН"),
+    ("GYLYJOW", "ГЫЛЫДЖОВ"),
+    ("HOJAMYRAT", "ХОДЖАМЫРАТ"),
+])
+def test_turkmen_j_is_dzh(latin, russian) -> None:
+    """Turkmen Latin J is Cyrillic Җ, the /dʒ/ affricate — ДЖ, like Tajik."""
+    assert to_cyrillic(latin, "Туркменистан") == russian
+
+
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("ŽANNA", "ЖАННА"),           # Ž is the fricative — stays Ж
+    ("MYRAT", "МЫРАТ"),           # Y after a consonant is Ы
+    ("NADYYR", "НАДЫЙР"),         # …and the office's own example
+    ("HALYL", "ХАЛЫЛ"),           # H is Х, not KH
+    ("MAHMYT", "МАХМЫТ"),
+])
+def test_turkmen_the_rest_is_unchanged(latin, russian) -> None:
+    """The office confirmed these already worked; the J fix must not touch them."""
+    assert to_cyrillic(latin, "Туркменистан") == russian
+
+
+# --------------------------------------------------- Turkey: C is the affricate
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("CENGIZ", "ДЖЕНГИЗ"),
+    ("CEMAL", "ДЖЕМАЛ"),
+    ("ÇELIK", "ЧЕЛИК"),           # Ç stays Ч
+    ("MURATOV", "МУРАТОВ"),
+])
+def test_turkish_c_is_dzh(latin, russian) -> None:
+    assert to_cyrillic(latin, "Турция") == russian
+
+
+def test_turkey_never_catches_turkmenistan() -> None:
+    """«TUR» is a prefix of both — the Turkish rule must not fire on a Turkmen
+    passport, or Turkmen J would wrongly become Ж again through the C branch."""
+    assert to_cyrillic("OGULJAN", "TURKMENISTAN") == "ОГУЛДЖАН"
+    assert to_cyrillic("CENGIZ", "TURKEY") == "ДЖЕНГИЗ"
+
+
+# --------------------------------------------------- Spanish: Cuba, Philippines
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("JOSE", "ХОСЕ"),                     # J → Х
+    ("JULIO", "ХУЛИО"),
+    ("JIMENEZ", "ХИМЕНЕС"),               # J → Х, Z → С
+    ("GONZALEZ", "ГОНСАЛЕС"),             # Z → С
+    ("HERNANDEZ", "ЭРНАНДЕС"),            # silent H, opening E → Э
+    ("ANGEL", "АНХЕЛЬ"),                  # G before e → Х, final l → ль
+    ("GIL", "ХИЛЬ"),
+    ("CARLOS", "КАРЛОС"),                 # C before a → К
+    ("CECILIA", "СЕСИЛИЯ"),               # C before e → С, final -ia → -ия
+    ("ENRIQUE", "ЭНРИКЕ"),                # qu → к, u silent
+    ("MIGUEL", "МИГЕЛЬ"),                 # gu → г, final l → ль
+    ("RAFAEL", "РАФАЭЛЬ"),                # E after a vowel → Э
+])
+def test_spanish_cuba(latin, russian) -> None:
+    assert to_cyrillic(latin, "Куба") == russian
+
+
+def test_spanish_philippines() -> None:
+    assert to_cyrillic("JOSE MAGSAYSAY", "Филиппины") == "ХОСЕ МАГСАЙСАЙ"
+
+
+# ----------------------------------------------------------- India: English J
+@pytest.mark.parametrize(("latin", "russian"), [
+    ("RAJ", "РАДЖ"),
+    ("RAJESH", "РАДЖЕШ"),
+    ("SINGH", "СИНГ"),            # a final -gh is silent-h: СИНГ, not СИНГХ
+])
+def test_india_english(latin, russian) -> None:
+    assert to_cyrillic(latin, "Индия") == russian
+
+
+# ------------------------------------------- Central Asia is left exactly as-is
+@pytest.mark.parametrize(("latin", "country", "russian"), [
+    ("JASUR", "Ўзбекистон", "ЖАСУР"),          # Uzbek J stays Ж
+    ("JAMSHED", "Таджикистан", "ДЖАМШЕД"),      # Tajik J stays ДЖ
+    ("KYZY", "Кыргызстан", "КЫЗЫ"),
+    ("SADYKOV", "Казахстан", "САДЫКОВ"),
+    ("CEYHUN", "Азербайджан", "ДЖЕЙХУН"),       # Azeri C stays ДЖ
+])
+def test_the_republics_are_untouched(latin, country, russian) -> None:
+    assert to_cyrillic(latin, country) == russian
