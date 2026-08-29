@@ -9,6 +9,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFormLayout, QLabel, QVBoxLayout, QWidget
 
+from src.ui.widgets.shadow import add_shadow
+
 
 class Card(QWidget):
     def __init__(self, icon: str, title: str, subtitle: str = "") -> None:
@@ -16,9 +18,10 @@ class Card(QWidget):
         self.setObjectName("card")
         # a plain QWidget ignores QSS background/border without this
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        add_shadow(self)          # a sheet laid on the desk, not a flat panel
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 16, 20, 18)
+        outer.setContentsMargins(24, 20, 24, 22)
         outer.setSpacing(4)
 
         head = QLabel(f"{icon}  {title}" if icon else title)

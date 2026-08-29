@@ -31,8 +31,10 @@ class DropZone(QFrame):
         super().__init__(parent)
         self.setObjectName("dropZone")
         self.setAcceptDrops(True)
-        self.setMinimumHeight(112)
+        self.setMinimumHeight(120)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        from src.ui.widgets.shadow import add_shadow
+        add_shadow(self, blur=18, dy=3, alpha=45)
         self._title = title
         #: What this tile takes. Photographs unless the caller says otherwise.
         self._exts = ({e.lower() for e in extensions} if extensions
