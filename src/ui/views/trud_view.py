@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -42,6 +44,31 @@ from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
 log = get_logger(__name__)
+
+#: Everything the трудовой and the уведомление print off the worker's passport,
+#: so any of it can be corrected before it goes onto a filed contract.
+_READ_BOXES: tuple[tuple[str, str, str], ...] = (
+    ("surname", "Фамилия:", "Исоев"),
+    ("name", "Имя:", "Аслидин"),
+    ("patronymic", "Отчество:", "Холбердиевич"),
+    ("citizenship", "Гражданство:", "ТАДЖИКИСТАН"),
+    ("series", "Паспорт серия:", "P"),
+    ("number", "Паспорт номер:", "405847273"),
+)
+_SETTLE_MS = 400
+
+
+def _date_of(said: str):
+    """«18.01.2025» → a date, or nothing when it is not one."""
+    from datetime import datetime
+
+    said = (said or "").strip()
+    for shape in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(said, shape).date()
+        except ValueError:
+            continue
+    return None
 
 
 #: Requisites of a firm typed in by hand: attribute · label · placeholder.
@@ -206,7 +233,8 @@ class AddTrudFirmDialog(QDialog):
         return self.tabs.currentIndex()
 
     def _pick(self, kind: str) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Shablon (PDF yoki Word)", "", "PDF/Word (*.pdf *.docx)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Shablon (PDF yoki Word)", "", "PDF/Word (*.pdf *.docx)")
         if not path:
             return
         if kind == "trud":
@@ -271,8 +299,42 @@ class TrudView(QWidget):
         self._dz_patent = DropZone("📄", "Патент (олд)")
         self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
+            dz.changed.connect(self._on_dropped)
             up.addWidget(dz, stretch=1)
         root.addLayout(up)
+
+        # -- what was read, for the operator to check --------------------
+        self._patent = None
+        self._issue_date = None          # passport issue, carried from the read
+        self._read = QGroupBox("Ҳужжатлардан ўқилгани — текширинг, "
+                               "хатоси бўлса тўғриланг")
+        checks = QGridLayout(self._read)
+        checks.setHorizontalSpacing(10)
+        checks.setVerticalSpacing(6)
+        self._boxes: dict[str, QLineEdit] = {}
+        for at, (key, label, hint) in enumerate(_READ_BOXES):
+            box = QLineEdit()
+            box.setPlaceholderText(hint)
+            checks.addWidget(QLabel(label), at // 2, (at % 2) * 2)
+            checks.addWidget(box, at // 2, (at % 2) * 2 + 1)
+            self._boxes[key] = box
+        row3 = (len(_READ_BOXES) + 1) // 2
+        checks.addWidget(QLabel("Жинси:"), row3, 0)
+        self._gender = QComboBox()
+        self._gender.addItems(["Мужской", "Женский"])
+        checks.addWidget(self._gender, row3, 1)
+        checks.addWidget(QLabel("Туғилган сана:"), row3, 2)
+        self._born = QDateEdit(QDate(2000, 1, 1))
+        self._born.setCalendarPopup(True)
+        self._born.setDisplayFormat("dd.MM.yyyy")
+        checks.addWidget(self._born, row3, 3)
+        self._read.setVisible(False)
+        root.addWidget(self._read)
+
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(_SETTLE_MS)
+        self._settle.timeout.connect(self._read_now)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (Трудовой + Уведомление)")
@@ -422,26 +484,97 @@ class TrudView(QWidget):
         self._c.archive_firm(firm.id)
         self.refresh()
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._dz_passport.path)
+        patent = (self._c.read_image(self._dz_patent.path)
+                  if self._dz_patent.path else None)
+        patent_back = (self._c.read_image(self._dz_patent_back.path)
+                       if self._dz_patent_back.path else None)
+        self._busy("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent, patent_back,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        from src.domain.enums import Gender
+
+        self._progress.finish()
+        self._run.setEnabled(True)
+        passport, self._patent = pair
+        self._issue_date = passport.issue_date
+        resolved = {
+            "surname": passport.surname or "",
+            "name": passport.name or "",
+            "patronymic": passport.patronymic or "",
+            "citizenship": passport.nationality or "",
+            "series": passport.series or "",
+            "number": passport.number or "",
+        }
+        for key, box in self._boxes.items():
+            box.setText(str(resolved.get(key, "")))
+        self._gender.setCurrentText(
+            "Женский" if passport.gender == Gender.FEMALE else "Мужской")
+        if passport.birth_date:
+            self._born.setDate(QDate(passport.birth_date.year,
+                                     passport.birth_date.month,
+                                     passport.birth_date.day))
+        self._read.setVisible(True)
+        self._status.setText("✅ Ўқилди — текширинг, кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._run.setEnabled(True)
+        self._read.setVisible(True)          # so it can be typed by hand
+        message = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    def _edited(self):
+        """The worker as it stands IN THE BOXES — never as it was read.
+
+        The passport also keeps its issue date so the договор can print «выдан
+        …»; it is not shown as a box, so it is carried from the read passport
+        when there is one."""
+        from src.domain.documents import Passport
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return Passport(
+            surname=said.get("surname") or "—",
+            name=said.get("name") or "—",
+            patronymic=said.get("patronymic") or None,
+            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
+                    else Gender.MALE),
+            birth_date=self._born.date().toPython(),
+            nationality=said.get("citizenship") or None,
+            series=said.get("series") or None,
+            number=said.get("number") or "—",
+            issue_date=self._issue_date)
+
     def _run_ai(self) -> None:
         firm = self._selected_firm()
         if firm is None:
             self._warn("Avval firma tanlang yoki qo'shing.")
             return
-        if not self._c.ai_available():
-            self._warn("AI kaliti yo'q. Sozlamalarga Gemini kalitini kiriting.")
-            return
-        if self._dz_passport.path is None:
+        if self._dz_passport.path is None and self._read.isHidden():
             self._warn("Pasport rasmini yuklang.")
             return
-        passport = self._c.read_image(self._dz_passport.path)
-        patent = self._c.read_image(self._dz_patent.path) if self._dz_patent.path else None
-        patent_back = (
-            self._c.read_image(self._dz_patent_back.path) if self._dz_patent_back.path else None
-        )
+        if self._read.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._boxes["surname"].text().strip():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
         profession = self._profession.text().strip() or None
-        self._busy("AI o'qiyapti, трудовой + уведомление tayyorlanyapti…")
+        self._busy("Трудовой + уведомление tayyorlanyapti…")
         run_async(
-            self._c.generate_from_images, firm, passport, patent, patent_back,
+            self._c.generate, firm, self._edited(), self._patent,
             form_date=self._form_date(), profession=profession,
             on_success=self._done, on_error=self._failed,
         )
@@ -457,6 +590,11 @@ class TrudView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
+        for box in self._boxes.values():
+            box.clear()
+        self._read.setVisible(False)
+        self._patent = None
+        self._issue_date = None
         from src.ui.widgets.save_to import ask_save_dir
 
         ask_save_dir(self, [x for x in (result.trud_path, result.uved_path,

@@ -61,6 +61,38 @@ class TrudController:
     def ai_available(self) -> bool:
         return self._ocr.available()
 
+    def read_documents(
+        self,
+        passport_image: bytes,
+        patent_image: bytes | None,
+        patent_back_image: bytes | None = None,
+    ):
+        """The worker and the patent, for the operator to check before the
+        трудовой and the уведомление are printed. Returns ``(passport, patent)``.
+
+        The договор prints the worker's whole identity — name, birth, passport —
+        and it used to be read inside the print step, so a misread went onto a
+        filed contract unseen. Now it is read here, shown, and printed from the
+        boxes."""
+        return self._ocr.read_documents(
+            passport_image, patent_image, patent_back_image
+        )
+
+    def generate(
+        self,
+        firm: TrudFirm,
+        passport,
+        patent,
+        *,
+        form_date: date,
+        profession: str | None,
+    ) -> TrudResult:
+        """The pair, from what is IN THE BOXES — not from what was read.
+        The patent is kept as read (its issue date sets the contract's end)."""
+        return self._trud.generate(
+            passport, patent, firm, form_date=form_date, profession=profession
+        )
+
     def generate_from_images(
         self,
         firm: TrudFirm,
@@ -71,11 +103,12 @@ class TrudController:
         form_date: date,
         profession: str | None,
     ) -> TrudResult:
-        passport, patent = self._ocr.read_documents(
+        """Read and print in one go — kept for the bot, which has no screen."""
+        passport, patent = self.read_documents(
             passport_image, patent_image, patent_back_image
         )
-        return self._trud.generate(
-            passport, patent, firm, form_date=form_date, profession=profession
+        return self.generate(
+            firm, passport, patent, form_date=form_date, profession=profession
         )
 
     @staticmethod
