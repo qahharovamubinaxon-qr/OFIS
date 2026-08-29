@@ -9,10 +9,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
+    QComboBox,
     QDateEdit,
     QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -28,6 +31,30 @@ from src.controllers.inn_controller import InnController
 from src.services.inn_service import INN_DIGITS, InnResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+
+#: Everything the ИНН sheet prints off the passport, so any of it can be
+#: corrected before it goes onto the worker's filed record.
+_READ_BOXES: tuple[tuple[str, str, str], ...] = (
+    ("surname", "Фамилия:", "Исоев"),
+    ("name", "Имя:", "Аслидин"),
+    ("patronymic", "Отчество:", "Холбердиевич"),
+    ("citizenship", "Гражданство:", "ТАДЖИКИСТАН"),
+)
+#: How long to wait after a file lands before reading it.
+_SETTLE_MS = 400
+
+
+def _date_of(said: str):
+    """«18.01.2025» → a date, or nothing when it is not one."""
+    from datetime import datetime
+
+    said = (said or "").strip()
+    for shape in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(said, shape).date()
+        except ValueError:
+            continue
+    return None
 
 
 class InnView(QWidget):
@@ -66,8 +93,44 @@ class InnView(QWidget):
         root.addLayout(row)
 
         self._dz = DropZone("🛂", "Ишчининг паспорти ёки патенти")
-        self._dz.changed.connect(self._read_inn)
+        # dropped and read at once — the worker's ФИО and the ИНН both come
+        # off the same photograph, and the operator checks them before RUN
+        self._dz.changed.connect(self._on_dropped)
         root.addWidget(self._dz, stretch=1)
+
+        # -- what was read, for the operator to check --------------------
+        # The sheet prints the worker's ФИО, sex, birth date and citizenship;
+        # they used to be read only inside the print step, so a misread name
+        # went onto a filed sheet unseen. Shown here first, and editable.
+        self._read = QGroupBox("Ҳужжатдан ўқилгани — текширинг, "
+                               "хатоси бўлса тўғриланг")
+        checks = QGridLayout(self._read)
+        checks.setHorizontalSpacing(10)
+        checks.setVerticalSpacing(6)
+        self._boxes: dict[str, QLineEdit] = {}
+        for at, (key, label, hint) in enumerate(_READ_BOXES):
+            box = QLineEdit()
+            box.setPlaceholderText(hint)
+            checks.addWidget(QLabel(label), at // 2, (at % 2) * 2)
+            checks.addWidget(box, at // 2, (at % 2) * 2 + 1)
+            self._boxes[key] = box
+        row2 = len(_READ_BOXES) // 2
+        checks.addWidget(QLabel("Жинси:"), row2, 0)
+        self._gender = QComboBox()
+        self._gender.addItems(["Мужской", "Женский"])
+        checks.addWidget(self._gender, row2, 1)
+        checks.addWidget(QLabel("Туғилган сана:"), row2, 2)
+        self._born = QDateEdit(QDate(2000, 1, 1))
+        self._born.setCalendarPopup(True)
+        self._born.setDisplayFormat("dd.MM.yyyy")
+        checks.addWidget(self._born, row2, 3)
+        self._read.setVisible(False)
+        root.addWidget(self._read)
+
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(_SETTLE_MS)
+        self._settle.timeout.connect(self._read_now)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ИНН)")
@@ -112,45 +175,79 @@ class InnView(QWidget):
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
 
-    # -- the ИНН off the патент ----------------------------------------
-    def _read_inn(self) -> None:
-        """Fill the ИНН box from the патент the moment it is dropped.
-
-        Only into an EMPTY box. If the operator has already typed a number
-        they meant that number — a reader must never quietly replace it.
-        """
+    # -- the worker and the ИНН, off the dropped document --------------
+    def _on_dropped(self) -> None:
         if self._dz.path is None or not self._c.ai_available():
             return
-        if "".join(c for c in self._inn.text() if c.isdigit()):
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._dz.path is None or not self._c.ai_available():
             return
         data = Path(self._dz.path).read_bytes()
-        self._status.setText("⏳ Патентдан ИНН қидирилаяпти…")
-        run_async(self._c.read_inn, data,
-                  on_success=self._inn_read, on_error=self._inn_not_read)
+        self._status.setText("⏳ Ҳужжат ўқилаяпти…")
+        self._progress.start("Ҳужжат ўқилаяпти…")
+        run_async(self._c.read_all, data,
+                  on_success=self._filled, on_error=self._read_failed)
 
-    def _inn_read(self, digits: str) -> None:
-        if not digits:
-            self._inn_not_read(None)
-            return
-        # still empty? the operator may have typed while the reader was working,
-        # and what they typed wins
-        if "".join(c for c in self._inn.text() if c.isdigit()):
-            return
-        self._inn.setText(digits)
-        self._status.setText(
-            f"✅ ИНН патентдан олинди: {digits} — текширинг, керак бўлса "
-            "ўчириб ўзингиз ёзинг.")
+    def _filled(self, pair) -> None:
+        from src.domain.enums import Gender
 
-    def _inn_not_read(self, _error) -> None:
-        self._status.setText(
-            "ℹ️ Ҳужжатда 12 хонали ИНН топилмади — ИНН рақамини ўзингиз ёзинг.")
+        self._progress.finish()
+        passport, inn_digits = pair
+        resolved = {
+            "surname": passport.surname or "",
+            "name": passport.name or "",
+            "patronymic": passport.patronymic or "",
+            "citizenship": passport.nationality or "",
+        }
+        for key, box in self._boxes.items():
+            box.setText(str(resolved.get(key, "")))
+        self._gender.setCurrentText(
+            "Женский" if passport.gender == Gender.FEMALE else "Мужской")
+        if passport.birth_date:
+            self._born.setDate(QDate(passport.birth_date.year,
+                                     passport.birth_date.month,
+                                     passport.birth_date.day))
+        # the ИНН only into an EMPTY box — a number the operator typed wins
+        if inn_digits and not "".join(c for c in self._inn.text() if c.isdigit()):
+            self._inn.setText(inn_digits)
+        self._read.setVisible(True)
+        found = "✅ ИНН ҳам топилди — " if inn_digits else "ℹ️ ИНН топилмади, ўзингиз ёзинг. "
+        self._status.setText(found + "ўқилганини текширинг, кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._read.setVisible(True)          # so it can be typed by hand
+        message = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    def _edited(self):
+        """The worker as it stands IN THE BOXES — never as it was read."""
+        from src.domain.documents import Passport
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return Passport(
+            surname=said.get("surname") or "—",
+            name=said.get("name") or "—",
+            patronymic=said.get("patronymic") or None,
+            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
+                    else Gender.MALE),
+            birth_date=self._born.date().toPython(),
+            nationality=said.get("citizenship") or None,
+            number="—",
+        )
 
     def _run_ai(self) -> None:
-        if self._dz.path is None:
+        if self._dz.path is None and self._read.isHidden():
             self._warn("Ишчининг паспорти ёки патенти расмини юкланг.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
+        if self._read.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._boxes["surname"].text().strip():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
         digits = "".join(c for c in self._inn.text() if c.isdigit())
         if len(digits) != INN_DIGITS:
@@ -158,11 +255,10 @@ class InnView(QWidget):
                        f"(ҳозир {len(digits)} та).")
             return
 
-        data = Path(self._dz.path).read_bytes()
         self._run.setEnabled(False)
-        self._status.setText("⏳ Ҳужжат ўқилаяпти ва варақ тайёрланяпти…")
+        self._status.setText("⏳ Варақ тайёрланяпти…")
         self._progress.start("ИНН варағи тайёрланяпти…")
-        run_async(self._c.generate_from_image, data,
+        run_async(self._c.generate, self._edited(),
                   inn=digits, form_date=self._form_date(),
                   on_success=self._done, on_error=self._failed)
 
@@ -173,6 +269,9 @@ class InnView(QWidget):
         self._result = result
         self._dz.clear()
         self._inn.clear()
+        for box in self._boxes.values():
+            box.clear()
+        self._read.setVisible(False)
         self._status.setText(
             f"✅ {result.surname} — ИНН {result.inn}\n{result.pdf_path}")
 
@@ -199,6 +298,9 @@ class InnView(QWidget):
     def reset(self) -> None:
         self._dz.clear()
         self._inn.clear()
+        for box in self._boxes.values():
+            box.clear()
+        self._read.setVisible(False)
         self._result = None
         self._open.setEnabled(False)
         self._show_count()

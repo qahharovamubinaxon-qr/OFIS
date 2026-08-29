@@ -30,6 +30,22 @@ class InnController:
         """
         return self._ocr.read_inn(image)
 
+    def read_all(self, image: bytes):
+        """The worker AND the ИНН, from one photograph, for the operator to
+        check before printing.
+
+        The sheet prints the worker's ФИО, sex, birth date and citizenship,
+        and until now they were read INSIDE the print step — so a misread name
+        went onto a filed sheet unseen. Now the passport is read here, shown in
+        editable boxes, and the sheet is printed from what is in them. Returns
+        ``(passport, inn_digits)``.
+        """
+        return self._ocr.read_passport(image), self._ocr.read_inn(image)
+
+    def generate(self, passport, *, inn: str, form_date: date) -> InnResult:
+        """The sheet, from what is IN THE BOXES — not from what was read."""
+        return self._inn.generate(passport, inn=inn, form_date=form_date)
+
     def generate_from_image(
         self,
         image: bytes,
@@ -37,10 +53,11 @@ class InnController:
         inn: str,
         form_date: date,
     ) -> InnResult:
-        """The upload may be a passport or a patent — both print the worker's
+        """Read and print in one go — kept for the bot, which has no screen.
+        The upload may be a passport or a patent — both print the worker's
         ФИО, date of birth and citizenship, which is all the sheet needs."""
-        passport = self._ocr.read_passport(image)
-        return self._inn.generate(passport, inn=inn, form_date=form_date)
+        return self.generate(self._ocr.read_passport(image),
+                             inn=inn, form_date=form_date)
 
     @staticmethod
     def read_image(path: Path) -> bytes:
