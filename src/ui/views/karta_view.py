@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QColorDialog,
+    QComboBox,
     QDateEdit,
     QFileDialog,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -19,10 +21,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.common.errors import OfisError
 from src.common.threading import run_async
 from src.controllers.karta_controller import KartaController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+
+#: Everything the card prints off the passport, so any of it can be corrected
+#: before it is laminated onto a card that is hard to remake.
+_READ_BOXES: tuple[tuple[str, str, str], ...] = (
+    ("surname", "Фамилия:", "Исоев"),
+    ("name", "Имя:", "Аслидин"),
+    ("patronymic", "Отчество:", "Холбердиевич"),
+    ("citizenship", "Гражданство:", "ТАДЖИКИСТАН"),
+)
+_SETTLE_MS = 400
 
 
 class KartaView(QWidget):
@@ -70,10 +83,44 @@ class KartaView(QWidget):
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        # dropped and read at once — the worker's data is shown for checking
+        # before it is printed onto a laminated card
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._photo = DropZone("📷", "Ишчининг расми")
         docs.addWidget(self._photo)
         root.addLayout(docs)
+
+        # -- what was read, for the operator to check --------------------
+        self._read = QGroupBox("Паспортдан ўқилгани — текширинг, "
+                               "хатоси бўлса тўғриланг")
+        checks = QGridLayout(self._read)
+        checks.setHorizontalSpacing(10)
+        checks.setVerticalSpacing(6)
+        self._boxes: dict[str, QLineEdit] = {}
+        for at, (key, label, hint) in enumerate(_READ_BOXES):
+            box = QLineEdit()
+            box.setPlaceholderText(hint)
+            checks.addWidget(QLabel(label), at // 2, (at % 2) * 2)
+            checks.addWidget(box, at // 2, (at % 2) * 2 + 1)
+            self._boxes[key] = box
+        row2 = len(_READ_BOXES) // 2
+        checks.addWidget(QLabel("Жинси:"), row2, 0)
+        self._gender = QComboBox()
+        self._gender.addItems(["Мужской", "Женский"])
+        checks.addWidget(self._gender, row2, 1)
+        checks.addWidget(QLabel("Туғилган сана:"), row2, 2)
+        self._born = QDateEdit(QDate(2000, 1, 1))
+        self._born.setCalendarPopup(True)
+        self._born.setDisplayFormat("dd.MM.yyyy")
+        checks.addWidget(self._born, row2, 3)
+        self._read.setVisible(False)
+        root.addWidget(self._read)
+
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(_SETTLE_MS)
+        self._settle.timeout.connect(self._read_now)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -265,12 +312,70 @@ class KartaView(QWidget):
             "Имзо: қўйилди ✅" if self._signature
             else "Имзо: ҳали қўйилмаган (ихтиёрий)")
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        data = Path(self._passport.path).read_bytes()
+        self._status.setText("⏳ Паспорт ўқилаяпти…")
+        self._progress.start("Паспорт ўқилаяпти…")
+        run_async(self._c.read_passport, data,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        from src.domain.enums import Gender
+
+        self._progress.finish()
+        resolved = {
+            "surname": passport.surname or "",
+            "name": passport.name or "",
+            "patronymic": passport.patronymic or "",
+            "citizenship": passport.nationality or "",
+        }
+        for key, box in self._boxes.items():
+            box.setText(str(resolved.get(key, "")))
+        self._gender.setCurrentText(
+            "Женский" if passport.gender == Gender.FEMALE else "Мужской")
+        if passport.birth_date:
+            self._born.setDate(QDate(passport.birth_date.year,
+                                     passport.birth_date.month,
+                                     passport.birth_date.day))
+        self._read.setVisible(True)
+        self._status.setText("✅ Ўқилди — текширинг, кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._read.setVisible(True)          # so it can be typed by hand
+        message = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    def _edited(self):
+        """The worker as it stands IN THE BOXES — never as it was read."""
+        from src.domain.documents import Passport
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return Passport(
+            surname=said.get("surname") or "—",
+            name=said.get("name") or "—",
+            patronymic=said.get("patronymic") or None,
+            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
+                    else Gender.MALE),
+            birth_date=self._born.date().toPython(),
+            nationality=said.get("citizenship") or None,
+            number="—")
+
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
         if self._c.blank("inner") is None:
             self._warn("Аввал ички бланкани юкланг.")
             return
-        if self._passport.path is None:
+        if self._passport.path is None and self._read.isHidden():
             self._warn("Паспорт расмини ташланг.")
             return
         if self._photo.path is None:
@@ -279,20 +384,22 @@ class KartaView(QWidget):
         if not self._code.text().strip():
             self._warn("Карта рақамини киритинг (масалан АВ1563244).")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+        if self._read.isHidden():
+            self._warn("Паспорт ҳали ўқилмади — бир оз кутинг.")
             return
-        passport = Path(self._passport.path).read_bytes()
+        if not self._boxes["surname"].text().strip():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
         photo = Path(self._photo.path).read_bytes()
         issued = self._from.date().toPython()
         code = self._code.text().strip()
         signature = self._signature
+        worker = self._edited()
 
         self._run.setEnabled(False)
-        self._progress.start("Паспорт ўқилиб, карта тайёрланаяпти…")
+        self._progress.start("Карта тайёрланаяпти…")
 
         def work():
-            worker = self._c.read_passport(passport)
             return self._c.generate(passport=worker, photo=photo,
                                     signature=signature, issued=issued,
                                     card_code=code)
@@ -304,6 +411,9 @@ class KartaView(QWidget):
         self._run.setEnabled(True)
         self._signature = None
         self._sign_state.setText("Имзо: ҳали қўйилмаган (ихтиёрий)")
+        for box in self._boxes.values():
+            box.clear()
+        self._read.setVisible(False)
         self._reload()
         self._status.setText(f"✅ Тайёр: {result.saved} "
                              f"(№ {result.card_number})")
