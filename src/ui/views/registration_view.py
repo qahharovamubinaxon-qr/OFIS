@@ -263,6 +263,8 @@ class RegistrationView(QWidget):
         self._born.setDisplayFormat("dd.MM.yyyy")
         checks.addWidget(self._born, last, 3)
         self._read.setVisible(False)
+        from src.ui.widgets.shadow import add_shadow
+        add_shadow(self._read)
         root.addWidget(self._read)
 
         # coalesces several drops into one read
