@@ -66,17 +66,21 @@ INKS: dict[str, tuple[str, str]] = {
     "light": ("#1B1A18", "#6E6A62"),
 }
 
-#: On ink, the card's own pastel: this is the colour of the blank itself, and
-#: on a dark ground it reads the way ink reads on a plate.
+#: The section's colour on the night ground. Vivid mid-tones — a saturated
+#: version of the paper the section prints on — so the RUN button, the nav
+#: rail and the focus ring read as a confident, modern accent rather than a
+#: washed-out pastel. The ink is near-black, which sits cleanly on every one
+#: of these tones (the RUN button is coloured with dark text, like a printed
+#: chip). Softer, brighter twin for hover.
 DARK: dict[str, Stock] = {
-    "pink": Stock("#E9A7BF", "#F2B9CD", "#2A1720"),
-    "sage": Stock("#A9CBB7", "#BADCC7", "#16261D"),
-    "blue": Stock("#9DC0E0", "#AFD0EC", "#10202E"),
-    "red": Stock("#E3A6A2", "#EEB7B3", "#2A1513"),
-    "violet": Stock("#BDB2DE", "#CEC4EA", "#1D1830"),
-    "rose": Stock("#DFA3C4", "#EBB5D2", "#2B1523"),
-    "brass": Stock("#DCC38A", "#E9D3A0", "#2A2212"),
-    "house": Stock("#A8BEDC", "#BACEE9", "#121A26"),
+    "pink": Stock("#E86A93", "#F07EA3", "#2A0C16"),
+    "sage": Stock("#4FB185", "#61C296", "#06160E"),
+    "blue": Stock("#559FD9", "#6DB0E5", "#071726"),
+    "red": Stock("#E2685F", "#EE7C73", "#290C0A"),
+    "violet": Stock("#9A85E2", "#AC98ED", "#150E2C"),
+    "rose": Stock("#DC6BA9", "#E87FB8", "#2A0D1E"),
+    "brass": Stock("#D2A54C", "#E0B563", "#241A06"),
+    "house": Stock("#6198D6", "#79AAE2", "#0A1626"),
 }
 
 #: On paper, the same document's *ink* rather than its stock — a pastel on
