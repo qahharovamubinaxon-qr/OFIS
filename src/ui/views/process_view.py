@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -35,6 +35,7 @@ from src.ui.i18n import Translator
 from src.ui.views.manual_dialog import ManualFillDialog
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.section import field, header
 
 log = get_logger(__name__)
 
@@ -46,35 +47,35 @@ class ProcessView(QWidget):
         self._tr = translator
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(14)
+        root.setContentsMargins(30, 26, 30, 24)
+        root.setSpacing(20)
 
-        title = QLabel(self._tr.tr("nav.process", "Process Employee"))
-        title.setObjectName("viewTitle")
-        root.addWidget(title)
+        badge = "🟢 AI тайёр" if self._ai_ready() else "⚪ AI калити йўқ"
+        root.addWidget(header(
+            self._tr.tr("nav.process", "Обработка сотрудника"),
+            "Паспорт ва патентни юкланг — AI ўқийди, RUN билан ҳужжат "
+            "тайёр бўлади.", badge))
 
         # -- company + date + должность --------------------------------
         row = QHBoxLayout()
+        row.setSpacing(16)
         self._company = QComboBox()
         self._reload_companies()
-        row.addWidget(QLabel("Фирма:"))
-        row.addWidget(self._company, stretch=2)
+        row.addLayout(field("Фирма", self._company, stretch=1), stretch=2)
 
         self._date = QDateEdit()
         self._date.setDisplayFormat("dd.MM.yyyy")
         self._date.setDate(QDate.currentDate())
         self._date.setCalendarPopup(True)
-        row.addWidget(QLabel("Дата:"))
-        row.addWidget(self._date)
+        row.addLayout(field("Дата", self._date))
 
         self._profession = QLineEdit(DEFAULT_PROFESSION)
-        row.addWidget(QLabel("Должность:"))
-        row.addWidget(self._profession, stretch=1)
+        row.addLayout(field("Должность", self._profession, stretch=1), stretch=1)
         root.addLayout(row)
 
         # -- AI upload: big drag & drop tiles ---------------------------
         up = QHBoxLayout()
-        up.setSpacing(12)
+        up.setSpacing(16)
         self._dz_passport = DropZone("🛂", "Паспорт")
         self._dz_patent = DropZone("📄", "Патент (олд)")
         self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
@@ -133,6 +134,12 @@ class ProcessView(QWidget):
     def _form_date(self) -> date:
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
+
+    def _ai_ready(self) -> bool:
+        try:
+            return self._c.ai_available()
+        except Exception:  # noqa: BLE001 - the badge must never break the screen
+            return False
 
     def _ai_hint(self) -> str:
         if self._c.ai_available():

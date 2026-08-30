@@ -67,7 +67,13 @@ QMenu::item:selected { background: #22242F; }
 #viewTitle { font-size: 31px; font-weight: 700; color: #FFFFFF;
              background: transparent; letter-spacing: -0.4px;
              padding-bottom: 12px; border-bottom: 2px solid @ACCENT@; }
-#viewSubtitle { font-size: 13px; color: #9A97A1; margin-top: 8px; background: transparent; }
+#viewSubtitle { font-size: 13px; color: #9A97A1; background: transparent; }
+/* the small upper-case label that sits above an input, modern-form style */
+#fieldLabel { font-size: 10.5px; font-weight: 700; letter-spacing: 1px;
+              color: #8E8B96; background: transparent; }
+/* the status chip on the right of a header (e.g. «AI тайёр») */
+#viewBadge { color: @ACCENT@; background: #191B24; border: 1px solid #2B2E3B;
+             border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; }
 
 /* ---------- status bar ---------- */
 QStatusBar { background: #0C0D13; color: #9A97A1; border-top: 1px solid #1E2029; }
