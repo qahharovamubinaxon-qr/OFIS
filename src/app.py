@@ -285,13 +285,20 @@ def main() -> int:
     window.show()
 
     # Telegram bot (phone remote-control) — silent no-op without a token.
+    # If the headless bot (bot.bat) is already running, stand aside: two
+    # pollers on one token collide on Telegram's 409.
+    from src.common import bot_lock
     from src.controllers.telegram_bot import TelegramBot
 
     bot = TelegramBot(container)
-    try:
-        bot.start()
-    except Exception as exc:  # noqa: BLE001 - bot must never block the UI
-        log.error("Telegram bot failed to start: %s", exc)
+    if bot_lock.running():
+        log.info("Telegram бот фонда (bot.bat) ишлаяпти — ойнада иккинчиси "
+                 "ишга туширилмади")
+    else:
+        try:
+            bot.start()
+        except Exception as exc:  # noqa: BLE001 - bot must never block the UI
+            log.error("Telegram bot failed to start: %s", exc)
     window._telegram_bot = bot  # keep alive for the app's lifetime
 
     # Mini App — the same modules as a phone page; off unless switched on.
