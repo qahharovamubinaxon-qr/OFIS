@@ -17,6 +17,7 @@ from src.ai.prompts import (
     patent_back_prompt,
     prompt_for,
 )
+from src.common.errors import OfisError
 from src.common.logging import get_logger
 from src.domain.document_number import strip_document_check_digit
 from src.domain.documents import Passport, Patent
@@ -454,7 +455,8 @@ class OcrService:
         )
 
     def read_documents(
-        self, passport_image: bytes, patent_front: bytes | None = None, patent_back: bytes | None = None
+        self, passport_image: bytes, patent_front: bytes | None = None,
+        patent_back: bytes | None = None,
     ) -> tuple[Passport, Patent | None]:
         """Read passport + patent and return a consistent (Passport, Patent).
 
@@ -463,7 +465,21 @@ class OcrService:
         supplies citizenship, birth date, series, number, issue date and issuer.
         """
         passport = self.read_passport(passport_image)
-        patent = self.read_patent(patent_front, patent_back) if patent_front else None
+        # The passport is the document; the patent only IMPROVES the Russian
+        # name for a non-Cyrillic passport. So a patent that will not read —
+        # a blurred photo, a spent daily quota, a second image that is not a
+        # patent at all — must not sink the whole paper: the office saw a
+        # perfectly good passport read and then «openrouter: лимит тугади»
+        # because the patent, and only the patent, had exhausted the chain.
+        # Read it when it is there, and carry on with the passport when it
+        # will not come.
+        patent: Patent | None = None
+        if patent_front:
+            try:
+                patent = self.read_patent(patent_front, patent_back)
+            except OfisError as exc:  # AiError and its kin are OfisError
+                log.warning("Патент ўқилмади — паспорт билан давом этамиз: %s",
+                            exc.message)
         # written down every time: when a ФИО comes out wrong the office's
         # log has to say WHICH document it came off, and whether the two
         # documents agreed — otherwise the reading cannot be argued with
