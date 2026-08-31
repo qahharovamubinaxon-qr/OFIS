@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -42,6 +44,44 @@ from src.ui.widgets.run_progress import RunProgress
 from src.ui.widgets.spot_picker import SpotPickerDialog
 
 log = get_logger(__name__)
+
+#: Everything the ХОСТЕЛ «Уведомление о прибытии» prints off the worker's
+#: documents, shown for the operator to check before it goes onto a filed form.
+#: The name and citizenship come off the patent when there is one (it prints
+#: them in Russian), the rest off the passport — but once here they are just the
+#: values, and these boxes are the single source RUN prints from.
+_READ_BOXES: tuple[tuple[str, str, str], ...] = (
+    ("surname", "Фамилия:", "Исоев"),
+    ("name", "Имя:", "Аслидин"),
+    ("patronymic", "Отчество:", "Холбердиевич"),
+    ("citizenship", "Гражданство:", "ТАДЖИКИСТАН"),
+    ("series", "Паспорт серия:", "P"),
+    ("number", "Паспорт номер:", "405847273"),
+    ("issue_date", "Паспорт берилган:", "18.01.2025"),
+    ("expiry_date", "Паспорт амал охири:", "17.01.2035"),
+)
+
+#: How long to wait after a file lands before reading, so dropping the passport
+#: and the patent one after the other reads them together, once.
+_SETTLE_MS = 400
+
+
+def _date_text(when) -> str:
+    return when.strftime("%d.%m.%Y") if when else ""
+
+
+def _date_of(said: str):
+    """«18.01.2025» → a date, or nothing when it is not one."""
+    from datetime import datetime
+
+    said = (said or "").strip()
+    for shape in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(said, shape).date()
+        except ValueError:
+            continue
+    return None
+
 
 _FIELDS = [
     ("label", "Nomi (ro'yxatda ko'rinadi, masalan: ХОСТЕЛ ЛУЖСКАЯ 10)"),
@@ -250,9 +290,50 @@ class HostelView(QWidget):
         self._dz_passport = DropZone("🛂", "Паспорт")
         self._dz_patent = DropZone("📄", "Патент (олд)")
         self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
+        # dropped and read at once: the operator does not press anything, and
+        # every dropped file re-reads after a short settle so the passport and
+        # the patent are read together rather than twice
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
+            dz.changed.connect(self._on_dropped)
             up.addWidget(dz, stretch=1)
         root.addLayout(up)
+
+        # -- what was read, for the operator to check -------------------
+        # Reading and printing used to be one press, so a wrong name off a
+        # misread patent went straight onto a filed уведомление. Everything the
+        # form prints off the documents is shown here first, and editable.
+        self._read = QGroupBox("Ҳужжатлардан ўқилгани — текширинг, "
+                               "хатоси бўлса тўғриланг")
+        checks = QGridLayout(self._read)
+        checks.setHorizontalSpacing(10)
+        checks.setVerticalSpacing(6)
+        self._boxes: dict[str, QLineEdit] = {}
+        for at, (key, label, hint) in enumerate(_READ_BOXES):
+            box = QLineEdit()
+            box.setPlaceholderText(hint)
+            checks.addWidget(QLabel(label), at // 2, (at % 2) * 2)
+            checks.addWidget(box, at // 2, (at % 2) * 2 + 1)
+            self._boxes[key] = box
+        last = len(_READ_BOXES) // 2
+        checks.addWidget(QLabel("Жинси:"), last, 0)
+        self._gender = QComboBox()
+        self._gender.addItems(["Мужской", "Женский"])
+        checks.addWidget(self._gender, last, 1)
+        checks.addWidget(QLabel("Туғилган сана:"), last, 2)
+        self._born = QDateEdit(QDate(2000, 1, 1))
+        self._born.setCalendarPopup(True)
+        self._born.setDisplayFormat("dd.MM.yyyy")
+        checks.addWidget(self._born, last, 3)
+        self._read.setVisible(False)
+        from src.ui.widgets.shadow import add_shadow
+        add_shadow(self._read)
+        root.addWidget(self._read)
+
+        # coalesces several drops into one read
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(_SETTLE_MS)
+        self._settle.timeout.connect(self._read_now)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (Хостел)")
@@ -450,28 +531,114 @@ class HostelView(QWidget):
         self._c.archive_address(address.id)
         self.refresh()
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """A file landed — read after a short settle, so the passport and the
+        patent dropped one after the other are read together, once."""
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._dz_passport.path)
+        patent = (self._c.read_image(self._dz_patent.path)
+                  if self._dz_patent.path else None)
+        patent_back = (self._c.read_image(self._dz_patent_back.path)
+                       if self._dz_patent_back.path else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent, patent_back,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        """Show what was read: the patent's name if there was one, else the
+        passport's — resolved the same way the printed form resolves it."""
+        from src.domain.enums import Gender
+
+        self._progress.finish()
+        passport, patent = pair
+        resolved = {
+            "surname": (patent.holder_surname if patent else None) or passport.surname,
+            "name": (patent.holder_name if patent else None) or passport.name,
+            "patronymic": (patent.holder_patronymic if patent else None)
+            or passport.patronymic or "",
+            "citizenship": (patent.holder_citizenship if patent else None)
+            or passport.nationality or "",
+            "series": passport.series or "",
+            "number": passport.number or "",
+            "issue_date": _date_text(passport.issue_date),
+            "expiry_date": _date_text(passport.expiry_date),
+        }
+        for key, box in self._boxes.items():
+            box.setText(str(resolved.get(key, "")))
+        self._gender.setCurrentText(
+            "Женский" if passport.gender == Gender.FEMALE else "Мужской")
+        if passport.birth_date:
+            self._born.setDate(QDate(passport.birth_date.year,
+                                     passport.birth_date.month,
+                                     passport.birth_date.day))
+        self._read.setVisible(True)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._read.setVisible(True)          # so it can be typed by hand
+        msg = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {msg}. Қўлда ёзинг.")
+
+    def _edited(self):
+        """The worker as it stands IN THE BOXES — never as it was read.
+
+        A single Passport carries every value the form needs, so patent is
+        None at print time: the patent's job was only to supply a Russian name
+        when the passport had none, and that name is already in the boxes.
+        """
+        from src.domain.documents import Passport
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return Passport(
+            surname=said.get("surname") or "—",
+            name=said.get("name") or "—",
+            patronymic=said.get("patronymic") or None,
+            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
+                    else Gender.MALE),
+            birth_date=self._born.date().toPython(),
+            nationality=said.get("citizenship") or None,
+            series=said.get("series") or None,
+            number=said.get("number") or "—",
+            issue_date=_date_of(said.get("issue_date", "")),
+            expiry_date=_date_of(said.get("expiry_date", "")),
+        )
+
+    # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
         address = self._selected()
         if address is None:
             self._warn("Avval xostel tanlang yoki qo'shing.")
             return
-        if not self._c.ai_available():
-            self._warn("AI kaliti yo'q. Sozlamalarga Gemini kalitini kiriting.")
-            return
-        if self._dz_passport.path is None:
+        # isHidden(), not isVisible(): the read block is revealed with
+        # setVisible(True), which clears the hidden flag whether or not the
+        # window itself has been shown — so the guard reads the same on screen
+        # and under test.
+        if self._dz_passport.path is None and self._read.isHidden():
             self._warn("Pasport rasmini yuklang.")
             return
+        if self._read.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._boxes["surname"].text().strip():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
 
-        passport = self._c.read_image(self._dz_passport.path)
-        patent = self._c.read_image(self._dz_patent.path) if self._dz_patent.path else None
-        back = (self._c.read_image(self._dz_patent_back.path)
-                if self._dz_patent_back.path else None)
-        expiry = self._expiry_date()
-        start = self._start_date()
-        self._busy("AI o'qiyapti va xostel PDF yaratyapti…")
+        self._busy("Хостел PDF яратиляпти…")
         run_async(
-            self._c.generate_from_images, address, passport, patent, back,
-            registration_expiry=expiry, registration_start=start,
+            self._c.generate, self._edited(), None, address,
+            registration_expiry=self._expiry_date(),
+            registration_start=self._start_date(),
             on_success=self._done, on_error=self._failed,
         )
 
@@ -486,6 +653,9 @@ class HostelView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()
+        for box in self._boxes.values():
+            box.clear()
+        self._read.setVisible(False)
         from src.ui.widgets.save_to import ask_save_dir
 
         saved = ask_save_dir(self, [result.pdf_path])
