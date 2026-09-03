@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -118,9 +118,16 @@ class SveraView(QWidget):
         up.setSpacing(12)
         self._dz_photo = DropZone("🖼️", "O'quvchi rasmi (foto)")
         self._dz_passport = DropZone("🛂", "Паспорт (ихтиёрий)")
+        # dropping the passport reads the ФИО straight into the boxes above,
+        # for the operator to check before printing
+        self._dz_passport.changed.connect(self._on_passport_dropped)
         for dz in (self._dz_photo, self._dz_passport):
             up.addWidget(dz, stretch=1)
         root.addLayout(up)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_passport)
 
         # -- actions ----------------------------------------------------
         actions = QHBoxLayout()
@@ -192,6 +199,36 @@ class SveraView(QWidget):
         except Exception as exc:  # noqa: BLE001 - surface to the user
             QMessageBox.warning(self, "Xato", str(exc))
 
+    # ------------------------------------------------------------ reading
+    def _on_passport_dropped(self) -> None:
+        """The (optional) passport landed — read the ФИО into the boxes."""
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_passport(self) -> None:
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        data = self._c.read_image(self._dz_passport.path)
+        self._status.setText("⏳ Паспорт ўқиляпти…")
+        self._progress.start("Паспорт ўқиляпти…")
+        run_async(self._c.read_passport, data,
+                  on_success=self._name_filled, on_error=self._read_failed)
+
+    def _name_filled(self, passport) -> None:
+        self._progress.finish()
+        self._surname.setText(passport.surname or "")
+        self._name.setText(passport.name or "")
+        self._patronymic.setText(passport.patronymic or "")
+        self._status.setText("✅ Ф.И.О. ўқилди — текширинг, хатоси бўлса "
+                             "тўғриланг, кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        msg = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {msg}. Ф.И.О. ни қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
         profession = self._selected_profession()
         if profession is None:
@@ -201,28 +238,21 @@ class SveraView(QWidget):
             self._warn("O'quvchi rasmini (foto) yuklang.")
             return
 
+        # the boxes are the single source: the passport, when dropped, has
+        # already read its ФИО into them for the operator to check
         surname = self._surname.text().strip()
         name = self._name.text().strip()
         patronymic = self._patronymic.text().strip()
-        if self._dz_passport.path is None:
-            if not (surname and name):
-                self._warn("Pasport yuklang, yoki hech bo'lmasa familiya "
-                           "va ismni yozing.")
-                return
-            passport = None
-        else:
-            if not self._c.ai_available():
-                self._warn("AI kaliti yo'q. Sozlamalarga Gemini kalitini "
-                           "kiriting, yoki Ф.И.О. ni qo'lda yozing.")
-                return
-            passport = self._c.read_image(self._dz_passport.path)
+        if not (surname and name):
+            self._warn("Ф.И.О. бўш — паспорт юкланг (ўзи ўқийди) ёки қўлда "
+                       "камида фамилия ва исмни ёзинг.")
+            return
 
         photo_path = self._dz_photo.path
         issue_date = self._issue_date()
-        self._busy("СФЕРА PDF yaratyapti…" if passport is None
-                   else "AI o'qiyapti va СФЕРА PDF yaratyapti…")
+        self._busy("СФЕРА PDF yaratyapti…")
         run_async(
-            self._c.generate_from_images, profession, passport, photo_path,
+            self._c.generate_from_images, profession, None, photo_path,
             issue_date=issue_date, surname=surname, name=name,
             patronymic=patronymic,
             on_success=self._done, on_error=self._failed,

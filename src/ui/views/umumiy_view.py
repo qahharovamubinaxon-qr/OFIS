@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -99,9 +99,20 @@ class UmumiyView(QWidget):
         self._dz_worker = MultiDropZone(
             "Ишчи ҳужжатлари — паспорт · патент · миграционка (хоҳлаганча)",
             limit=10, icon="🛂", min_height=170)
+        # dropping the worker's documents reads them straight away
+        self._dz_worker.changed.connect(self._on_dropped)
         up.addWidget(self._dz_doc, stretch=1)
         up.addWidget(self._dz_worker, stretch=1)
         root.addLayout(up, stretch=1)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (Умумий)")
@@ -207,32 +218,64 @@ class UmumiyView(QWidget):
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """The worker's documents landed — read them after a short settle."""
+        if not self._dz_worker.files or not self._ocr.available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if not self._dz_worker.files or not self._ocr.available():
+            return
+        images = [f.read_bytes() for f in self._dz_worker.files]
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+
+        def work():
+            # Any mix of worker documents is accepted: the first image is read
+            # as the identity document, the rest add patent/migration details.
+            return self._ocr.read_documents(
+                images[0],
+                images[1] if len(images) > 1 else None,
+                images[2] if len(images) > 2 else None,
+            )
+
+        run_async(work, on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        self._progress.finish()
+        passport, patent = pair
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        msg = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {msg}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
         slug = self._selected_slug()
         if slug is None and not self._dz_doc.files:
             self._warn("Шаблон танланг ёки қайта ишланадиган ҳужжатни (PDF) юкланг.")
             return
-        if not self._ocr.available():
-            self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
+        if self._review.isHidden():
+            self._warn("Ишчининг камида битта ҳужжат расмини юкланг — ўқилсин.")
             return
-        if not self._dz_worker.files:
-            self._warn("Ишчининг камида битта ҳужжат расмини юкланг "
-                       "(паспорт, патент ёки миграционка).")
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
 
         source = self._dz_doc.files[0] if self._dz_doc.files else None
-        images = [f.read_bytes() for f in self._dz_worker.files]
         form_date = self._form_date()
         templates = self._templates
+        passport = self._review.edited()
+        patent = self._review.edited_patent()
 
         def work():
-            # Any mix of worker documents is accepted: the first image is read
-            # as the identity document, the rest add patent/migration details.
-            passport, patent = self._ocr.read_documents(
-                images[0],
-                images[1] if len(images) > 1 else None,
-                images[2] if len(images) > 2 else None,
-            )
             if slug is not None:
                 path = templates.fill(slug, passport, patent, form_date=form_date)
                 tpl = templates.get(slug)
@@ -244,7 +287,7 @@ class UmumiyView(QWidget):
         self._run.setEnabled(False)
         self._status.setText(
             "⏳ Шаблон тўлдирилаяпти…" if slug is not None
-            else "⏳ AI ҳужжатни ўқияпти ва янги ишчига мослаяпти…")
+            else "⏳ Янги ишчига мосланяпти…")
         self._progress.start("Ҳужжат тайёрланяпти…")
         run_async(work, on_success=self._done, on_error=self._failed)
 
@@ -253,6 +296,7 @@ class UmumiyView(QWidget):
         self._run.setEnabled(True)
         self._progress.finish()
         self._dz_worker.clear_files()
+        self._review.reset()
         from src.ui.widgets.save_to import ask_save_dir
 
         saved = ask_save_dir(self, [result.pdf_path])

@@ -47,6 +47,11 @@ class SveraController:
     def next_po_number(self) -> int:
         return self._svera.next_po_number()
 
+    def read_passport(self, passport_image: bytes) -> Passport:
+        """The student's ФИО off the passport, for the operator to check in the
+        name boxes before the СФЕРА cert is printed."""
+        return self._ocr.read_passport(passport_image)
+
     def generate_from_images(
         self,
         profession: Profession,
