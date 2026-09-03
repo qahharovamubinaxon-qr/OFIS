@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -106,12 +106,24 @@ class Trud8View(QWidget):
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._front = DropZone("🩷", "Патент олди")
+        self._front.changed.connect(self._on_dropped)
         docs.addWidget(self._front)
         self._back = DropZone("🩶", "Патент орқаси")
+        self._back.changed.connect(self._on_dropped)
         docs.addWidget(self._back)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -275,38 +287,70 @@ class Trud8View(QWidget):
         self._status.setText(f"✅ {tag}: {len(kept)} та матн сақланди.")
 
     # ---------------------------------------------------------- printing
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """Passport + patent front both landed — read after a settle. The ТД/УВ
+        print the patent's own number and dates, so both are needed."""
+        if (self._passport.path is None or self._front.path is None
+                or not self._c.ai_available()):
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or self._front.path is None:
+            return
+        passport = self._c.read_image(self._passport.path)
+        front = self._c.read_image(self._front.path)
+        back = (self._c.read_image(self._back.path)
+                if self._back.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, front, back,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        self._progress.finish()
+        passport, patent = pair
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _generate(self) -> None:
         firm = self._firm_now()
         if firm is None:
             return
-        if self._passport.path is None or self._front.path is None:
-            self._warn("Паспорт ва патент олди расмларини ташланг.")
+        if self._review.isHidden():
+            self._warn("Паспорт ва патент олди расмларини ташланг — ўқилсин.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
-        passport = Path(self._passport.path).read_bytes()
-        front = Path(self._front.path).read_bytes()
-        back = (Path(self._back.path).read_bytes()
-                if self._back.path is not None else None)
         when = self._date.date().toPython()
         profession = self._profession.currentText().strip()
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқилиб, ТД ва УВ тайёрланаяпти…")
-
-        def work():
-            read_passport, read_patent = self._c.read_documents(
-                passport, front, back)
-            return self._c.generate(
-                firm=firm, passport=read_passport, patent=read_patent,
-                profession=profession, deal_date=when)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("ТД ва УВ тайёрланаяпти…")
+        run_async(
+            self._c.generate,
+            firm=firm, passport=self._review.edited(),
+            patent=self._review.edited_patent(),
+            profession=profession, deal_date=when,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._front.clear()
+        self._back.clear()
+        self._review.reset()
         names = ", ".join(p.name for p in result.saved)
         self._status.setText(f"✅ Тайёр: {names}")
 

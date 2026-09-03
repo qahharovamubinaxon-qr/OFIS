@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -84,12 +84,24 @@ class MvdTrudView(QWidget):
         # -- the three photographs -------------------------------------
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._front = DropZone("🩷", "Патент олди")
+        self._front.changed.connect(self._on_dropped)
         docs.addWidget(self._front)
         self._back = DropZone("🩶", "Патент орқаси")
+        self._back.changed.connect(self._on_dropped)
         docs.addWidget(self._back)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         # -- the picks --------------------------------------------------
         grid = QGridLayout()
@@ -250,25 +262,54 @@ class MvdTrudView(QWidget):
             f"✅ «{template.stem}» бланкасининг матн жойлари сақланди — "
             "ҳамма саҳифада.")
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """Passport + patent front both landed — read them after a settle.
+
+        The ТРУД packet needs the patent's own number and dates printed, so it
+        reads only once both the passport and the patent front are in."""
+        if (self._passport.path is None or self._front.path is None
+                or not self._c.ai_available()):
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or self._front.path is None:
+            return
+        passport = self._c.read_image(self._passport.path)
+        front = self._c.read_image(self._front.path)
+        back = (self._c.read_image(self._back.path)
+                if self._back.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, front, back,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        self._progress.finish()
+        passport, patent = pair
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
     # ------------------------------------------------------------ printing
     def _generate(self) -> None:
         template = self._template.currentData()
         if not template:
             self._warn("Аввал бланкани юкланг.")
             return
-        for zone, nomi in ((self._passport, "паспорт"),
-                           (self._front, "патент олди")):
-            if zone.path is None:
-                self._warn(f"{nomi.capitalize()} расмини ташланг.")
-                return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+        if self._review.isHidden():
+            self._warn("Паспорт ва патент олди расмини ташланг — ўқилсин.")
             return
-
-        passport = Path(self._passport.path).read_bytes()
-        front = Path(self._front.path).read_bytes()
-        back = (Path(self._back.path).read_bytes()
-                if self._back.path is not None else None)
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
         when = self._date.date().toPython()
         profession = self._profession.currentText().strip()
         uved_no = self._uved_no.text().strip()
@@ -278,22 +319,22 @@ class MvdTrudView(QWidget):
             self._c.remember_work_address(work_address)
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқилиб, 10 варақ тўлдирилаяпти…")
-
-        def work():
-            read_passport, read_patent = self._c.read_documents(
-                passport, front, back)
-            return self._c.generate(
-                template=Path(template), passport=read_passport,
-                patent=read_patent, profession=profession,
-                deal_date=when, uved_no=uved_no, spravka_no=spravka_no,
-                work_address=work_address)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("10 варақ тўлдирилаяпти…")
+        run_async(
+            self._c.generate,
+            template=Path(template), passport=self._review.edited(),
+            patent=self._review.edited_patent(), profession=profession,
+            deal_date=when, uved_no=uved_no, spravka_no=spravka_no,
+            work_address=work_address,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._front.clear()
+        self._back.clear()
+        self._review.reset()
         self._status.setText(f"✅ Тайёр: {result.saved}")
 
     def _failed(self, error: Exception) -> None:

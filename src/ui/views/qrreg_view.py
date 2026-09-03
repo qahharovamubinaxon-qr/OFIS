@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -86,10 +86,21 @@ class QrRegView(QWidget):
         # -- the two photographs ---------------------------------------
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._patent = DropZone("🩷", "Патент (русча ФИО учун)")
+        self._patent.changed.connect(self._on_dropped)
         docs.addWidget(self._patent)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         # -- dates + code ----------------------------------------------
         grid = QGridLayout()
@@ -366,21 +377,49 @@ class QrRegView(QWidget):
         self._status.setText("✅ Матн жойлари сақланди.")
 
     # ------------------------------------------------------------ printing
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """Passport landed — read after a settle (with the patent if present,
+        for the Russian ФИО)."""
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._passport.path)
+        patent = (self._c.read_image(self._patent.path)
+                  if self._patent.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        self._progress.finish()
+        self._review.fill(passport)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _generate(self) -> None:
         template = self._template.currentData()
         if not template:
             self._warn("Аввал бланкани юкланг.")
             return
-        if self._passport.path is None:
-            self._warn("Паспорт расмини ташланг.")
+        if self._review.isHidden():
+            self._warn("Паспорт расмини ташланг — ўқилсин.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
-
-        passport = Path(self._passport.path).read_bytes()
-        patent = (Path(self._patent.path).read_bytes()
-                  if self._patent.path is not None else None)
         valid_from = self._from.date().toPython()
         valid_to = self._to.date().toPython()
         code = self._code.text().strip()
@@ -396,19 +435,20 @@ class QrRegView(QWidget):
             "host_patronymic": self._host_patronymic.text()}
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқилиб, QR тайёрланаяпти…")
-
-        def work():
-            worker = self._c.read_documents(passport, patent)
-            return self._c.generate(template=Path(template), passport=worker,
-                                    valid_from=valid_from, valid_to=valid_to,
-                                    address=address, code=code)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("QR тайёрланаяпти…")
+        run_async(
+            self._c.generate, template=Path(template),
+            passport=self._review.edited(),
+            valid_from=valid_from, valid_to=valid_to,
+            address=address, code=code,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._patent.clear()
+        self._review.reset()
         self._status.setText(f"✅ Рабочий столга сақланди: {result.saved.name}\n"
                              f"🔗 {result.link}")
 

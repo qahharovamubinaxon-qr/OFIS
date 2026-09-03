@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -88,12 +88,23 @@ class AlpinistView(QWidget):
         # -- the three pictures ----------------------------------------
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._patent = DropZone("🩷", "Патент (русча ФИО учун)")
+        self._patent.changed.connect(self._on_dropped)
         docs.addWidget(self._patent)
         self._photo = DropZone("📷", "Ишчининг ўз расми")
         docs.addWidget(self._photo)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         # -- inputs -----------------------------------------------------
         grid = QGridLayout()
@@ -282,13 +293,48 @@ class AlpinistView(QWidget):
             else "Имзо: ҳали қўйилмаган ⚠️")
 
     # ---------------------------------------------------------- printing
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """Passport landed — read after a settle (with the patent if present,
+        for the Russian ФИО)."""
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._passport.path)
+        patent = (self._c.read_image(self._patent.path)
+                  if self._patent.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        self._progress.finish()
+        self._review.fill(passport)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _generate(self) -> None:
         template = self._template.currentData()
         if not template:
             self._warn("Аввал бланкани юкланг.")
             return
-        if self._passport.path is None:
-            self._warn("Паспорт расмини ташланг.")
+        if self._review.isHidden():
+            self._warn("Паспорт расмини ташланг — ўқилсин.")
+            return
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
         if self._photo.path is None:
             self._warn("Ишчининг ўз расмини ташланг.")
@@ -296,13 +342,7 @@ class AlpinistView(QWidget):
         if self._signature is None:
             self._warn("Ишчи аввал «✍ Имзо қўйиш» билан имзо қўйсин.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
-            return
 
-        passport = Path(self._passport.path).read_bytes()
-        patent = (Path(self._patent.path).read_bytes()
-                  if self._patent.path is not None else None)
         photo = Path(self._photo.path).read_bytes()
         issue_date = self._from.date().toPython()
         ud_number = self._ud_number.text().strip()
@@ -310,20 +350,21 @@ class AlpinistView(QWidget):
         signature = self._signature
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқилиб, карта тайёрланаяпти…")
-
-        def work():
-            worker = self._c.read_documents(passport, patent)
-            return self._c.generate(
-                template=Path(template), passport=worker,
-                issue_date=issue_date, ud_number=ud_number,
-                blank_number=blank_number, photo=photo, signature=signature)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("Карта тайёрланаяпти…")
+        run_async(
+            self._c.generate,
+            template=Path(template), passport=self._review.edited(),
+            issue_date=issue_date, ud_number=ud_number,
+            blank_number=blank_number, photo=photo, signature=signature,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._patent.clear()
+        self._photo.clear()
+        self._review.reset()
         self._signature = None
         self._sign_state.setText("Имзо: ҳали қўйилмаган ⚠️")
         self._reload()

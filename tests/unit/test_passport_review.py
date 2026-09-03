@@ -78,6 +78,46 @@ def test_edited_returns_what_is_in_the_boxes() -> None:
     assert worker.issue_date == date(2023, 3, 13)
 
 
+def test_edited_keeps_fields_the_panel_never_shows() -> None:
+    """issued_by (and the like) are not on the panel — a correction must not
+    wipe them; they ride through untouched from the read passport."""
+    passport = _passport()
+    passport.issued_by = "МВД РОССИИ ПО Г. МОСКВЕ"
+    passport.birth_place = "г. АШХАБАД"
+    panel = PassportReview()
+    panel.fill(passport)
+    panel._boxes["surname"].setText("ПАЛВАНОВА")     # correct a misread
+    worker = panel.edited()
+    assert worker.surname == "ПАЛВАНОВА"              # correction applied
+    assert worker.issued_by == "МВД РОССИИ ПО Г. МОСКВЕ"   # …and kept
+    assert worker.birth_place == "г. АШХАБАД"
+
+
+def test_edited_without_a_read_builds_a_fresh_passport() -> None:
+    panel = PassportReview()
+    panel.reveal()
+    panel._boxes["surname"].setText("ИВАНОВ")
+    panel._boxes["number"].setText("123")
+    worker = panel.edited()
+    assert worker.surname == "ИВАНОВ"
+    assert worker.number == "123"
+
+
+def test_edited_patent_syncs_the_name_and_keeps_its_details() -> None:
+    panel = PassportReview()
+    panel.fill(_passport(), _patent())
+    panel._boxes["surname"].setText("ПАЛВАНОВА")      # operator fixes the name
+    patent = panel.edited_patent()
+    assert patent.holder_surname == "ПАЛВАНОВА"        # patent name follows
+    assert patent.number == "240"                      # its own details stay
+
+
+def test_edited_patent_is_none_without_a_patent() -> None:
+    panel = PassportReview()
+    panel.fill(_passport())
+    assert panel.edited_patent() is None
+
+
 def test_has_surname_tracks_the_box() -> None:
     panel = PassportReview()
     panel.fill(_passport())

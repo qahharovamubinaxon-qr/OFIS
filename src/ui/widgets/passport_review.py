@@ -68,6 +68,8 @@ class PassportReview(QGroupBox):
 
     def __init__(self, title: str = _TITLE, parent=None) -> None:
         super().__init__(title, parent)
+        self._source = None            # the last passport read, for edited()
+        self._source_patent = None     # the last patent read, for edited_patent()
         grid = QGridLayout(self)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
@@ -122,10 +124,17 @@ class PassportReview(QGroupBox):
             self._born.setDate(QDate(passport.birth_date.year,
                                      passport.birth_date.month,
                                      passport.birth_date.day))
+        # keep the whole read documents, so :meth:`edited` can hand back every
+        # field the boxes DON'T show (issued_by, birth_place, the latin name…)
+        # untouched, overriding only what the operator can see and correct
+        self._source = passport
+        self._source_patent = patent
         self.setVisible(True)
 
     def reveal(self) -> None:
         """Open the empty panel — e.g. after a failed read, to type by hand."""
+        self._source = None
+        self._source_patent = None
         self.setVisible(True)
 
     def has_surname(self) -> bool:
@@ -134,29 +143,57 @@ class PassportReview(QGroupBox):
     def reset(self) -> None:
         for box in self._boxes.values():
             box.clear()
+        self._source = None
+        self._source_patent = None
         self.setVisible(False)
+
+    def _overrides(self) -> dict:
+        """What the operator can see, as Passport fields — the box values."""
+        from src.domain.enums import Gender
+
+        said = {key: box.text().strip() for key, box in self._boxes.items()}
+        return {
+            "surname": said.get("surname") or "—",
+            "name": said.get("name") or "—",
+            "patronymic": said.get("patronymic") or None,
+            "gender": (Gender.FEMALE if self._gender.currentText() == "Женский"
+                       else Gender.MALE),
+            "birth_date": self._born.date().toPython(),
+            "nationality": said.get("citizenship") or None,
+            "series": said.get("series") or None,
+            "number": said.get("number") or "—",
+            "issue_date": _date_of(said.get("issue_date", "")),
+            "expiry_date": _date_of(said.get("expiry_date", "")),
+        }
 
     def edited(self):
         """The worker as it stands IN THE BOXES — never as it was read.
 
-        A single Passport carries every value a form needs, so the patent is
-        not returned: its only job was to supply a Russian name when the
-        passport had none, and that name is already in a box.
+        When a document was read, the corrections ride on top of it, so fields
+        the panel does not show (issued_by, birth_place, the latin name) are
+        kept exactly as read. When nothing was read (the panel was opened by
+        hand), a fresh passport is built from the boxes alone.
         """
         from src.domain.documents import Passport
-        from src.domain.enums import Gender
 
+        overrides = self._overrides()
+        if self._source is not None:
+            return self._source.model_copy(update=overrides)
+        return Passport(**overrides)
+
+    def edited_patent(self):
+        """The read patent with its ФИО synced to the corrected boxes, or None.
+
+        For forms that PRINT patent details (number, dates, profession) the
+        patent must ride along — but its Russian name is made to match the
+        operator's correction, so either resolution order lands on the fix.
+        """
+        if self._source_patent is None:
+            return None
         said = {key: box.text().strip() for key, box in self._boxes.items()}
-        return Passport(
-            surname=said.get("surname") or "—",
-            name=said.get("name") or "—",
-            patronymic=said.get("patronymic") or None,
-            gender=(Gender.FEMALE if self._gender.currentText() == "Женский"
-                    else Gender.MALE),
-            birth_date=self._born.date().toPython(),
-            nationality=said.get("citizenship") or None,
-            series=said.get("series") or None,
-            number=said.get("number") or "—",
-            issue_date=_date_of(said.get("issue_date", "")),
-            expiry_date=_date_of(said.get("expiry_date", "")),
-        )
+        return self._source_patent.model_copy(update={
+            "holder_surname": said.get("surname") or "",
+            "holder_name": said.get("name") or "",
+            "holder_patronymic": said.get("patronymic") or "",
+            "holder_citizenship": said.get("citizenship") or "",
+        })
