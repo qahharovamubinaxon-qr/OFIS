@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -131,9 +131,22 @@ class BeydjikView(QWidget):
         zones = QHBoxLayout()
         self._photo = DropZone("📷", "Ишчининг расми")
         self._passport = DropZone("🛂", "Ишчининг паспорти")
+        # dropping the passport reads it at once; the operator presses nothing
+        self._passport.changed.connect(self._on_dropped)
         zones.addWidget(self._photo)
         zones.addWidget(self._passport)
         root.addLayout(zones, stretch=1)
+
+        # what was read off the passport, for the operator to check first
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+
+        # coalesces the drop into a single read shortly after it lands
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (БЕЙДЖИК)")
@@ -206,12 +219,44 @@ class BeydjikView(QWidget):
         q = self._date.date()
         return date(q.year(), q.month(), q.day())
 
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """The passport landed — read it after a short settle."""
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        data = self._c.read_image(self._passport.path)
+        self._status.setText("⏳ Паспорт ўқилаяпти…")
+        self._progress.start("Паспорт ўқилаяпти…")
+        run_async(self._c.read_passport, data,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        self._progress.finish()
+        self._review.fill(passport)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()                 # so it can be typed by hand
+        message = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
-        if self._passport.path is None:
+        if self._passport.path is None and self._review.isHidden():
             self._warn("Ишчининг паспорти расмини юкланг.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalarга Gemini калитини киритинг.")
+        if self._review.isHidden():
+            self._warn("Паспорт ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
         if not self._personal.text().strip():
             self._warn("Шахсий номерни киритинг.")
@@ -223,13 +268,12 @@ class BeydjikView(QWidget):
             self._warn(exc.message)
             return
 
-        data = Path(self._passport.path).read_bytes()
         photo = Path(self._photo.path) if self._photo.path else None
         self._run.setEnabled(False)
-        self._status.setText("⏳ Паспорт ўқилаяпти ва бейджик тайёрланяпти…")
+        self._status.setText("⏳ Бейджик тайёрланяпти…")
         self._progress.start("Бейджик тайёрланяпти…")
         run_async(
-            self._c.generate_from_image, data,
+            self._c.generate, self._review.edited(),
             region=self._current_region(),
             personal_number=self._personal.text().strip(),
             inn=self._inn.text().strip(),
@@ -247,6 +291,7 @@ class BeydjikView(QWidget):
         self._result = result
         self._photo.clear()
         self._passport.clear()
+        self._review.reset()
         self._status.setText(
             f"✅ {result.surname} — ПР {result.pr_number} "
             f"({result.region})\n{result.pdf_path}")
@@ -276,6 +321,7 @@ class BeydjikView(QWidget):
     def reset(self) -> None:
         self._photo.clear()
         self._passport.clear()
+        self._review.reset()
         self._personal.clear()
         self._inn.clear()
         self._dolzhnost.clear()

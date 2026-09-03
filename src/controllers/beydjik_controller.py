@@ -48,6 +48,30 @@ class BeydjikController:
     def forget_firms(self) -> None:
         self._beydjik.forget_firms()
 
+    def read_passport(self, passport_image: bytes):
+        """What the passport says — ФИО, date of birth, citizenship, number —
+        for the operator to check before the badge is printed."""
+        return self._ocr.read_passport(passport_image)
+
+    def generate(
+        self,
+        passport,
+        *,
+        region: str,
+        personal_number: str,
+        inn: str,
+        issue_date: date,
+        firm: str | None = None,
+        dolzhnost: str = "",
+        territory: str = "",
+        photo_path: Path | None = None,
+    ) -> BeydjikResult:
+        """The badge, from the passport values IN THE BOXES."""
+        return self._beydjik.generate(
+            passport, region=region, personal_number=personal_number, inn=inn,
+            issue_date=issue_date, firm=firm, dolzhnost=dolzhnost,
+            territory=territory, photo_path=photo_path)
+
     def generate_from_image(
         self,
         passport_image: bytes,
@@ -61,10 +85,13 @@ class BeydjikController:
         territory: str = "",
         photo_path: Path | None = None,
     ) -> BeydjikResult:
-        """ФИО, date of birth, citizenship and the passport number come off the
-        passport; everything else the operator typed in."""
-        passport = self._ocr.read_passport(passport_image)
-        return self._beydjik.generate(
+        """Read and print in one go — kept for callers with no screen.
+
+        ФИО, date of birth, citizenship and the passport number come off the
+        passport; everything else the operator typed in.
+        """
+        passport = self.read_passport(passport_image)
+        return self.generate(
             passport, region=region, personal_number=personal_number, inn=inn,
             issue_date=issue_date, firm=firm, dolzhnost=dolzhnost,
             territory=territory, photo_path=photo_path)
