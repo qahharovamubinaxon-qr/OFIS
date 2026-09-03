@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -79,9 +79,20 @@ class ProcessView(QWidget):
         self._dz_passport = DropZone("🛂", "Паспорт")
         self._dz_patent = DropZone("📄", "Патент (олд)")
         self._dz_patent_back = DropZone("🔄", "Патент (орқа)")
+        # dropped and read at once, coalesced so passport+patent read together
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
+            dz.changed.connect(self._on_dropped)
             up.addWidget(dz, stretch=1)
         root.addLayout(up)
+
+        # -- what was read, for the operator to check -------------------
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         # -- actions ----------------------------------------------------
         actions = QHBoxLayout()
@@ -148,26 +159,61 @@ class ProcessView(QWidget):
                 f"«Qo'lda to'ldirish» dan foydalaning. Keyingi raqam: {self._c.next_reg_number()}.")
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------ reading
+    def _on_dropped(self) -> None:
+        """A file landed — read after a short settle so passport and patent
+        dropped one after the other are read together, once."""
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._dz_passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._dz_passport.path)
+        patent = (self._c.read_image(self._dz_patent.path)
+                  if self._dz_patent.path else None)
+        patent_back = (self._c.read_image(self._dz_patent_back.path)
+                       if self._dz_patent_back.path else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent, patent_back,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        self._progress.finish()
+        passport, patent = pair
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин RUN.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        msg = error.message if isinstance(error, OfisError) else str(error)
+        self._status.setText(f"❌ Ўқилмади: {msg}. Қўлда ёзинг.")
+
+    # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
         company = self._selected_company()
         if company is None:
             self._warn("Avval firma tanlang.")
             return
-        if not self._c.ai_available():
-            self._warn("AI kaliti yo'q. «Qo'lda to'ldirish» dan foydalaning yoki Sozlamalarga kalit kiriting.")
-            return
-        if self._dz_passport.path is None:
+        if self._dz_passport.path is None and self._review.isHidden():
             self._warn("Pasport rasmini yuklang.")
             return
+        if self._review.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
 
-        passport = self._c.read_image(self._dz_passport.path)
-        patent = self._c.read_image(self._dz_patent.path) if self._dz_patent.path else None
-        patent_back = self._c.read_image(self._dz_patent_back.path) if self._dz_patent_back.path else None
         profession = self._profession.text().strip() or None
         form_date = self._form_date()
-        self._busy("AI o'qiyapti va PDF yaratyapti…")
+        self._busy("PDF яратиляпти…")
         run_async(
-            self._c.generate_from_images, company, passport, patent, patent_back,
+            self._c.generate, company, self._review.edited(), None,
             form_date=form_date, profession=profession,
             on_success=self._done, on_error=self._failed,
         )
@@ -177,7 +223,9 @@ class ProcessView(QWidget):
         if company is None:
             self._warn("Avval firma tanlang.")
             return
-        dialog = ManualFillDialog(self._tr.language, prefill={"profession": self._profession.text().strip()}, parent=self)
+        dialog = ManualFillDialog(
+            self._tr.language,
+            prefill={"profession": self._profession.text().strip()}, parent=self)
         if dialog.exec() != ManualFillDialog.DialogCode.Accepted:
             return
         values = dialog.values()
@@ -213,14 +261,19 @@ class ProcessView(QWidget):
     def _batch_done(self, summary) -> None:
         self._enable()
         self._progress.finish()
-        self._status.setText(f"✅ Paket tayyor: {summary.ok_count}/{summary.total}  →  {summary.output_dir}")
+        self._status.setText(
+            f"✅ Paket tayyor: {summary.ok_count}/{summary.total}"
+            f"  →  {summary.output_dir}")
         failed = [i for i in summary.items if not i.ok]
         detail = ""
         if failed:
-            detail = "\n\nBajarilmadi:\n" + "\n".join(f"• {i.folder}: {i.error}" for i in failed[:12])
+            detail = "\n\nBajarilmadi:\n" + "\n".join(
+                f"• {i.folder}: {i.error}" for i in failed[:12])
         box = QMessageBox(self)
         box.setWindowTitle("Paket tayyor")
-        box.setText(f"{summary.ok_count}/{summary.total} ta PDF yaratildi.\n{summary.output_dir}{detail}")
+        box.setText(
+            f"{summary.ok_count}/{summary.total} ta PDF yaratildi.\n"
+            f"{summary.output_dir}{detail}")
         open_btn = box.addButton("Papkani ochish", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("OK", QMessageBox.ButtonRole.RejectRole)
         box.exec()
@@ -245,6 +298,7 @@ class ProcessView(QWidget):
         self._progress.finish()
         for dz in (self._dz_passport, self._dz_patent, self._dz_patent_back):
             dz.clear()  # ready for the next worker
+        self._review.reset()
         self._status.setText(
             f"✅ Tayyor: {result.pdf_path.name}  (№ {result.reg_number})")
         from src.ui.widgets.save_to import ask_save_dir
