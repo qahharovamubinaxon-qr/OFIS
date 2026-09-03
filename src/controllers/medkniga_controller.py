@@ -11,6 +11,20 @@ from src.services import medkniga_service
 from src.services.medkniga_service import MedKnigaResult, MedKnigaService
 
 
+def _passport_from_patent(patent):
+    """A stand-in Passport carrying only the patent's Russian ФИО, so the check
+    panel can show a patent-only med book the same way it shows a passport."""
+    from src.domain.documents import Passport
+
+    return Passport(
+        surname=patent.holder_surname or "—",
+        name=patent.holder_name or "—",
+        patronymic=patent.holder_patronymic or None,
+        nationality=patent.holder_citizenship or None,
+        number="—",
+    )
+
+
 class MedKnigaController:
     def __init__(self, ocr: OcrService, service: MedKnigaService) -> None:
         self._ocr = ocr
@@ -64,6 +78,35 @@ class MedKnigaController:
         return medkniga_service.next_number()
 
     # ------------------------------------------------------------ printing
+    def read_document(self, document_image: bytes, *, is_patent: bool = False):
+        """The worker's ФИО for the operator to check — off the passport, or,
+        when only the patent was dropped, off the patent (a stand-in passport
+        so the same check panel can show it)."""
+        if is_patent:
+            patent = self._ocr.read_patent(document_image)
+            return _passport_from_patent(patent)
+        passport, _patent = self._ocr.read_documents(document_image)
+        return passport
+
+    def print_document(
+        self,
+        passport,
+        *,
+        position: str,
+        city: str,
+        number: str,
+        exam_date: date | None,
+        photo_png: bytes | None = None,
+        signature_png: bytes | None = None,
+        kit: str = DEFAULT_KIT,
+    ) -> MedKnigaResult:
+        """The four pages, from the ФИО IN THE BOXES — not the raw reading."""
+        data = medkniga_service.data_of(
+            passport, None, position=position, city=city, number=number,
+            exam_date=exam_date, photo_png=photo_png,
+            signature_png=signature_png)
+        return self._service.generate(data, kit)
+
     def generate_from_images(
         self,
         document_image: bytes,
@@ -77,17 +120,12 @@ class MedKnigaController:
         is_patent: bool = False,
         kit: str = DEFAULT_KIT,
     ) -> MedKnigaResult:
-        """Read the passport (or the patent) and print the four pages."""
-        if is_patent:
-            patent = self._ocr.read_patent(document_image)
-            passport = None
-        else:
-            passport, patent = self._ocr.read_documents(document_image)
-        data = medkniga_service.data_of(
-            passport, patent, position=position, city=city, number=number,
+        """Read and print in one go — kept for callers with no screen."""
+        passport = self.read_document(document_image, is_patent=is_patent)
+        return self.print_document(
+            passport, position=position, city=city, number=number,
             exam_date=exam_date, photo_png=photo_png,
-            signature_png=signature_png)
-        return self._service.generate(data, kit)
+            signature_png=signature_png, kit=kit)
 
     def generate(self, data, kit: str = DEFAULT_KIT) -> MedKnigaResult:
         return self._service.generate(data, kit)

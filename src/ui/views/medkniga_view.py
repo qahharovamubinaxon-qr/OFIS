@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -92,8 +92,18 @@ class MedKnigaView(QWidget):
         self._photo = DropZone("🖼", "Ишчи расми")
         docs.addWidget(self._photo)
         self._document = DropZone("🛂", "Паспорт ёки патент")
+        self._document.changed.connect(self._on_dropped)
         docs.addWidget(self._document)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
@@ -404,43 +414,73 @@ class MedKnigaView(QWidget):
         self._status.setText("✅ Жойлар ва созламалар сақланди — иккала "
                              "комплектга ҳам тегишли.")
 
+    # ----------------------------------------------------------- reading
+    def _on_dropped(self) -> None:
+        """The document landed — read it after a short settle."""
+        if self._document.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._document.path is None or not self._c.ai_available():
+            return
+        document = self._c.read_image(self._document.path)
+        is_patent = "патент" in Path(self._document.path).name.lower()
+        self._status.setText("⏳ Ҳужжат ўқиляпти…")
+        self._progress.start("Ҳужжат ўқиляпти…")
+        run_async(self._c.read_document, document, is_patent=is_patent,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, passport) -> None:
+        self._progress.finish()
+        self._review.fill(passport)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
-        if self._document.path is None:
+        if self._document.path is None and self._review.isHidden():
             self._warn("Паспорт ёки патент расмини ташланг.")
+            return
+        if self._review.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
         if not self._number.text().strip():
             self._warn("Китоб рақамини киритинг.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
-            return
-        document = Path(self._document.path).read_bytes()
         photo = (Path(self._photo.path).read_bytes()
                  if self._photo.path is not None else None)
         signature = self._signature_png
-        is_patent = "патент" in Path(self._document.path).name.lower()
         position = self._trade.currentText().strip()
         city = self._city.currentText().strip() or "Москва"
         number = self._number.text().strip()
         when = self._when()
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжат ўқилиб, тўрт бет тайёрланаяпти…")
+        self._progress.start("Тўрт бет тайёрланаяпти…")
 
         kit = self._kit_key()
-
-        def work():
-            return self._c.generate_from_images(
-                document, position=position, city=city, number=number,
-                exam_date=when, photo_png=photo, signature_png=signature,
-                is_patent=is_patent, kit=kit)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        run_async(
+            self._c.print_document, self._review.edited(),
+            position=position, city=city, number=number, exam_date=when,
+            photo_png=photo, signature_png=signature, kit=kit,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._document.clear()
+        self._photo.clear()
+        self._review.reset()
         self._number.setText(self._c.next_number())
         self._status.setText(
             f"✅ Тайёр: {result.pdf_path.name} · № {result.number} · "
