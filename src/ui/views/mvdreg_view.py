@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -238,10 +238,21 @@ class MvdRegView(QWidget):
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._front = DropZone("🩷", "Патент олди (ихтиёрий)")
+        self._front.changed.connect(self._on_dropped)
         docs.addWidget(self._front)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -557,37 +568,69 @@ class MvdRegView(QWidget):
                 return
         self._status.setText("✅ Ҳамма жой ва созламалар сақланди.")
 
+    # ----------------------------------------------------------- reading
+    def _on_dropped(self) -> None:
+        """A document landed — read after a short settle so passport and
+        patent dropped one after the other read together, once."""
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._passport.path)
+        front = (self._c.read_image(self._front.path)
+                 if self._front.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, front, None,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, pair) -> None:
+        self._progress.finish()
+        passport, patent = pair
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
         address = self._selected()
         if address is None:
             self._warn("Аввал адресни танланг.")
             return
-        if self._passport.path is None:
+        if self._passport.path is None and self._review.isHidden():
             self._warn("Паспорт расмини ташланг.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+        if self._review.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
             return
-        passport = Path(self._passport.path).read_bytes()
-        front = (Path(self._front.path).read_bytes()
-                 if self._front.path is not None else None)
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
         start = self._start.date().toPython()
         expiry = self._expiry.date().toPython()
 
         self._run.setEnabled(False)
-        self._progress.start("Паспорт ўқилиб, бланка тўлдириляпти…")
-
-        def work():
-            return self._c.generate_from_images(
-                address, passport, front,
-                registration_expiry=expiry, registration_start=start)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("Бланка тўлдириляпти…")
+        run_async(
+            self._c.generate, self._review.edited(), None, address,
+            registration_expiry=expiry, registration_start=start,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._front.clear()
+        self._review.reset()
         self._status.setText(f"✅ Тайёр: {result.pdf_path}")
 
     def _failed(self, error: Exception) -> None:

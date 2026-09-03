@@ -70,6 +70,31 @@ class MvdRegController:
         mvdreg_service.clear_asset(name, template)
 
     # ---------------------------------------------------------- printing
+    def read_documents(
+        self,
+        passport_image: bytes,
+        patent_image: bytes | None,
+        patent_back_image: bytes | None = None,
+    ):
+        """What the passport and patent say — for the operator to check first."""
+        return self._ocr.read_documents(
+            passport_image, patent_image, patent_back_image)
+
+    def generate(
+        self,
+        passport,
+        patent,
+        address: RegistrationAddress,
+        *,
+        registration_expiry: date,
+        registration_start: date | None = None,
+    ) -> MvdRegResult:
+        """The document, from the values IN THE BOXES — not the raw reading."""
+        return self._service.generate(
+            passport, patent, address,
+            registration_expiry=registration_expiry,
+            registration_start=registration_start)
+
     def generate_from_images(
         self,
         address: RegistrationAddress,
@@ -80,9 +105,10 @@ class MvdRegController:
         registration_expiry: date,
         registration_start: date | None = None,
     ) -> MvdRegResult:
-        passport, patent = self._ocr.read_documents(
+        """Read and print in one go — kept for the bot, which has no screen."""
+        passport, patent = self.read_documents(
             passport_image, patent_image, patent_back_image)
-        return self._service.generate(
+        return self.generate(
             passport, patent, address,
             registration_expiry=registration_expiry,
             registration_start=registration_start)

@@ -44,6 +44,38 @@ class Ndfl2Controller:
         ndfl2_service.save_layout(firm, layout)
 
     # ----------------------------------------------------------- printing
+    def read_documents(
+        self,
+        passport_image: bytes,
+        patent_image: bytes | None,
+    ):
+        """What the passport and patent say, plus the ИНН read off the patent —
+        for the operator to check before the справка is printed."""
+        passport, patent = self._ocr.read_documents(
+            passport_image, patent_image, None)
+        inn = ""
+        if patent_image is not None:
+            try:
+                inn = self._ocr.read_inn(patent_image)
+            except Exception as exc:                  # noqa: BLE001
+                log.warning("2НДФЛ: ИНН ўқилмади — %s", exc)
+        return passport, patent, inn
+
+    def generate(
+        self,
+        firm: Path,
+        passport,
+        *,
+        months: dict[int, Decimal],
+        year: int,
+        form_date: date | None = None,
+        inn: str = "",
+    ) -> Ndfl2Result:
+        """The справка, from the values IN THE BOXES — not the raw reading."""
+        data = ndfl2_service.data_of(passport, None, months=months,
+                                     year=year, form_date=form_date, inn=inn)
+        return self._service.generate(data, firm)
+
     def generate_from_images(
         self,
         firm: Path,
@@ -54,17 +86,10 @@ class Ndfl2Controller:
         year: int,
         form_date: date | None = None,
     ) -> Ndfl2Result:
-        passport, patent = self._ocr.read_documents(
-            passport_image, patent_image, None)
-        inn = ""
-        if patent_image is not None:
-            try:
-                inn = self._ocr.read_inn(patent_image)
-            except Exception as exc:                  # noqa: BLE001
-                log.warning("2НДФЛ: ИНН ўқилмади — %s", exc)
-        data = ndfl2_service.data_of(passport, patent, months=months,
-                                     year=year, form_date=form_date, inn=inn)
-        return self._service.generate(data, firm)
+        """Read and print in one go — kept for callers with no screen."""
+        passport, _patent, inn = self.read_documents(passport_image, patent_image)
+        return self.generate(firm, passport, months=months, year=year,
+                             form_date=form_date, inn=inn)
 
     @staticmethod
     def read_image(path: Path) -> bytes:

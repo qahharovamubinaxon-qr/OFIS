@@ -15,7 +15,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -99,10 +99,22 @@ class Ndfl2View(QWidget):
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
+        self._passport.changed.connect(self._on_dropped)
         docs.addWidget(self._passport)
         self._patent = DropZone("🩷", "Патент (ИНН учун)")
+        self._patent.changed.connect(self._on_dropped)
         docs.addWidget(self._patent)
         root.addLayout(docs)
+
+        # what was read, for the operator to check before printing
+        from src.ui.widgets.passport_review import PassportReview
+        self._review = PassportReview()
+        root.addWidget(self._review)
+        self._inn = ""            # read off the patent, kept for the справка
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(400)
+        self._settle.timeout.connect(self._read_now)
 
         head = QGridLayout()
         head.setHorizontalSpacing(10)
@@ -307,40 +319,74 @@ class Ndfl2View(QWidget):
         self._status.setText("✅ Жойлар ва созламалар сақланди.")
 
     # ---------------------------------------------------------- printing
+    # ----------------------------------------------------------- reading
+    def _on_dropped(self) -> None:
+        """A document landed — read after a short settle."""
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        self._settle.start()
+
+    def _read_now(self) -> None:
+        if self._passport.path is None or not self._c.ai_available():
+            return
+        passport = self._c.read_image(self._passport.path)
+        patent = (self._c.read_image(self._patent.path)
+                  if self._patent.path is not None else None)
+        self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
+        self._progress.start("Ҳужжатлар ўқиляпти…")
+        run_async(self._c.read_documents, passport, patent,
+                  on_success=self._filled, on_error=self._read_failed)
+
+    def _filled(self, triple) -> None:
+        self._progress.finish()
+        passport, patent, inn = triple
+        self._inn = inn                       # the патент's ИНН, for the справка
+        self._review.fill(passport, patent)
+        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
+                             "кейин Тайёрлаш.")
+
+    def _read_failed(self, error: Exception) -> None:
+        self._progress.finish()
+        self._review.reveal()          # so it can be typed by hand
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+
+    # ----------------------------------------------------------- printing
     def _generate(self) -> None:
         firm = self._selected()
         if firm is None:
             self._warn("Аввал фирмани танланг.")
             return
-        if self._passport.path is None:
+        if self._passport.path is None and self._review.isHidden():
             self._warn("Паспорт расмини ташланг.")
+            return
+        if self._review.isHidden():
+            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+            return
+        if not self._review.has_surname():
+            self._warn("Фамилия бўш — ўқилганини текширинг.")
             return
         months = self._months_typed()
         if not months:
             self._warn("Камида битта ойнинг ойлигини киритинг.")
             return
-        if not self._c.ai_available():
-            self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
-            return
-        passport = Path(self._passport.path).read_bytes()
-        patent = (Path(self._patent.path).read_bytes()
-                  if self._patent.path is not None else None)
         when: date = self._date.date().toPython()
         year = self._year.value()
 
         self._run.setEnabled(False)
-        self._progress.start("Ҳужжатлар ўқилиб, справка тайёрланаяпти…")
-
-        def work():
-            return self._c.generate_from_images(
-                firm, passport, patent, months=months, year=year,
-                form_date=when)
-
-        run_async(work, on_success=self._done, on_error=self._failed)
+        self._progress.start("Справка тайёрланаяпти…")
+        run_async(
+            self._c.generate, firm, self._review.edited(),
+            months=months, year=year, form_date=when, inn=self._inn,
+            on_success=self._done, on_error=self._failed)
 
     def _done(self, result) -> None:
         self._progress.finish()
         self._run.setEnabled(True)
+        self._passport.clear()
+        self._patent.clear()
+        self._review.reset()
+        self._inn = ""
         self._status.setText(
             f"✅ Тайёр: {result.pdf_path.name} · жами {money(result.total)} · "
             f"солиқ {money(result.tax)}")
