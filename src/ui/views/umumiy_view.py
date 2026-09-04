@@ -229,6 +229,7 @@ class UmumiyView(QWidget):
         if not self._dz_worker.files or not self._ocr.available():
             return
         images = [f.read_bytes() for f in self._dz_worker.files]
+        self._review.start_reading()
         self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
         self._progress.start("Ҳужжатлар ўқиляпти…")
 
@@ -262,8 +263,12 @@ class UmumiyView(QWidget):
         if slug is None and not self._dz_doc.files:
             self._warn("Шаблон танланг ёки қайта ишланадиган ҳужжатни (PDF) юкланг.")
             return
-        if self._review.isHidden():
-            self._warn("Ишчининг камида битта ҳужжат расмини юкланг — ўқилсин.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review, has_images=bool(self._dz_worker.files),
+                ai_available=self._ocr.available(), start_read=self._read_now,
+                warn=self._warn,
+                no_images_msg="Ишчининг камида битта ҳужжат расмини юкланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")

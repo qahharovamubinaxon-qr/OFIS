@@ -102,7 +102,6 @@ class MvdTrudView(QWidget):
         self._settle.setSingleShot(True)
         self._settle.setInterval(400)
         self._settle.timeout.connect(self._read_now)
-        self._reading = False        # a read is in flight (AI is slow the 1st time)
 
         # -- the picks --------------------------------------------------
         grid = QGridLayout()
@@ -281,14 +280,13 @@ class MvdTrudView(QWidget):
         front = self._c.read_image(self._front.path)
         back = (self._c.read_image(self._back.path)
                 if self._back.path is not None else None)
-        self._reading = True
+        self._review.start_reading()
         self._status.setText("⏳ AI ҳужжатларни ўқияпти…")
         self._progress.start("Ҳужжатлар ўқиляпти…")
         run_async(self._c.read_documents, passport, front, back,
                   on_success=self._filled, on_error=self._read_failed)
 
     def _filled(self, pair) -> None:
-        self._reading = False
         self._progress.finish()
         passport, patent = pair
         self._review.fill(passport, patent)
@@ -296,7 +294,6 @@ class MvdTrudView(QWidget):
                              "кейин Тайёрлаш.")
 
     def _read_failed(self, error: Exception) -> None:
-        self._reading = False
         self._progress.finish()
         self._review.reveal()          # so it can be typed by hand
         message = getattr(error, "message", None) or str(error)
@@ -308,23 +305,14 @@ class MvdTrudView(QWidget):
         if not template:
             self._warn("Аввал бланкани юкланг.")
             return
-        if self._review.isHidden():
-            # the operator pressed Тайёрлаш before the read finished (the first
-            # read of a session is slow while the free tiers are probed). Say
-            # so, and START the read if it has not begun — nothing is lost.
-            if self._reading:
-                self._warn("AI ҳужжатларни ўқияпти — бир оз кутинг, тайёр "
-                           "бўлгач текшириб, яна Тайёрлаш босинг.")
-                return
-            if not self._c.ai_available():
-                self._warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
-                return
-            if self._passport.path is not None and self._front.path is not None:
-                self._read_now()
-                self._warn("AI ўқий бошлади — тайёр бўлгач майдонларни "
-                           "текшириб, яна Тайёрлаш босинг.")
-                return
-            self._warn("Паспорт ва патент олди расмини ташланг.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review,
+                has_images=(self._passport.path is not None
+                            and self._front.path is not None),
+                ai_available=self._c.ai_available(), start_read=self._read_now,
+                warn=self._warn,
+                no_images_msg="Паспорт ва патент олди расмини ташланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")

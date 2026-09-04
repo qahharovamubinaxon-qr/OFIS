@@ -145,6 +145,53 @@ def test_a_custom_title_is_kept() -> None:
     assert PassportReview("Текшириш").title() == "Текшириш"
 
 
+# ------------------------------------------------------ the shared RUN gate
+def _gate(**over):
+    """Run ready_or_start with recording stubs; return (ok, warned, started)."""
+    from src.ui.widgets.passport_review import ready_or_start
+
+    warned: list[str] = []
+    started: list[bool] = []
+    panel = over.pop("review", PassportReview())
+    kw = dict(has_images=True, ai_available=True,
+              start_read=lambda: started.append(True),
+              warn=warned.append, no_images_msg="дроп")
+    kw.update(over)
+    ok = ready_or_start(panel, **kw)
+    return ok, warned, started
+
+
+def test_gate_lets_a_shown_panel_through() -> None:
+    panel = PassportReview()
+    panel.fill(_passport())
+    ok, warned, started = _gate(review=panel)
+    assert ok is True and not warned and not started
+
+
+def test_gate_asks_to_wait_while_reading() -> None:
+    panel = PassportReview()
+    panel.start_reading()                 # hidden + reading
+    ok, warned, started = _gate(review=panel)
+    assert ok is False and not started
+    assert "ўқияпти" in warned[0]
+
+
+def test_gate_reports_a_missing_key() -> None:
+    ok, warned, started = _gate(ai_available=False)
+    assert ok is False and not started
+    assert "калит" in warned[0]
+
+
+def test_gate_starts_the_read_when_images_are_there() -> None:
+    ok, warned, started = _gate(has_images=True)
+    assert ok is False and started == [True]      # the read was kicked off
+
+
+def test_gate_says_drop_when_nothing_is_there() -> None:
+    ok, warned, started = _gate(has_images=False)
+    assert ok is False and not started and warned == ["дроп"]
+
+
 # -------------------------------------------------------- the date helpers
 def test_date_text_formats_or_empties() -> None:
     assert _date_text(date(2025, 1, 18)) == "18.01.2025"

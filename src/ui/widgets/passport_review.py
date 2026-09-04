@@ -70,6 +70,7 @@ class PassportReview(QGroupBox):
         super().__init__(title, parent)
         self._source = None            # the last passport read, for edited()
         self._source_patent = None     # the last patent read, for edited_patent()
+        self._reading = False          # a read is in flight (AI is slow the 1st time)
         grid = QGridLayout(self)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
@@ -129,13 +130,22 @@ class PassportReview(QGroupBox):
         # untouched, overriding only what the operator can see and correct
         self._source = passport
         self._source_patent = patent
+        self._reading = False
         self.setVisible(True)
 
     def reveal(self) -> None:
         """Open the empty panel — e.g. after a failed read, to type by hand."""
         self._source = None
         self._source_patent = None
+        self._reading = False
         self.setVisible(True)
+
+    def start_reading(self) -> None:
+        """Mark that a read has just begun — the view calls this in _read_now."""
+        self._reading = True
+
+    def is_reading(self) -> bool:
+        return self._reading
 
     def has_surname(self) -> bool:
         return bool(self._boxes["surname"].text().strip())
@@ -145,6 +155,7 @@ class PassportReview(QGroupBox):
             box.clear()
         self._source = None
         self._source_patent = None
+        self._reading = False
         self.setVisible(False)
 
     def _overrides(self) -> dict:
@@ -197,3 +208,43 @@ class PassportReview(QGroupBox):
             "holder_patronymic": said.get("patronymic") or "",
             "holder_citizenship": said.get("citizenship") or "",
         })
+
+
+def ready_or_start(
+    review: PassportReview,
+    *,
+    has_images: bool,
+    ai_available: bool,
+    start_read,
+    warn,
+    no_images_msg: str = "Ҳужжат расмини ташланг — ўқилсин.",
+) -> bool:
+    """One RUN gate for every section that reads into a :class:`PassportReview`.
+
+    The office kept pressing «Тайёрлаш» before the (slow first) read had shown
+    its boxes, and the old wording — «upload the images» — was plainly wrong,
+    the images were right there. So when the panel is not yet up this decides
+    what to do and returns ``False``:
+
+    * a read already running → ask the operator to wait;
+    * no AI key → say so;
+    * images present but unread → START the read here and now (nothing lost),
+      then ask them to check and press again;
+    * genuinely nothing dropped → the section's own «drop it» message.
+
+    Returns ``True`` only when the panel is showing values to print from.
+    """
+    if not review.isHidden():
+        return True
+    if review.is_reading():
+        warn("AI ҳужжатларни ўқияпти — бир оз кутинг, тайёр бўлгач текшириб, "
+             "яна Тайёрлаш босинг.")
+    elif not ai_available:
+        warn("AI калити йўқ — Sozlamalar бўлимига калит киритинг.")
+    elif has_images:
+        start_read()
+        warn("AI ўқий бошлади — тайёр бўлгач майдонларни текшириб, яна "
+             "Тайёрлаш босинг.")
+    else:
+        warn(no_images_msg)
+    return False

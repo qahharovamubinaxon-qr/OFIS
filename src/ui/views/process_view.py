@@ -175,6 +175,7 @@ class ProcessView(QWidget):
                   if self._dz_patent.path else None)
         patent_back = (self._c.read_image(self._dz_patent_back.path)
                        if self._dz_patent_back.path else None)
+        self._review.start_reading()
         self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
         self._progress.start("Ҳужжатлар ўқиляпти…")
         run_async(self._c.read_documents, passport, patent, patent_back,
@@ -199,11 +200,11 @@ class ProcessView(QWidget):
         if company is None:
             self._warn("Avval firma tanlang.")
             return
-        if self._dz_passport.path is None and self._review.isHidden():
-            self._warn("Pasport rasmini yuklang.")
-            return
-        if self._review.isHidden():
-            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review, has_images=self._dz_passport.path is not None,
+                ai_available=self._c.ai_available(), start_read=self._read_now,
+                warn=self._warn, no_images_msg="Pasport rasmini yuklang."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")

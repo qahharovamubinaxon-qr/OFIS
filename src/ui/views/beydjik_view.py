@@ -230,6 +230,7 @@ class BeydjikView(QWidget):
         if self._passport.path is None or not self._c.ai_available():
             return
         data = self._c.read_image(self._passport.path)
+        self._review.start_reading()
         self._status.setText("⏳ Паспорт ўқилаяпти…")
         self._progress.start("Паспорт ўқилаяпти…")
         run_async(self._c.read_passport, data,
@@ -249,11 +250,12 @@ class BeydjikView(QWidget):
 
     # ------------------------------------------------------------ printing
     def _run_ai(self) -> None:
-        if self._passport.path is None and self._review.isHidden():
-            self._warn("Ишчининг паспорти расмини юкланг.")
-            return
-        if self._review.isHidden():
-            self._warn("Паспорт ҳали ўқилмади — бир оз кутинг.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review, has_images=self._passport.path is not None,
+                ai_available=self._c.ai_available(), start_read=self._read_now,
+                warn=self._warn,
+                no_images_msg="Ишчининг паспорти расмини юкланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")

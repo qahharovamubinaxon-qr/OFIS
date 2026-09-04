@@ -391,6 +391,7 @@ class QrRegView(QWidget):
         passport = self._c.read_image(self._passport.path)
         patent = (self._c.read_image(self._patent.path)
                   if self._patent.path is not None else None)
+        self._review.start_reading()
         self._status.setText("⏳ Ҳужжатлар ўқиляпти…")
         self._progress.start("Ҳужжатлар ўқиляпти…")
         run_async(self._c.read_documents, passport, patent,
@@ -414,8 +415,11 @@ class QrRegView(QWidget):
         if not template:
             self._warn("Аввал бланкани юкланг.")
             return
-        if self._review.isHidden():
-            self._warn("Паспорт расмини ташланг — ўқилсин.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review, has_images=self._passport.path is not None,
+                ai_available=self._c.ai_available(), start_read=self._read_now,
+                warn=self._warn, no_images_msg="Паспорт расмини ташланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")

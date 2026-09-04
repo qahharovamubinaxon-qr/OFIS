@@ -426,6 +426,7 @@ class MedKnigaView(QWidget):
             return
         document = self._c.read_image(self._document.path)
         is_patent = "патент" in Path(self._document.path).name.lower()
+        self._review.start_reading()
         self._status.setText("⏳ Ҳужжат ўқиляпти…")
         self._progress.start("Ҳужжат ўқиляпти…")
         run_async(self._c.read_document, document, is_patent=is_patent,
@@ -445,11 +446,12 @@ class MedKnigaView(QWidget):
 
     # ---------------------------------------------------------- printing
     def _generate(self) -> None:
-        if self._document.path is None and self._review.isHidden():
-            self._warn("Паспорт ёки патент расмини ташланг.")
-            return
-        if self._review.isHidden():
-            self._warn("Ҳужжат ҳали ўқилмади — бир оз кутинг.")
+        from src.ui.widgets.passport_review import ready_or_start
+        if not ready_or_start(
+                self._review, has_images=self._document.path is not None,
+                ai_available=self._c.ai_available(), start_read=self._read_now,
+                warn=self._warn,
+                no_images_msg="Паспорт ёки патент расмини ташланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")
