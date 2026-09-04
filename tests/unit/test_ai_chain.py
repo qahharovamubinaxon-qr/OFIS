@@ -373,3 +373,36 @@ def test_the_key_itself_never_leaves_the_provider() -> None:
     assert "SECRET" not in provider.key_id()
     assert provider.key_id() == _Keyed("groq", "xai-SECRET-VALUE").key_id()
     assert provider.key_id() != _Keyed("groq", "xai-other").key_id()
+
+
+# ------------------------------------------------ the rate-limit cooldown
+def test_a_rate_limited_provider_is_skipped_next_read() -> None:
+    """Re-trying a spent free tier on every passport cost the office ~11s a
+    read. Once it says «лимит тугади» it stands aside for a while."""
+    limited = _Fake("mistral", raises=AiRateLimitError("mistral: лимит тугади"))
+    good = _Fake("gemini", fields=PASSPORT)
+    manager = AiManager([limited, good])
+
+    manager.extract(b"img", DocType.PASSPORT, "p")     # both tried, gemini wins
+    assert limited.calls == 1
+    assert good.calls == 1
+
+    manager.extract(b"img", DocType.PASSPORT, "p")     # mistral now on cooldown
+    assert limited.calls == 1                          # not retried
+    assert good.calls == 2
+
+
+def test_a_cooled_provider_is_still_the_last_resort() -> None:
+    """Cooldown must never turn into «no providers» — a spent one still gets a
+    turn when nothing fresher can answer."""
+    only = _Fake("mistral", raises=AiRateLimitError("лимит"))
+    manager = AiManager([only])
+    with pytest.raises(AiRateLimitError):
+        manager.extract(b"img", DocType.PASSPORT, "p")     # cools it
+    assert only.calls == 1
+
+    only._raises = None
+    only._fields = PASSPORT
+    result = manager.extract(b"img", DocType.PASSPORT, "p")
+    assert result.provider == "mistral"                    # tried again, answered
+    assert only.calls == 2

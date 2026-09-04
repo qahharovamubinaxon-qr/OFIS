@@ -27,11 +27,24 @@ import time
 
 from src.ai.base import AiRawResult, IAiProvider
 from src.ai.schemas import validate
-from src.common.errors import AiAuthError, AiError, AiUnavailableError
+from src.common.errors import (
+    AiAuthError,
+    AiError,
+    AiQuotaError,
+    AiRateLimitError,
+    AiUnavailableError,
+)
 from src.common.logging import get_logger
 from src.domain.enums import DocType
 
 log = get_logger(__name__)
+
+#: How long a rate-limited / out-of-quota provider is set aside before it gets
+#: a fresh turn. A limited key keeps its turn (unlike a refused one) but not on
+#: the VERY NEXT document — re-trying a spent Mistral and Groq on every passport
+#: cost the office ~11 seconds a read while the free tiers were used up. It is
+#: still tried as a last resort when nothing fresher can answer.
+_COOLDOWN_S = 300.0
 
 
 class AiManager:
@@ -46,6 +59,11 @@ class AiManager:
         #: Keyed on the KEY, not the provider, so pasting a new one into
         #: Sozlamalar takes effect at once with nothing to restart or clear.
         self._refused: set[tuple[str, str]] = set()
+        #: provider name → monotonic time its rate-limit cooldown ends. Unlike
+        #: a refused key this is a passing state, so it is kept by NAME (a new
+        #: key does not clear it — the limit is on the account, not the string)
+        #: and it expires on its own.
+        self._cooldown: dict[str, float] = {}
 
     @property
     def providers(self) -> list[IAiProvider]:
@@ -67,6 +85,10 @@ class AiManager:
         fingerprint = provider.key_id()
         return bool(fingerprint) and (provider.name, fingerprint) in self._refused
 
+    def _on_cooldown(self, provider: IAiProvider) -> bool:
+        until = self._cooldown.get(provider.name)
+        return until is not None and time.monotonic() < until
+
     def _refuse(self, provider: IAiProvider) -> None:
         # Only when the key can be fingerprinted: without one there is no way
         # to notice the office replacing it, and skipping for ever would be
@@ -79,25 +101,28 @@ class AiManager:
                         provider.name)
 
     def extract(self, image: bytes, doc_type: DocType, prompt: str) -> AiRawResult:
+        configured = [p for p in self._providers if p.is_configured()]
+        live = [p for p in configured if not self._is_refused(p)]
+        # a spent provider keeps its turn, but at the BACK of the queue — a
+        # fresh one answers first, and it is reached only if nothing else can
+        fresh = [p for p in live if not self._on_cooldown(p)]
+        cooled = [p for p in live if self._on_cooldown(p)]
+        order = fresh + cooled
+
         last: AiError | None = None
-        tried = False
-        refused: list[str] = []
-        for provider in self._providers:
-            if not provider.is_configured():
-                log.debug("Provider %s skipped: no key", provider.name)
-                continue
-            if self._is_refused(provider):
-                log.debug("Provider %s skipped: key already refused",
-                          provider.name)
-                refused.append(provider.name)
-                continue
-            tried = True
+        for provider in order:
             started = time.monotonic()
             try:
                 result = provider.extract(image, doc_type, prompt)
                 fields = validate(result.fields, doc_type)
             except AiAuthError as exc:
                 self._refuse(provider)
+                last = exc
+                continue
+            except (AiRateLimitError, AiQuotaError) as exc:
+                self._cooldown[provider.name] = time.monotonic() + _COOLDOWN_S
+                log.warning("Provider %s лимитда — %.0f сония четда: %s",
+                            provider.name, _COOLDOWN_S, exc.message)
                 last = exc
                 continue
             except AiError as exc:
@@ -116,6 +141,7 @@ class AiManager:
                                provider=provider.name, text=result.text)
         if last is not None:
             raise last
+        refused = [p.name for p in configured if self._is_refused(p)]
         if refused:
             # Everything with a key has one the service has already refused —
             # saying «not configured» would send the office looking for an
@@ -123,6 +149,6 @@ class AiManager:
             raise AiUnavailableError(
                 "AI калити рад этилди: " + ", ".join(refused) +
                 ". Созламалардан янги калит киритинг.")
-        if not tried:
+        if not configured:
             raise AiUnavailableError("Бирорта AI провайдер созланмаган")
         raise AiUnavailableError("Ҳамма AI провайдерлар жавоб бермади")

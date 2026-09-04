@@ -188,6 +188,37 @@ def test_mvd_trud_makes_the_corrected_name_ride_the_patent(run_now) -> None:
     assert ctl.printed["patent"].number == "240"
 
 
+def test_mvd_trud_run_starts_the_read_when_pressed_early(run_now) -> None:
+    """The office dropped the images and pressed Тайёрлаш before the (slow
+    first) read had begun. That press must START the read, not scold «upload
+    the images» when they are plainly there."""
+    import src.ui.views.mvd_trud_view as mv
+    run_now(mv)
+
+    passport, patent = _passport(), _patent()
+    ctl = _Ctl(passport, patent)
+    ctl.read_documents = lambda a, b, c: (passport, patent)
+    ctl.generate = lambda **k: ctl.printed.update(k) or SimpleNamespace(
+        saved=Path("OUT.pdf"))
+
+    screen = mv.MvdTrudView(ctl)
+    screen._done = lambda r: None
+    screen._passport = _Drop("p.jpg")
+    screen._front = _Drop("front.jpg")
+    screen._template.addItem("t", Path("t.pdf"))
+    screen._template.setCurrentIndex(screen._template.count() - 1)
+
+    # pressing Тайёрлаш with the panel still hidden kicks off the read
+    assert screen._review.isHidden()
+    screen._generate()
+    assert not screen._review.isHidden()     # the read ran and the boxes filled
+    assert not ctl.printed                   # nothing printed yet
+
+    # now the second press prints (the patent's Russian ФИО having won)
+    screen._generate()
+    assert ctl.printed["passport"].surname == "ПАЛВАНОВ"
+
+
 def test_trud8_prints_the_boxes_with_the_patent(run_now) -> None:
     import src.ui.views.trud8_view as tv
     run_now(tv)
