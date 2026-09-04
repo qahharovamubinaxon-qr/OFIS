@@ -97,11 +97,15 @@ class GroqProvider(IAiProvider):
                     ]}],
                 }, api_key=key, provider=self.name)
             except AiError as exc:
-                # 404 means this key may not call that model — the next name
-                # usually can, and waiting changes nothing.
-                if not _missing(exc):
+                # 404 = this key may not call that model; 400-json = this model
+                # cannot return the schema for this key's tier. Either way the
+                # next name might work and waiting changes nothing — but if
+                # EVERY name fails this way, groq simply cannot read images for
+                # this key, so we stop offering it (see below).
+                if not (_missing(exc) or _cannot(exc)):
                     raise
-                log.warning("Groq model %s unavailable for this key", model)
+                log.warning("Groq model %s unusable for this key: %s",
+                            model, getattr(exc, "message", exc))
                 last = exc
                 continue
             fields = _parse(_content(answer, self.name))
@@ -109,7 +113,13 @@ class GroqProvider(IAiProvider):
             log.info("Groq OK (%s)", model)
             return AiRawResult(document_type=doc_type, fields=fields,
                                provider=self.name)
-        raise last or AiError("groq: биронта модел жавоб бермади")
+        # every model was unusable for this key — a settled fact, not a bad
+        # moment. Raised as an auth error so the manager sets groq aside for the
+        # session (keyed on the key); a new key in Sozlamalar gets a fresh try.
+        raise AiAuthError(
+            "Groq калити расм (vision) моделларини ишлатолмайди — "
+            "Созламалардан бошқа Groq калит киритинг ёки бўш қолдиринг"
+        ) from last
 
     def check(self) -> str:
         """A tiny live call, for the «Tekshirish» button in Settings."""
@@ -139,6 +149,13 @@ def _missing(exc: AiError) -> bool:
     """Is this «that model is not for you», rather than a real failure?"""
     said = str(getattr(exc, "message", "") or exc)
     return "404" in said or "does not exist" in said.lower()
+
+
+def _cannot(exc: AiError) -> bool:
+    """Is this «this model can't produce the JSON I need» — a 400 the key's
+    tier returns for a vision+json_object request? Persistent, like a 404."""
+    said = str(getattr(exc, "message", "") or exc).lower()
+    return "400" in said and ("json" in said or "failed to generate" in said)
 
 
 def _data_uri(image: bytes) -> str:

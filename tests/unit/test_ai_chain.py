@@ -406,3 +406,39 @@ def test_a_cooled_provider_is_still_the_last_resort() -> None:
     result = manager.extract(b"img", DocType.PASSPORT, "p")
     assert result.provider == "mistral"                    # tried again, answered
     assert only.calls == 2
+
+
+# ------------------------------------ a groq key with no vision access
+def test_groq_gives_up_when_no_model_serves_the_key(monkeypatch) -> None:
+    """The office's Groq key returned 404/400 for every vision model, and it
+    cost ~16s on EVERY read. When no model serves the key groq raises an auth
+    error, so the manager sets it aside for the session (a new key clears it)."""
+    from src.ai import groq_provider
+    from src.common.errors import AiAuthError, AiError
+
+    calls = {"n": 0}
+
+    def fake_post(*a, **k):
+        calls["n"] += 1
+        raise AiError("groq: 404 The model does not exist or you do not "
+                      "have access to it.")
+
+    monkeypatch.setattr(groq_provider, "post_json", fake_post)
+    prov = groq_provider.GroqProvider(key_getter=lambda: "gsk_x")
+    with pytest.raises(AiAuthError):
+        prov.extract(b"img", DocType.PASSPORT, "p")
+    assert calls["n"] >= 1                       # it did probe the models
+
+
+def test_groq_gives_up_on_a_json_capability_400(monkeypatch) -> None:
+    from src.ai import groq_provider
+    from src.common.errors import AiAuthError, AiError
+
+    def fake_post(*a, **k):
+        raise AiError("groq: 400 Failed to validate JSON. Please adjust "
+                      "your prompt.")
+
+    monkeypatch.setattr(groq_provider, "post_json", fake_post)
+    prov = groq_provider.GroqProvider(key_getter=lambda: "gsk_x")
+    with pytest.raises(AiAuthError):
+        prov.extract(b"img", DocType.PASSPORT, "p")
