@@ -21,6 +21,10 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
+from src.common.logging import get_logger
+
+log = get_logger(__name__)
+
 #: Dispatchers waiting for their queued delivery — the strong references that
 #: keep the callbacks (and the dispatcher itself) alive until they have run.
 _PENDING: set[_Dispatcher] = set()
@@ -62,6 +66,13 @@ class _Worker(QRunnable):
         try:
             result = self._fn(*self._args, **self._kwargs)
         except Exception as exc:  # noqa: BLE001 — boundary: marshalled to the UI thread
+            # A background failure used to reach only the on_error callback,
+            # which often just sets a status line — so a read that failed on a
+            # worker thread left NOTHING in the log and looked, from the office's
+            # side, like «ишламаяпти». Every such failure is now written down,
+            # with its traceback, so the cause is never invisible again.
+            name = getattr(self._fn, "__name__", repr(self._fn))
+            log.warning("фон вазифа хато берди: %s(...)", name, exc_info=exc)
             self.signals.failed.emit(exc)
         else:
             self.signals.finished.emit(result)
