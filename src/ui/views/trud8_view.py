@@ -309,16 +309,24 @@ class Trud8View(QWidget):
         if self._passport.path is None or not self._c.ai_available():
             return
         log.info("ТРУД(trud8): ЎҚИШ БОШЛАНДИ")
-        passport = self._c.read_image(self._passport.path)
-        front = (self._c.read_image(self._front.path)
-                 if self._front.path is not None else None)
-        back = (self._c.read_image(self._back.path)
-                if self._back.path is not None else None)
-        self._review.start_reading()
-        self._status.setText("⏳ AI ҳужжатларни ўқияпти…")
-        self._progress.start("Ҳужжатлар ўқиляпти…")
-        run_async(self._c.read_documents, passport, front, back,
-                  on_success=self._filled, on_error=self._read_failed)
+        try:
+            passport = self._c.read_image(self._passport.path)
+            front = (self._c.read_image(self._front.path)
+                     if self._front.path is not None else None)
+            back = (self._c.read_image(self._back.path)
+                    if self._back.path is not None else None)
+            log.info("ТРУД(trud8): расмлар ўқилди — passport=%d bytes, "
+                     "front=%s, back=%s", len(passport),
+                     front is not None, back is not None)
+            self._review.start_reading()
+            self._status.setText("⏳ AI ҳужжатларни ўқияпти…")
+            self._progress.start("Ҳужжатлар ўқиляпти…")
+            run_async(self._c.read_documents, passport, front, back,
+                      on_success=self._filled, on_error=self._read_failed)
+            log.info("ТРУД(trud8): run_async ишга туширилди — AIни кутмоқда")
+        except Exception:
+            log.exception("ТРУД(trud8): _read_now да КУТИЛМАГАН ХАТО")
+            raise
 
     def _filled(self, pair) -> None:
         self._progress.finish()
