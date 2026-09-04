@@ -49,6 +49,12 @@ class Spr3Controller:
         self._service.reset_layout(template)
 
     # ------------------------------------------------------------ reading
+    @staticmethod
+    def read_image(path: Path) -> bytes:
+        """The dropped file's bytes (read on the UI thread, then handed to
+        :meth:`read_documents` on a worker)."""
+        return Path(path).read_bytes()
+
     def read_documents(self, passport_image: bytes,
                        name_image: bytes | None) -> Passport:
         """The merged worker: Russian ФИО off the second photo when there is

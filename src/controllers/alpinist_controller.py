@@ -73,6 +73,12 @@ class AlpinistController:
         return self._service.next_number()
 
     # ------------------------------------------------------------ reading
+    @staticmethod
+    def read_image(path: Path) -> bytes:
+        """The dropped file's bytes (read on the UI thread, then handed to
+        :meth:`read_documents` on a worker)."""
+        return Path(path).read_bytes()
+
     def read_documents(self, passport_image: bytes,
                        patent_image: bytes | None) -> Passport:
         passport, _patent = self._ocr.read_documents(passport_image,

@@ -56,7 +56,14 @@ class Trud8Controller:
         return self._service.save_fields(firm, kind, fields)
 
     # ------------------------------------------------------------ reading
-    def read_documents(self, passport_image: bytes, patent_front: bytes,
+    @staticmethod
+    def read_image(path: Path) -> bytes:
+        """The dropped file's bytes. Every section's controller carries this;
+        its absence here is what made ТРУД's read crash the instant a passport
+        was dropped — «AttributeError: no attribute 'read_image'»."""
+        return Path(path).read_bytes()
+
+    def read_documents(self, passport_image: bytes, patent_front: bytes | None,
                        patent_back: bytes | None) -> tuple[Passport, Patent]:
         passport, patent = self._ocr.read_documents(
             passport_image, patent_front, patent_back)

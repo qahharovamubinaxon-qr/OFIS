@@ -64,6 +64,12 @@ class QrRegController:
         return address_label(entry)
 
     # ------------------------------------------------------------ reading
+    @staticmethod
+    def read_image(path: Path) -> bytes:
+        """The dropped file's bytes (the view reads on the UI thread, then
+        hands these to :meth:`read_documents` on a worker)."""
+        return Path(path).read_bytes()
+
     def read_documents(self, passport_image: bytes,
                        patent_image: bytes | None) -> Passport:
         """Russian ФИО off the patent when it is there; the rest off the

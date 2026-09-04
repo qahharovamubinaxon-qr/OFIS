@@ -293,3 +293,26 @@ def test_read_and_generate_still_exist(module, cls) -> None:
         f"src.controllers.{module}"), cls)
     assert hasattr(controller, "read_documents")
     assert hasattr(controller, "generate")
+    # read_image is what the view calls on the UI thread before handing the
+    # bytes to the worker. Four of these controllers lacked it, so the read
+    # crashed with AttributeError the instant a passport was dropped and the
+    # screen sat dead — «ишламаяпти». A fake stub in the view tests carried
+    # its own read_image and hid it; this pins it on the REAL controllers.
+    assert hasattr(controller, "read_image"), f"{cls} has no read_image"
+
+
+@pytest.mark.parametrize("module,cls", [
+    ("beydjik_controller", "BeydjikController"),
+    ("process_controller", "ProcessController"),
+    ("mvdreg_controller", "MvdRegController"),
+    ("ndfl2_controller", "Ndfl2Controller"),
+    ("medkniga_controller", "MedKnigaController"),
+    ("svera_controller", "SveraController"),
+])
+def test_every_review_controller_can_read_image(module, cls) -> None:
+    """The whole family the review panel drives — none may lack read_image."""
+    import importlib
+
+    controller = getattr(importlib.import_module(
+        f"src.controllers.{module}"), cls)
+    assert hasattr(controller, "read_image"), f"{cls} has no read_image"

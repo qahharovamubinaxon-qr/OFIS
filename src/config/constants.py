@@ -6,7 +6,7 @@ from __future__ import annotations
 
 APP_NAME = "HR Document Automation System Pro"
 APP_SHORT = "OFIS"
-APP_VERSION = "1.3.8"
+APP_VERSION = "1.3.9"
 ORG_NAME = "OFIS"
 
 SUPPORTED_LANGUAGES = ("ru", "uz", "en")
