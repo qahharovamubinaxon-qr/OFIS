@@ -219,6 +219,42 @@ def test_mvd_trud_run_starts_the_read_when_pressed_early(run_now) -> None:
     assert ctl.printed["passport"].surname == "ПАЛВАНОВ"
 
 
+def test_mvd_trud_reads_the_passport_alone_no_silent_wait(run_now) -> None:
+    """The office dropped a passport in ТРУД and the screen sat dead: the read
+    used to wait — unseen — for the patent front too. «ишламаяпти». It must
+    read the passport the moment it lands, like every other section; the patent
+    is asked for only at print time (the ТРУД prints its number and dates)."""
+    import src.ui.views.mvd_trud_view as mv
+    run_now(mv)
+
+    passport, patent = _passport(), _patent()
+    ctl = _Ctl(passport, patent)
+    ctl.read_documents = lambda a, b, c: (passport, patent)
+    ctl.generate = lambda **k: ctl.printed.update(k) or SimpleNamespace(
+        saved=Path("OUT.pdf"))
+
+    screen = mv.MvdTrudView(ctl)
+    screen._done = lambda r: None
+    screen._template.addItem("t", Path("t.pdf"))
+    screen._template.setCurrentIndex(screen._template.count() - 1)
+
+    # ONLY the passport — the old code did nothing here
+    screen._passport = _Drop("p.jpg")
+    screen._front = _Drop(None)
+    screen._read_now()
+    assert not screen._review.isHidden()      # it read; the screen is not dead
+    assert screen._review._boxes["surname"].text() == "ПАЛВАНОВ"
+
+    # printing still needs the patent front, so it asks — it does not print blank
+    screen._generate()
+    assert not ctl.printed
+
+    # add the patent front → now it prints
+    screen._front = _Drop("front.jpg")
+    screen._generate()
+    assert ctl.printed["passport"].surname == "ПАЛВАНОВ"
+
+
 def test_trud8_prints_the_boxes_with_the_patent(run_now) -> None:
     import src.ui.views.trud8_view as tv
     run_now(tv)

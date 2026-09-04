@@ -264,20 +264,21 @@ class MvdTrudView(QWidget):
 
     # ------------------------------------------------------------ reading
     def _on_dropped(self) -> None:
-        """Passport + patent front both landed — read them after a settle.
+        """The passport landed — read it at once, like every other section.
 
-        The ТРУД packet needs the patent's own number and dates printed, so it
-        reads only once both the passport and the patent front are in."""
-        if (self._passport.path is None or self._front.path is None
-                or not self._c.ai_available()):
+        The ТРУД packet also prints the patent's own number and dates, so the
+        patent front is asked for at print time; but reading must not sit and
+        wait for it in silence — that dead screen was «ишламаяпти»."""
+        if self._passport.path is None or not self._c.ai_available():
             return
         self._settle.start()
 
     def _read_now(self) -> None:
-        if self._passport.path is None or self._front.path is None:
+        if self._passport.path is None or not self._c.ai_available():
             return
         passport = self._c.read_image(self._passport.path)
-        front = self._c.read_image(self._front.path)
+        front = (self._c.read_image(self._front.path)
+                 if self._front.path is not None else None)
         back = (self._c.read_image(self._back.path)
                 if self._back.path is not None else None)
         self._review.start_reading()
@@ -307,15 +308,19 @@ class MvdTrudView(QWidget):
             return
         from src.ui.widgets.passport_review import ready_or_start
         if not ready_or_start(
-                self._review,
-                has_images=(self._passport.path is not None
-                            and self._front.path is not None),
+                self._review, has_images=self._passport.path is not None,
                 ai_available=self._c.ai_available(), start_read=self._read_now,
-                warn=self._warn,
-                no_images_msg="Паспорт ва патент олди расмини ташланг."):
+                warn=self._warn, no_images_msg="Паспорт расмини ташланг."):
             return
         if not self._review.has_surname():
             self._warn("Фамилия бўш — ўқилганини текширинг.")
+            return
+        # the ТРУД packet prints the patent's own number and dates, so the
+        # patent front is required here (the passport alone already read and
+        # showed above — this only gates PRINTING, never the read).
+        if self._front.path is None:
+            self._warn("Патент олди расмини ҳам ташланг — ТРУД унинг рақами "
+                       "ва саналарини босади.")
             return
         when = self._date.date().toPython()
         profession = self._profession.currentText().strip()
