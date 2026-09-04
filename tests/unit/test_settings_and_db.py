@@ -48,3 +48,52 @@ def test_invalid_language_falls_back(tmp_path: Path) -> None:
     svc.set("language", "fr")  # unsupported
     assert svc.language == "ru"
     db.close()
+
+
+def test_two_threads_reading_at_once_do_not_trip_sqlite(tmp_path: Path) -> None:
+    """The office's startup crash — «bad parameter or other API misuse».
+
+    The window read the theme on the main thread just as the housekeeping
+    sweep read a setting on its own thread, both on the one shared connection.
+    With a connection per thread this must run clean under real contention.
+    """
+    import threading
+
+    svc, db = _service(tmp_path)
+    svc.set("theme", "light")
+    errors: list[Exception] = []
+
+    def hammer() -> None:
+        try:
+            for _ in range(200):
+                assert svc.theme == "light"
+                assert svc.language == "ru"   # a second read, different key
+        except Exception as exc:  # noqa: BLE001 - the whole point is to catch it
+            errors.append(exc)
+
+    threads = [threading.Thread(target=hammer) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent DB access raised: {errors[:3]}"
+    db.close()
+
+
+def test_a_write_from_another_thread_is_seen(tmp_path: Path) -> None:
+    """Per-thread connections still share the one file: a value written on one
+    thread is read back on another (WAL + committed transactions)."""
+    import threading
+
+    svc, db = _service(tmp_path)
+
+    def writer() -> None:
+        svc.set("theme", "light")
+
+    t = threading.Thread(target=writer)
+    t.start()
+    t.join()
+
+    assert svc.theme == "light"      # read on the main thread's own connection
+    db.close()
