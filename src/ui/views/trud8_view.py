@@ -27,10 +27,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.common.logging import get_logger
 from src.common.threading import run_async
 from src.controllers.trud8_controller import Trud8Controller
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+
+log = get_logger(__name__)
 
 _PROFESSIONS = ("ПОДСОБНЫЙ РАБОЧИЙ", "РАЗНОРАБОЧИЙ", "УБОРЩИЦА", "КУРЬЕР",
                 "МОНТАЖНИК", "ШТУКАТУР", "БЕТОНЩИК", "МАЛЯР")
@@ -294,13 +297,18 @@ class Trud8View(QWidget):
         The ТД/УВ also print the patent's own number and dates, so the patent
         front is asked for at print time; but the read must not wait for it in
         silence — that dead screen was «ишламаяпти»."""
+        log.info("ТРУД(trud8) файл ташланди: passport=%s, front=%s, ai=%s",
+                 self._passport.path is not None, self._front.path is not None,
+                 self._c.ai_available())
         if self._passport.path is None or not self._c.ai_available():
+            log.info("ТРУД(trud8): ўқиш бошланмади (паспорт йўқ ёки AI йўқ)")
             return
         self._settle.start()
 
     def _read_now(self) -> None:
         if self._passport.path is None or not self._c.ai_available():
             return
+        log.info("ТРУД(trud8): ЎҚИШ БОШЛАНДИ")
         passport = self._c.read_image(self._passport.path)
         front = (self._c.read_image(self._front.path)
                  if self._front.path is not None else None)
