@@ -30,8 +30,11 @@ log = get_logger(__name__)
 _MODEL = "auto"  # discover models from the key and prefer free-tier-friendly ones
 
 #: How long one model gets to read one document. A reading is a lookup, not a
-#: composition — the lite models answer in three or four seconds.
-_READ_TIMEOUT_S = 90
+#: composition — the lite models answer in three or four seconds, so a model
+#: that has said nothing in forty-five seconds is stuck, not thinking, and the
+#: next name answers at once. (It was 90s, long enough that one stuck model on
+#: a slow free-tier minute felt to the office like «AI ишламаяпти».)
+_READ_TIMEOUT_S = 45
 
 # Ordered preference when the key exposes several models, and the ranking key
 # for whatever discovery turns up. The lite models read a passport as
@@ -89,12 +92,14 @@ class GeminiProvider(IAiProvider):
             raise AiAuthError("Gemini API key is not set")
         last_exc: Exception | None = None
 
-        # Fast path: a model already proved itself this session — use it directly
-        # (one retry on a transient rate-limit), never re-discovering.
+        # Fast path: a model already proved itself this session — use it
+        # directly, never re-discovering. retries=0: a rate-limited minute is
+        # not slept on for eight seconds — the search below tries the other
+        # models straight away, each with its own free-tier quota.
         if self._chosen:
             try:
                 return self._call(api_key, self._chosen, image, prompt, doc_type,
-                                  retries=1)
+                                  retries=0)
             except Exception as exc:  # noqa: BLE001 - fall back to a full search
                 last_exc = exc
                 self._chosen = None
@@ -110,8 +115,14 @@ class GeminiProvider(IAiProvider):
                     continue
                 tried.add(model_name)
                 try:
+                    # retries=0 during the SEARCH: a rate-limited model is not
+                    # waited on with an 8-second sleep — the next name has its
+                    # own quota and usually answers at once. Sleeping on each of
+                    # four models is what made the first read of a session crawl
+                    # to nearly a minute. The proven model (the fast path above)
+                    # still gets one retry for a genuine transient blip.
                     result = self._call(api_key, model_name, image, prompt,
-                                        doc_type, retries=1)
+                                        doc_type, retries=0)
                     self._chosen = model_name  # remember the winner for next time
                     return result
                 except Exception as exc:  # noqa: BLE001 - provider boundary
@@ -219,6 +230,7 @@ def _parse(text: str, doc_type: DocType, provider: str) -> AiRawResult:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        raise AiInvalidJsonError("Model did not return valid JSON", context={"raw": text[:200]}) from exc
+        raise AiInvalidJsonError("Model did not return valid JSON",
+                                 context={"raw": text[:200]}) from exc
     fields = {k: str(v) for k, v in data.items() if k != "document_type"}
     return AiRawResult(document_type=doc_type, fields=fields, provider=provider)
