@@ -339,7 +339,14 @@ class Trud8View(QWidget):
         self._progress.finish()
         self._review.reveal()          # so it can be typed by hand
         message = getattr(error, "message", None) or str(error)
+        log.warning("ТРУД(trud8) ЎҚИШ ХАТО: %r", error)
         self._status.setText(f"❌ Ўқилмади: {message}. Қўлда ёзинг.")
+        # trud8 sits in a scroll area, so a status line at the foot is easy to
+        # miss — the office asked for the reason to be shown, not hidden. A
+        # popup always surfaces, whatever the scroll position.
+        QMessageBox.warning(
+            self, "AI ҳужжатни ўқий олмади",
+            f"Сабаби:\n{message}\n\nМайдонларни қўлда ҳам тўлдиришингиз мумкин.")
 
     # ------------------------------------------------------------ printing
     def _generate(self) -> None:
