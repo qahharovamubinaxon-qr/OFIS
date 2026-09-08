@@ -92,6 +92,8 @@ _NAV = [
      "Иностранный карта — паспорт + расм → 2 томон PDF", "🪪"),
     (None, "nav.alpinist", "АЛПИНИСТ",
      "Промышленный альпинист удостоверенияси — расм, имзо, печать", "🧗"),
+    (None, "nav.alliance", "АЛЬЯНСКОТ 2400",
+     "Удостоверение + 2 справка → 3 PDF (расм, имзо, +3 йил)", "🪪"),
     (None, "nav.imgbb", "IMGBB",
      "Расм → i.ibb.co прямой ҳавола ва QR код", "🖼"),
     (None, "nav.spr3", "3-СПРАВКА",
@@ -366,6 +368,15 @@ class MainWindow(QMainWindow):
             return AlpinistView(AlpinistController(
                 self._container.resolve(OcrService),
                 AlpinistService(self._settings),
+            ))
+        if key == "nav.alliance":
+            from src.controllers.alliance_controller import AllianceController
+            from src.services.alliance_service import AllianceService
+            from src.ui.views.alliance_view import AllianceView
+
+            return AllianceView(AllianceController(
+                self._container.resolve(OcrService),
+                AllianceService(self._settings),
             ))
         if key == "nav.kukchek":
             from src.controllers.kukchek_controller import KukChekController
