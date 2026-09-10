@@ -37,7 +37,7 @@ def _model() -> str | None:
 def test_output_is_document_standard() -> None:
     assert (OUT_W, OUT_H) == (413, 531)  # 3×4 at 300 DPI
     assert OUT_DPI == 300
-    assert set(BG_COLORS) == {"white", "gray", "blue"}
+    assert set(BG_COLORS) == {"white", "gray", "blue", "studio"}
     assert BG_COLORS["white"] == (255, 255, 255)
 
 

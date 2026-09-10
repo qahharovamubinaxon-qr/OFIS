@@ -510,11 +510,9 @@ class MainWindow(QMainWindow):
                 DmsService(self._settings),
             ))
         if key == "nav.photo":
-            from src.services.photo_service import PhotoService
+            from src.services.photo_lab_service import PhotoLabService
 
-            return PhotoView(PhotoService(
-                key_getter=lambda: str(self._settings.get("ai.gemini_key", "") or "")
-            ))
+            return PhotoView(PhotoLabService(), self._settings)
         if key == "nav.dover":
             from src.services.dover_service import DoverService
             from src.ui.views.dover_view import DoverView

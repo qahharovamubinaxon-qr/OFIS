@@ -1,8 +1,16 @@
-"""РАСМ-ФОТО screen — document photo maker.
+"""РАСМ-ФОТО — odam rasmi (3×4) va hujjat skaneri.
 
-Upload (or drag) any worker photo → the program straightens the head, crops to
-document 3×4, cleans the background to white and shows the result next to the
-upload box. The ready photo can be saved to a file or copied to the clipboard.
+Ikki rejim, bitta ekran:
+
+* **Odam rasmi** — istalgan foto → yuz bo'yicha 3×4 (yoki 3.5×4.5…) kesiladi,
+  foni olib tashlanadi (oq / kulrang / ko'k / studiya / shaffof), yuzi AI bilan
+  tiklanadi, va 3×2 varaq PDF bo'ladi.
+* **Hujjat** — pasport / patent / ID-karta surati → chetlari topilib
+  perspektivadan to'g'rilanadi, skaner ko'rinishida A4 markaziga qo'yiladi.
+
+Butun rasm ishlash mantiqi `photo_tools` yadrosida; bu ekran unga faqat
+:class:`~src.services.photo_lab_service.PhotoLabService` orqali ulanadi va
+og'ir ishni fon oqimida (`run_async`) bajaradi — oyna hech qachon qotmaydi.
 """
 
 from __future__ import annotations
@@ -20,85 +28,134 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from src.common.logging import get_logger
 from src.common.threading import run_async
-from src.services.photo_service import PhotoResult, PhotoService
+from src.services.photo_lab_service import (
+    DocScanOutput,
+    PersonPhotoOutput,
+    PhotoLabService,
+)
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 
 log = get_logger(__name__)
 
+_SIZES = (("3×4 см — 35×45", "35x45"), ("3×4 — 30×40", "30x40"),
+          ("4×5 см — 40×50", "40x50"), ("5×5 см — 50×50", "50x50"))
+_BACKGROUNDS = (("⬜ Оq", "white"), ("◽ Оch kulrang", "lightgray"),
+                ("🟦 Ko'k", "blue"), ("🎬 Studiya", "studio"),
+                ("▦ Shaffof (PNG)", "transparent"))
+_GRIDS = (("6 ta — 3×2", "3x2"), ("4 ta — 2×2", "2x2"), ("8 ta — 4×2", "4x2"))
+_PRESETS = (("ID-karta / patent", "id_card"), ("Pasport — 1 sahifa", "passport_page"),
+            ("Pasport — ochiq, 2 sahifa", "passport_spread"),
+            ("A4", "a4"), ("A5", "a5"), ("Avto", "auto"))
+_COLORS = (("Rangli", "color"), ("Kulrang", "gray"), ("Oq-qora", "bw"))
+
 
 class PhotoView(QWidget):
-    def __init__(self, service: PhotoService) -> None:
+    def __init__(self, service: PhotoLabService, settings=None) -> None:
         super().__init__()
         self._service = service
-        self._result_png: bytes | None = None
-        self._result_pdf: bytes | None = None
+        self._settings = settings
+        self._out: PersonPhotoOutput | DocScanOutput | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(14)
+        root.setSpacing(12)
 
-        title = QLabel("РАСМ-ФОТО — Документ учун 3×4")
+        title = QLabel("РАСМ-ФОТО — 3×4 расм ва ҳужжат сканери")
         title.setObjectName("viewTitle")
         root.addWidget(title)
 
-        opts = QHBoxLayout()
-        opts.addWidget(QLabel("Nima kerak:"))
+        # -- mode ------------------------------------------------------
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Nima kerak:"))
         self._mode = QComboBox()
         self._mode.addItem("🧍 Odam rasmi — 3×4", "photo")
         self._mode.addItem("📄 Hujjat — skan → PDF", "document")
-        self._mode.setFixedWidth(210)
-        self._mode.setToolTip(
-            "«Hujjat» — pasport, prava yoki patentni telefonda suratga oling.\n"
-            "Dastur hujjatning chetlarini topib to'g'rilaydi, oq-qora qiladi\n"
-            "va sahifa markaziga qo'yib PDF qiladi.")
+        self._mode.setFixedWidth(230)
         self._mode.currentIndexChanged.connect(self._on_mode)
-        opts.addWidget(self._mode)
+        mode_row.addWidget(self._mode)
+        mode_row.addStretch(1)
+        root.addLayout(mode_row)
 
-        self._bg_label = QLabel("Fon rangi:")
-        opts.addWidget(self._bg_label)
-        self._bg = QComboBox()
-        for label, key in (("⬜ Oq", "white"), ("◽ Och kulrang", "gray"),
-                           ("🟦 Ko'k", "blue"), ("🎬 Studiya", "studio")):
-            self._bg.addItem(label, key)
-        self._bg.setToolTip(
-            "«Studiya» — och kulrang fon, o'rtasi yorug', chetiga qarab "
-            "yumshoq qorayadi va yelka ortida mayin soya bo'ladi.\n"
-            "Yuzga umuman tegilmaydi: faqat odamning ORQASI bo'yaladi.")
-        self._bg.setFixedWidth(180)
-        self._bg.currentIndexChanged.connect(self._on_photo)
-        opts.addWidget(self._bg)
+        # -- person settings ------------------------------------------
+        self._person_opts = QWidget()
+        po = QHBoxLayout(self._person_opts)
+        po.setContentsMargins(0, 0, 0, 0)
+        po.addWidget(QLabel("O'lcham:"))
+        self._size = self._combo(_SIZES)
+        po.addWidget(self._size)
+        po.addWidget(QLabel("Fon:"))
+        self._bg = self._combo(_BACKGROUNDS)
+        po.addWidget(self._bg)
+        self._enhance = QCheckBox("Yuzni AI bilan tiklash")
+        self._enhance.setToolTip("Telefon suratidagi yuzni AI (GFPGAN) bilan "
+                                 "tiniqlashtiradi. Model yo'q bo'lsa oddiy "
+                                 "o'tkirlash bilan ishlaydi.")
+        self._enhance.stateChanged.connect(self._on_enhance_toggle)
+        po.addWidget(self._enhance)
+        self._weight = QSlider(Qt.Orientation.Horizontal)
+        self._weight.setRange(30, 100)
+        self._weight.setValue(50)
+        self._weight.setFixedWidth(90)
+        self._weight.setToolTip("AI kuchi: 0.3–0.5 tabiiy (hujjat uchun), "
+                                "1.0 — maksimal qayta chizish.")
+        self._weight_lbl = QLabel("0.50")
+        self._weight.valueChanged.connect(
+            lambda v: self._weight_lbl.setText(f"{v / 100:.2f}"))
+        po.addWidget(self._weight)
+        po.addWidget(self._weight_lbl)
+        self._corner = QCheckBox("Burchak kesimi")
+        self._corner.setChecked(True)
+        self._corner.setToolTip("Pastki chap burchak diagonal kesiladi "
+                                "(obrazets kabi).")
+        po.addWidget(self._corner)
+        po.addWidget(QLabel("Varaq:"))
+        self._grid = self._combo(_GRIDS)
+        po.addWidget(self._grid)
+        po.addStretch(1)
+        root.addWidget(self._person_opts)
 
-        self._grey = QCheckBox("Oq-qora")
-        self._grey.setChecked(True)
-        self._grey.setToolTip("Skaner qilgandek oq-qora. Olib tashlansa rangli qoladi.")
-        self._grey.stateChanged.connect(self._on_photo)
-        opts.addWidget(self._grey)
+        # -- document settings ----------------------------------------
+        self._doc_opts = QWidget()
+        do = QHBoxLayout(self._doc_opts)
+        do.setContentsMargins(0, 0, 0, 0)
+        do.addWidget(QLabel("Hujjat turi:"))
+        self._preset = self._combo(_PRESETS)
+        do.addWidget(self._preset)
+        do.addWidget(QLabel("Rang:"))
+        self._color = self._combo(_COLORS)
+        do.addWidget(self._color)
+        do.addStretch(1)
+        root.addWidget(self._doc_opts)
 
-        self._reset = QPushButton("🗑 Tozalash")
-        self._reset.clicked.connect(self.reset)
-        opts.addWidget(self._reset)
-        opts.addStretch(1)
-        root.addLayout(opts)
-
+        # -- upload → preview -----------------------------------------
         row = QHBoxLayout()
         row.setSpacing(16)
 
         self._dz = DropZone("🖼️", "Rasm yuklang (istalgan foto)")
-        self._dz.changed.connect(self._on_photo)
+        self._dz.changed.connect(self._on_input)
         row.addWidget(self._dz, stretch=1)
 
-        self._dz_doc = DropZone("📄", "Hujjat rasmlarini yuklang", multiple=True)
-        self._dz_doc.changed.connect(self._on_photo)
-        self._dz_doc.hide()
-        row.addWidget(self._dz_doc, stretch=1)
+        self._doc_box = QWidget()
+        dbl = QHBoxLayout(self._doc_box)
+        dbl.setContentsMargins(0, 0, 0, 0)
+        dbl.setSpacing(10)
+        self._dz_front = DropZone("📄", "Old tomoni")
+        self._dz_front.changed.connect(self._on_input)
+        dbl.addWidget(self._dz_front, stretch=1)
+        self._dz_back = DropZone("🔄", "Orqa tomoni (ixtiyoriy)")
+        self._dz_back.changed.connect(self._on_input)
+        dbl.addWidget(self._dz_back, stretch=1)
+        row.addWidget(self._doc_box, stretch=2)
 
         arrow = QLabel("→")
         arrow.setStyleSheet("font-size: 28px; color:#8a94a3;")
@@ -106,115 +163,220 @@ class PhotoView(QWidget):
         row.addWidget(arrow)
 
         right = QVBoxLayout()
-        self._preview = QLabel("Tayyor rasm shu yerda ko'rinadi")
+        self._preview = QLabel("Tayyor natija shu yerda ko'rinadi")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview.setMinimumSize(240, 320)
+        self._preview.setMinimumSize(260, 340)
         self._preview.setStyleSheet(
-            "border: 2px dashed #3a4354; border-radius: 12px; color:#8a94a3;"
-        )
+            "border: 2px dashed #3a4354; border-radius: 12px; color:#8a94a3;")
         right.addWidget(self._preview, stretch=1)
 
         btns = QHBoxLayout()
-        self._save = QPushButton("💾 Saqlash")
-        self._save.clicked.connect(self._save_photo)
+        self._save_pdf = QPushButton("💾 PDF")
+        self._save_pdf.clicked.connect(self._on_save_pdf)
+        self._save_png = QPushButton("🖼 PNG")
+        self._save_png.clicked.connect(self._on_save_png)
         self._copy = QPushButton("📋 Copy")
-        self._copy.clicked.connect(self._copy_photo)
-        for b in (self._save, self._copy):
+        self._copy.clicked.connect(self._on_copy)
+        for b in (self._save_pdf, self._save_png, self._copy):
             b.setEnabled(False)
             btns.addWidget(b)
         right.addLayout(btns)
-        row.addLayout(right, stretch=1)
+        row.addLayout(right, stretch=2)
         root.addLayout(row, stretch=1)
 
-        self._progress = RunProgress()
+        run_row = QHBoxLayout()
+        self._run = QPushButton("▶ Tayyorlash")
+        self._run.setObjectName("primaryButton")
+        self._run.clicked.connect(self._on_run)
+        run_row.addWidget(self._run)
+        clear = QPushButton("🗑 Tozalash")
+        clear.clicked.connect(self.reset)
+        run_row.addWidget(clear)
+        run_row.addStretch(1)
+        root.addLayout(run_row)
+
+        self._progress = RunProgress(self)
         root.addWidget(self._progress)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(line)
 
-        self._status = QLabel("Rasm yuklang — dastur 3×4 qilib, fonini tozalab beradi.")
+        self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet("color:#8a94a3;")
         root.addWidget(self._status)
+        root.addStretch(1)
 
-        self._on_mode()          # hide the document-only controls to start with
+        self._restore_choices()
+        self._on_enhance_toggle()
+        self._on_mode()
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------- helpers
+    def _combo(self, pairs) -> QComboBox:
+        box = QComboBox()
+        for label, key in pairs:
+            box.addItem(label, key)
+        return box
+
     def _document_mode(self) -> bool:
         return self._mode.currentData() == "document"
 
+    def _grid_cols_rows(self) -> tuple[int, int]:
+        cols, rows = (self._grid.currentData() or "3x2").split("x")
+        return int(cols), int(rows)
+
+    # ------------------------------------------------------------- settings
+    def _restore_choices(self) -> None:
+        if self._settings is None:
+            return
+        try:
+            self._pick(self._mode, self._settings.get("photo.mode", "photo"))
+            self._pick(self._size, self._settings.get("photo.size", "35x45"))
+            self._pick(self._bg, self._settings.get("photo.bg", "white"))
+            self._pick(self._grid, self._settings.get("photo.grid", "3x2"))
+            self._pick(self._preset, self._settings.get("photo.preset", "id_card"))
+            self._pick(self._color, self._settings.get("photo.color", "color"))
+            self._enhance.setChecked(
+                str(self._settings.get("photo.enhance", "1")) == "1")
+            weight = str(self._settings.get("photo.weight", "50"))
+            if weight.isdigit():
+                self._weight.setValue(int(weight))
+        except Exception:                          # noqa: BLE001 - never block UI
+            log.debug("photo: settings restore skipped", exc_info=True)
+
+    def _remember(self) -> None:
+        if self._settings is None:
+            return
+        try:
+            self._settings.set("photo.mode", self._mode.currentData())
+            self._settings.set("photo.size", self._size.currentData())
+            self._settings.set("photo.bg", self._bg.currentData())
+            self._settings.set("photo.grid", self._grid.currentData())
+            self._settings.set("photo.preset", self._preset.currentData())
+            self._settings.set("photo.color", self._color.currentData())
+            self._settings.set("photo.enhance",
+                               "1" if self._enhance.isChecked() else "0")
+            self._settings.set("photo.weight", str(self._weight.value()))
+        except Exception:                          # noqa: BLE001
+            log.debug("photo: settings save skipped", exc_info=True)
+
+    @staticmethod
+    def _pick(box: QComboBox, key) -> None:
+        index = box.findData(key)
+        if index >= 0:
+            box.setCurrentIndex(index)
+
+    # ------------------------------------------------------------- state
+    def _on_enhance_toggle(self) -> None:
+        on = self._enhance.isChecked()
+        self._weight.setEnabled(on)
+        self._weight_lbl.setEnabled(on)
+
     def _on_mode(self) -> None:
-        """Swap the screen between the 3×4 maker and the document scanner."""
         document = self._document_mode()
+        self._person_opts.setVisible(not document)
+        self._doc_opts.setVisible(document)
         self._dz.setVisible(not document)
-        self._dz_doc.setVisible(document)
-        self._bg_label.setVisible(not document)
-        self._bg.setVisible(not document)
-        self._grey.setVisible(document)
-        self._reset.setVisible(document)
-        self._copy.setEnabled(False)
-        self._save.setEnabled(False)
-        self._result_png = None
-        self._result_pdf = None
+        self._doc_box.setVisible(document)
+        self._clear_result()
+        self._preview.setText("Tayyor hujjat shu yerda ko'rinadi" if document
+                              else "Tayyor rasm shu yerda ko'rinadi")
+        self._status.setText(
+            "Old (va xohlasangiz orqa) tomonini yuklang — chetlari topilib "
+            "to'g'rilanadi, A4 markaziga qo'yilib PDF bo'ladi." if document else
+            "Rasm yuklang — 3×4 qilib kesadi, fonini tozalaydi, varaq qiladi.")
+
+    def _on_input(self) -> None:
+        # a fresh upload invalidates the last result; the operator presses
+        # «Tayyorlash» when ready (heavy work never starts on a stray drop)
+        self._clear_result()
+
+    def _clear_result(self) -> None:
+        self._out = None
         self._preview.setPixmap(QPixmap())
-        self._preview.setText("Tayyor hujjat shu yerda ko'rinadi"
-                              if document else "Tayyor rasm shu yerda ko'rinadi")
-        self._status.setText(
-            "Hujjat rasmlarini yuklang — chetlari topilib to'g'rilanadi, "
-            "sahifa markaziga qo'yilib PDF bo'ladi. Bir nechta rasm "
-            "yuklasangiz hammasi bitta PDF ga tushadi."
-            if document else
-            "Rasm yuklang — dastur 3×4 qilib, fonini tozalab beradi.")
-        if (self._dz_doc.paths if document else self._dz.path):
-            self._on_photo()
+        for b in (self._save_pdf, self._save_png, self._copy):
+            b.setEnabled(False)
 
-    def _on_photo(self) -> None:
+    # ------------------------------------------------------------- run
+    def _on_run(self) -> None:
         if self._document_mode():
-            self._scan_documents()
-            return
+            self._run_document()
+        else:
+            self._run_person()
+
+    def _run_person(self) -> None:
         if self._dz.path is None:
+            self._warn("Avval rasm yuklang.")
             return
+        if self._enhance.isChecked() and not self._ensure_face_model():
+            return                       # download offered/declined → handled
         data = Path(self._dz.path).read_bytes()
-        self._save.setEnabled(False)
-        self._copy.setEnabled(False)
-        self._status.setText("⏳ Rasm ishlanyapti…")
-        self._progress.start("Rasm ishlanyapti…")
-        run_async(self._service.process, data, bg=self._bg.currentData(),
-                  on_success=self._done, on_error=self._failed)
+        cols, rows = self._grid_cols_rows()
+        opts = dict(size=self._size.currentData(),
+                    background=self._bg.currentData(),
+                    enhance_face=self._enhance.isChecked(),
+                    face_weight=self._weight.value() / 100,
+                    corner_cut=self._corner.isChecked(), cols=cols, rows=rows)
+        self._remember()
+        self._busy("⏳ Rasm ishlanyapti…")
+        run_async(self._service.person, data, on_success=self._person_done,
+                  on_error=self._failed, **opts)
 
-    def _scan_documents(self) -> None:
-        paths = self._dz_doc.paths
-        if not paths:
+    def _run_document(self) -> None:
+        if self._dz_front.path is None:
+            self._warn("Avval hujjatning old tomonini yuklang.")
             return
-        from src.services import doc_scan_service
+        items = [(Path(self._dz_front.path).read_bytes(), "old")]
+        if self._dz_back.path is not None:
+            items.append((Path(self._dz_back.path).read_bytes(), "orqa"))
+        opts = dict(preset=self._preset.currentData(),
+                    color=self._color.currentData())
+        self._remember()
+        self._busy("⏳ Hujjat skanerlanyapti…")
+        run_async(self._service.document, items, on_success=self._doc_done,
+                  on_error=self._failed, **opts)
 
-        images = [Path(p).read_bytes() for p in paths]
-        grey = self._grey.isChecked()
-        self._save.setEnabled(False)
-        self._copy.setEnabled(False)
-        self._status.setText(f"⏳ {len(images)} ta hujjat skanerlanyapti…")
-        self._progress.start("Hujjat skanerlanyapti…")
+    def _busy(self, message: str) -> None:
+        self._out = None
+        self._run.setEnabled(False)
+        for b in (self._save_pdf, self._save_png, self._copy):
+            b.setEnabled(False)
+        self._status.setText(message)
+        self._progress.start(message)
 
-        def work():
-            # scanned once: the preview is page one of the very PDF that will
-            # be saved, so what the operator approves is what they get
-            pdf = doc_scan_service.build_pdf(images, grayscale=grey)
-            return pdf, doc_scan_service.first_page_png(pdf)
-
-        run_async(work, on_success=self._scanned, on_error=self._failed)
-
-    def _scanned(self, made: tuple[bytes, bytes]) -> None:
-        pdf, preview = made
+    def _person_done(self, out: PersonPhotoOutput) -> None:
         self._progress.finish()
-        self._result_pdf, self._result_png = pdf, preview
-        self._show(preview)
-        self._save.setEnabled(True)
-        self._copy.setEnabled(True)
-        count = len(self._dz_doc.paths)
-        self._status.setText(
-            f"✅ Tayyor: {count} ta hujjat → PDF. «Saqlash» bosing."
-            + ("  (Ko'rinayotgani — birinchisi.)" if count > 1 else ""))
+        self._run.setEnabled(True)
+        self._out = out
+        self._show(out.sheet_png)
+        for b in (self._save_pdf, self._save_png, self._copy):
+            b.setEnabled(True)
+        if not out.face_found:
+            self._status.setText("⚠️ Yuz topilmadi — rasm faqat markazdan "
+                                 "kesildi. PDF: 6 ta rasm.")
+        else:
+            extra = " · AI bilan tiklandi" if out.face_enhanced else ""
+            self._status.setText(f"✅ Tayyor{extra}. PDF — varaq, PNG — bitta "
+                                 "rasm, Copy — buferga.")
+
+    def _doc_done(self, out: DocScanOutput) -> None:
+        self._progress.finish()
+        self._run.setEnabled(True)
+        self._out = out
+        self._show(out.preview_png)
+        for b in (self._save_pdf, self._save_png, self._copy):
+            b.setEnabled(True)
+        pages = len(out.page_pngs)
+        self._status.setText(f"✅ Tayyor: {pages} sahifa → PDF. PNG — har "
+                             "sahifa alohida.")
+
+    def _failed(self, error: Exception) -> None:
+        self._progress.fail()
+        self._run.setEnabled(True)
+        message = getattr(error, "message", None) or str(error)
+        self._status.setText(f"❌ {message}")
+        QMessageBox.warning(self, "Xato", message)
 
     def _show(self, png: bytes) -> None:
         pix = QPixmap.fromImage(QImage.fromData(png, "PNG")).scaled(
@@ -223,66 +385,102 @@ class PhotoView(QWidget):
             Qt.TransformationMode.SmoothTransformation)
         self._preview.setPixmap(pix)
 
-    def _done(self, result: PhotoResult) -> None:
-        self._progress.finish()
-        self._result_png = result.png
-        self._result_pdf = None
-        self._show(result.png)
-        self._save.setEnabled(True)
-        self._copy.setEnabled(True)
-        if result.face_found:
-            extra = f"  [{result.note}]" if result.note else ""
-            self._status.setText("✅ Tayyor: 3×4. Saqlang yoki Copy qiling." + extra)
-        else:
-            self._status.setText("⚠️ Yuz topilmadi — rasm faqat 3×4 qilib kesildi.")
+    # ------------------------------------------------------------- models
+    def _ensure_face_model(self) -> bool:
+        """Ready to enhance? Offer the one-time model download if it is missing.
 
-    def _failed(self, error: Exception) -> None:
-        self._progress.fail()
-        self._status.setText("❌ " + str(error))
-        QMessageBox.warning(self, "Xato", str(error))
+        Returns True when the run may proceed (model ready, or the operator
+        chose to go on without AI). Returns False only while a download the
+        operator asked for is running — the run restarts when it finishes.
+        """
+        status = self._service.models_status()
+        if status.get("gfpgan"):
+            return True
+        if not status.get("torch"):
+            QMessageBox.information(
+                self, "AI yuz tiklash",
+                "AI yuz tiklash uchun «torch» kutubxonasi kerak (dasturni u "
+                "bilan qayta yig'ish lozim). Hozircha oddiy o'tkirlash bilan "
+                "davom etadi.")
+            return True                            # degrade gracefully, still run
+        ask = QMessageBox.question(
+            self, "Model yuklab olish",
+            "AI yuz tiklash modeli (≈350 MB) hali yuklanmagan. Hozir yuklab "
+            "olinsinmi? (Bir marta — keyin oflayn ishlaydi.)")
+        if ask != QMessageBox.StandardButton.Yes:
+            self._enhance.setChecked(False)        # go on without AI this time
+            return True
+        dialog = QProgressDialog("Model yuklab olinmoqda…", None, 0, 0, self)
+        dialog.setWindowTitle("AI yuz tiklash")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.show()
 
-    # ------------------------------------------------------------------
-    def _save_photo(self) -> None:
-        if self._result_pdf:
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Hujjatni saqlash", "hujjat.pdf", "PDF (*.pdf)")
-            if not path:
-                return
-            if not path.lower().endswith(".pdf"):
-                path += ".pdf"
-            Path(path).write_bytes(self._result_pdf)
-            self._status.setText(f"✅ Saqlandi: {path}")
+        def done(_status) -> None:
+            dialog.close()
+            self._run_person()                     # restart now that it is ready
+
+        def failed(error: Exception) -> None:
+            dialog.close()
+            self._enhance.setChecked(False)
+            self._warn(f"Model yuklanmadi: {error}. AI'siz davom etamiz — "
+                       "«Tayyorlash» bosing.")
+
+        run_async(self._service.ensure_models, on_success=done, on_error=failed)
+        return False
+
+    # ------------------------------------------------------------- save
+    def _on_save_pdf(self) -> None:
+        if self._out is None:
             return
-        if not self._result_png:
+        default = "hujjat.pdf" if self._document_mode() else "rasm_varaq.pdf"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "PDF saqlash", default, "PDF (*.pdf)")
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        Path(path).write_bytes(self._out.pdf)
+        self._status.setText(f"✅ Saqlandi: {path}")
+
+    def _on_save_png(self) -> None:
+        if self._out is None:
+            return
+        if isinstance(self._out, DocScanOutput):
+            folder = QFileDialog.getExistingDirectory(self, "PNG'lar uchun papka")
+            if not folder:
+                return
+            for i, png in enumerate(self._out.page_pngs, 1):
+                (Path(folder) / f"hujjat_{i}.png").write_bytes(png)
+            self._status.setText(
+                f"✅ {len(self._out.page_pngs)} ta PNG saqlandi: {folder}")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Rasmni saqlash", "photo_3x4.png", "PNG (*.png);;JPEG (*.jpg)"
-        )
+            self, "Rasmni saqlash", "photo_3x4.png",
+            "PNG (*.png);;JPEG (*.jpg)")
         if not path:
             return
         if path.lower().endswith((".jpg", ".jpeg")):
-            img = QImage.fromData(self._result_png, "PNG")
-            img.save(path, "JPEG", 95)
+            QImage.fromData(self._out.photo_png, "PNG").save(path, "JPEG", 95)
         else:
-            Path(path).write_bytes(self._result_png)
+            Path(path).write_bytes(self._out.photo_png)
         self._status.setText(f"✅ Saqlandi: {path}")
 
-    def _copy_photo(self) -> None:
-        if not self._result_png:
+    def _on_copy(self) -> None:
+        if self._out is None:
             return
-        QApplication.clipboard().setImage(QImage.fromData(self._result_png, "PNG"))
-        self._status.setText("✅ Rasm buferga nusxalandi (Ctrl+V bilan qo'ying).")
+        png = (self._out.preview_png if isinstance(self._out, DocScanOutput)
+               else self._out.photo_png)
+        QApplication.clipboard().setImage(QImage.fromData(png, "PNG"))
+        self._status.setText("✅ Buferga nusxalandi (Ctrl+V bilan qo'ying).")
 
-    # -- «Обновить» support -------------------------------------------
+    # ------------------------------------------------------------- misc
+    def _warn(self, message: str) -> None:
+        self._status.setText(f"⚠️ {message}")
+
     def reset(self) -> None:
-        """A new worker, or a new stack of documents — clear both piles."""
         self._dz.clear()
-        self._dz_doc.clear()
-        self._result_png = None
-        self._result_pdf = None
-        self._save.setEnabled(False)
-        self._copy.setEnabled(False)
-        self._preview.setPixmap(QPixmap())
-        self._preview.setText("Tayyor hujjat shu yerda ko'rinadi"
-                              if self._document_mode()
-                              else "Tayyor rasm shu yerda ko'rinadi")
+        self._dz_front.clear()
+        self._dz_back.clear()
+        self._clear_result()
+        self._status.setText("")

@@ -25,6 +25,14 @@ echo === Installing build tools ===
 pip install -r requirements.txt
 pip install pyinstaller
 
+echo === cv2 ni faqat headless (4.x) qoldirish ===
+REM gfpgan/basicsr/facexlib to'liq "opencv-python" ni tortadi. U PySide6 ning
+REM Qt si bilan urishadi, va OpenCV 5.0 da Haar (CascadeClassifier) olib
+REM tashlangan - photo_tools yuz topishda uni ishlatadi. Shu sabab to'liq
+REM nusxa o'chirilib, faqat headless 4.x qoldiriladi.
+python -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
+python -m pip install --force-reinstall "opencv-python-headless>=4.9,<5"
+
 echo === Building OFIS.exe (2-5 minutes) ===
 pyinstaller build\ofis.spec --noconfirm --clean
 if errorlevel 1 goto :failed

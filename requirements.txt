@@ -1,7 +1,11 @@
 PySide6>=6.7
 pydantic>=2.7
 PyMuPDF>=1.24
-opencv-python-headless>=4.9
+# 4.x да қоладиган: OpenCV 5.0 да cv2.CascadeClassifier (Haar) олиб ташланган,
+# photo_tools юз топишда уни ишлатади. gfpgan/basicsr тўлиқ opencv-python ни
+# тортади — build_exe.bat уни ўчириб, фақат headless қолдиради (PySide6 Qt билан
+# тўлиқ opencv Qt уришмаслиги учун).
+opencv-python-headless>=4.9,<5
 Pillow>=10.3
 python-dotenv>=1.0
 # google-generativeai — ОЛИБ ТАШЛАНДИ. Google уни ташлаб қўйган,
@@ -14,3 +18,14 @@ docx2pdf>=0.1.8; sys_platform == "win32"
 onnxruntime>=1.17
 qrcode>=7.4
 comtypes>=1.2; sys_platform == 'win32'
+# РАСМ-ФОТО «photo_tools» ядроси — локал расм/ҳужжат ишлаш (Gemini эмас).
+rembg>=2.0
+reportlab>=4.0
+# AI юз тиклаш (GFPGAN v1.4). Оғир, лекин ихтиёрий: йўқ бўлса quvur
+# оддий ўткирлаш билан ишлайверади (photo_tools.person_photo.enhance_face).
+# Windows'да PyPI'даги torch — CPU нусхаси.
+torch>=2.2
+torchvision>=0.17
+gfpgan==1.3.8
+facexlib>=0.3
+basicsr>=1.4
