@@ -1,29 +1,31 @@
+# NOTE: keep this file ASCII-only. On a Russian-locale Windows, pip decodes
+# requirements.txt with cp1251 and Cyrillic comments crash it (UnicodeDecodeError).
 PySide6>=6.7
 pydantic>=2.7
 PyMuPDF>=1.24
-# 4.x да қоладиган: OpenCV 5.0 да cv2.CascadeClassifier (Haar) олиб ташланган,
-# photo_tools юз топишда уни ишлатади. gfpgan/basicsr тўлиқ opencv-python ни
-# тортади — build_exe.bat уни ўчириб, фақат headless қолдиради (PySide6 Qt билан
-# тўлиқ opencv Qt уришмаслиги учун).
+# Stay on OpenCV 4.x: OpenCV 5.0 dropped cv2.CascadeClassifier (Haar), which
+# photo_tools uses for face detection. gfpgan/basicsr pull full opencv-python;
+# build_exe.bat removes it and keeps only headless (full opencv's Qt clashes
+# with PySide6's Qt).
 opencv-python-headless>=4.9,<5
 Pillow>=10.3
 python-dotenv>=1.0
-# google-generativeai — ОЛИБ ТАШЛАНДИ. Google уни ташлаб қўйган,
-# ва у protobuf<6 ни мажбурлаб, офиснинг Firebase дастурини
-# синдирар эди. Gemini энди тўғридан-тўғри HTTPS орқали
-# чақирилади — src/ai/gemini_models.py.
+# google-generativeai was REMOVED: Google ended support for it and it pinned
+# protobuf<6, which held the office's other (Firebase) program below the
+# protobuf version it needs. Gemini is now called over plain HTTPS -
+# src/ai/gemini_models.py.
 openai>=1.30
 python-docx>=1.1
 docx2pdf>=0.1.8; sys_platform == "win32"
 onnxruntime>=1.17
 qrcode>=7.4
 comtypes>=1.2; sys_platform == 'win32'
-# РАСМ-ФОТО «photo_tools» ядроси — локал расм/ҳужжат ишлаш (Gemini эмас).
+# RASM-FOTO "photo_tools" core - local image/document processing (not Gemini).
 rembg>=2.0
 reportlab>=4.0
-# AI юз тиклаш (GFPGAN v1.4). Оғир, лекин ихтиёрий: йўқ бўлса quvur
-# оддий ўткирлаш билан ишлайверади (photo_tools.person_photo.enhance_face).
-# Windows'да PyPI'даги torch — CPU нусхаси.
+# AI face restoration (GFPGAN v1.4). Heavy but optional: without it the pipe
+# falls back to a plain sharpen (photo_tools.person_photo.enhance_face).
+# On Windows the PyPI torch wheel is the CPU build.
 torch>=2.2
 torchvision>=0.17
 gfpgan==1.3.8
