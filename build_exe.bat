@@ -2,6 +2,20 @@
 REM OFIS — build a standalone EXE (run once; then use the Desktop shortcut).
 cd /d "%~dp0"
 
+REM OFIS ni ANIQ Python 3.12 bilan yig'amiz. torch/rembg/gfpgan ning yangi
+REM Python 3.14 uchun wheel'lari hali yo'q - agar PATH dagi "python"/"pip"
+REM 3.14 bo'lsa, "pip install" jimgina yiqiladi va EXE kutubxonasiz chiqadi
+REM (aynan shu bo'lgan edi: "No module named rembg"). "py -3.12" launcher
+REM aniq 3.12 ni tanlaydi.
+set "PY=py -3.12"
+%PY% --version >nul 2>&1
+if errorlevel 1 (
+  echo XATO: Python 3.12 topilmadi.
+  echo   https://www.python.org/downloads/ dan Python 3.12 ni o'rnating.
+  pause
+  exit /b 1
+)
+
 echo === Ishlab turgan OFIS yopilmoqda ===
 REM PyInstaller cannot replace dist\OFIS while the old EXE is running, so the
 REM build used to die halfway through COLLECT leaving the previous EXE in place.
@@ -21,20 +35,21 @@ if not errorlevel 1 (
   ping -n 2 127.0.0.1 >nul
 )
 
-echo === Installing build tools ===
-pip install -r requirements.txt
-pip install pyinstaller
+echo === Installing build tools (Python 3.12) ===
+%PY% -m pip install -r requirements.txt
+if errorlevel 1 goto :depsfail
+%PY% -m pip install pyinstaller
 
 echo === cv2 ni faqat headless (4.x) qoldirish ===
 REM gfpgan/basicsr/facexlib to'liq "opencv-python" ni tortadi. U PySide6 ning
 REM Qt si bilan urishadi, va OpenCV 5.0 da Haar (CascadeClassifier) olib
 REM tashlangan - photo_tools yuz topishda uni ishlatadi. Shu sabab to'liq
 REM nusxa o'chirilib, faqat headless 4.x qoldiriladi.
-python -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
-python -m pip install --force-reinstall "opencv-python-headless>=4.9,<5"
+%PY% -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
+%PY% -m pip install --force-reinstall "opencv-python-headless>=4.9,<5"
 
-echo === Building OFIS.exe (2-5 minutes) ===
-pyinstaller build\ofis.spec --noconfirm --clean
+echo === Building OFIS.exe (torch bilan katta: 10-20 daqiqa) ===
+%PY% -m PyInstaller build\ofis.spec --noconfirm --clean
 if errorlevel 1 goto :failed
 if not exist "dist\OFIS\OFIS.exe" goto :failed
 
@@ -56,6 +71,16 @@ echo  Ish stoliga chiqarish: OFIS.exe ustida o'ng tugma -^> "Send to" -^> Deskto
 echo ============================================================
 pause
 exit /b 0
+
+:depsfail
+echo.
+echo ============================================================
+echo  XATO: kutubxonalar o'rnatilmadi (pip install -r requirements.txt).
+echo  Ko'p uchraydi: Python 3.12 yo'q, yoki internet uzilgan
+echo  (torch/rembg katta - yuzlab MB). Internetni tekshirib qaytadan uring.
+echo ============================================================
+pause
+exit /b 1
 
 :failed
 echo.
