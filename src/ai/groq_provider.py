@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from collections.abc import Callable
 
 from src.ai.base import AiRawResult, IAiProvider
@@ -143,6 +144,53 @@ class GroqProvider(IAiProvider):
             self._chosen = model
             return f"Groq ишлаяпти ({model})"
         raise last or AiError("groq: биронта модел жавоб бермади")
+
+
+def ask_text(key: str, prompt: str, images: list[bytes] | None = None, *,
+             json_out: bool = False, timeout: float = 60.0) -> str:
+    """Free-form Groq call: text (+ optional pictures) in, raw text out.
+
+    The mirror of :func:`src.ai.text_client.ask`, but on Groq. A section whose
+    only AI path is Gemini (перевод, доверенность, умумий…) falls back here
+    when the Gemini key is blocked, so the office is not stranded by one
+    provider. Returns the model's raw text; raises when no model answers.
+    """
+    key = (key or "").strip()
+    if not key:
+        raise AiAuthError("Groq калити киритилмаган")
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for img in (images or [])[:5]:
+        content.append({"type": "image_url",
+                        "image_url": {"url": _data_uri(img)}})
+    base: dict = {"temperature": 0,
+                  "messages": [{"role": "user", "content": content}]}
+    # Groq's current vision model REFUSES response_format=json_object next to an
+    # image (400). So the hard JSON format is used only for text-only calls; for
+    # an image the prompt itself asks for JSON and the fences/think-block are
+    # stripped off below.
+    if json_out and not images:
+        base["response_format"] = {"type": "json_object"}
+    last: AiError | None = None
+    for model in MODELS:
+        try:
+            answer = post_json(CHAT_URL, {**base, "model": model},
+                               api_key=key, provider="groq", timeout=timeout)
+        except AiError as exc:
+            # 404 = this key may not call that model; 400-json = its tier
+            # cannot return the schema. Either way the next name might work.
+            if not (_missing(exc) or _cannot(exc)):
+                raise
+            last = exc
+            continue
+        return _strip_think(_content(answer, "groq"))
+    raise AiAuthError(
+        "Groq калити расм (vision) моделларини ишлатолмайди") from last
+
+
+def _strip_think(text: str) -> str:
+    """Drop a reasoning model's «<think>…</think>» preamble (qwen3 emits one),
+    leaving the actual answer for the caller to parse."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def _missing(exc: AiError) -> bool:

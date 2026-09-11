@@ -14,6 +14,7 @@ import base64
 import json
 import time
 import urllib.request
+from collections.abc import Callable
 
 from src.ai.gemini_models import TEXT_MODELS, endpoint, move_on, why
 from src.common.errors import OfisError
@@ -22,6 +23,19 @@ from src.common.logging import get_logger
 log = get_logger(__name__)
 
 _RETRY_WAIT_S = 20
+
+#: A source of the Groq key, installed once at startup (see app.build_container).
+#: When every Gemini model fails — most often because the Gemini project has
+#: been blocked by Google — :func:`ask` falls back to Groq with this key, so a
+#: Gemini-only section (перевод, доверенность, умумий…) keeps working on the
+#: office's other, unblocked provider. Left unset, nothing changes.
+_groq_key_getter: Callable[[], str] | None = None
+
+
+def set_groq_fallback(getter: Callable[[], str] | None) -> None:
+    """Install (or clear) the Groq key source used when Gemini is exhausted."""
+    global _groq_key_getter
+    _groq_key_getter = getter
 
 
 def ask(
@@ -90,7 +104,23 @@ def ask(
                 log.warning("Gemini %s failed (%.1fs): %s",
                             model, time.monotonic() - started, said)
             break
-    log.error("Gemini: ҳамма моделлар рад этди — охиргиси: %s", last)
+    # Every Gemini model failed (most often the Gemini project is blocked by
+    # Google — 403). If a Groq key is on file, answer through Groq instead, so
+    # the section is not stranded by one provider being down.
+    groq_key = ((_groq_key_getter() if _groq_key_getter else "") or "").strip()
+    if groq_key:
+        try:
+            from src.ai.groq_provider import ask_text
+            text = ask_text(groq_key, prompt, images, json_out=json_out,
+                            timeout=min(timeout, 90))
+            if text:
+                log.info("Gemini рад этди — Groq орқали жавоб олинди")
+                return _unfence(text) if json_out else text
+            last = f"{last} | groq: бўш жавоб"
+        except Exception as exc:  # noqa: BLE001 - report both providers
+            last = f"{last} | groq: {exc}"
+
+    log.error("AI: ҳамма моделлар рад этди — охиргиси: %s", last)
     raise OfisError(f"AI javob bermadi: {last}")
 
 

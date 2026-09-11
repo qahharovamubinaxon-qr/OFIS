@@ -73,6 +73,11 @@ def build_container() -> Container:
     settings = SettingsService(settings_repo)
     container.register_instance(SettingsService, settings)
 
+    # When every Gemini model fails (e.g. the Gemini project is blocked by
+    # Google), the free-text AI sections fall back to Groq with this key.
+    from src.ai.text_client import set_groq_fallback
+    set_groq_fallback(lambda: str(settings.get("ai.groq_key", "") or ""))
+
     company_repo = CompanyRepository(db)
     container.register_instance(CompanyRepository, company_repo)
 
