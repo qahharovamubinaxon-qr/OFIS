@@ -31,20 +31,22 @@ import urllib.request
 #: answered when this was last checked against a fresh key, newest first —
 #: quality matters here more than the second or two it costs.
 TEXT_MODELS: tuple[str, ...] = (
-    "gemini-3.5-flash",
     "gemini-flash-latest",
-    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
     "gemini-flash-lite-latest",
-    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash-lite",
 )
 
 #: For reading a document: the lite models are as accurate at pulling a name
 #: off a passport and answer in a third of the time.
 READ_MODELS: tuple[str, ...] = (
     "gemini-flash-lite-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
     "gemini-flash-latest",
+    "gemini-3.8-flash",
 )
 
 ENDPOINT = ("https://generativelanguage.googleapis.com/v1beta/models/"
