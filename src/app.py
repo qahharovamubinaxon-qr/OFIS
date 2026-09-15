@@ -60,6 +60,14 @@ def _load_env() -> None:
 
 def build_container() -> Container:
     """Wire the object graph. Pure of Qt so it can be exercised in unit tests."""
+    # torch bundles Intel's OpenMP (libiomp5md.dll) and PySide6 bundles
+    # Microsoft's (VCOMP140.DLL); inside one frozen EXE the second to initialise
+    # aborts the whole process with «OMP: Error #15». That is exactly what froze
+    # and killed РАСМ-ФОТО — the one section that loads torch (for GFPGAN).
+    # Allowing the duplicate is the supported workaround; set it before anything
+    # heavy loads.
+    import os
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     _load_env()
     container = Container()
 
