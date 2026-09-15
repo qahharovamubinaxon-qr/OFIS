@@ -43,9 +43,14 @@ try:
 except Exception:  # noqa: BLE001 - torch йўқ енгил йиғиш
     pass
 
-# rembg (фон олиш) ва GFPGAN стек (AI юз тиклаш) — маълумот файллари ва
-# яширин импортлари билан. Йўқ бўлса (енгил йиғиш) — ўтказиб юборилади.
-for _pkg in ("rembg", "gfpgan", "facexlib", "basicsr"):
+# numpy/cv2/onnxruntime — ОЧИҚ-ОЙДИН йиғилади. Бир йиғишда numpy'нинг бинар
+# қисми (numpy/_core, .pyd) умуман тушмай қолиб, дастур «[WinError 3] …
+# numpy\_core топилмади» билан РАСМ-ФОТО ва ПЕРЕВОД да қулаган эди: .py
+# қисмлари PYZ га тушган, кенгайтмалари эса йўқ. collect_all уларни мажбурий
+# йиғади. rembg + GFPGAN стеки (AI юз тиклаш) ҳам шу ерда; йўқ бўлса
+# (енгил йиғиш) ўтказиб юборилади.
+for _pkg in ("numpy", "cv2", "onnxruntime",
+             "rembg", "gfpgan", "facexlib", "basicsr"):
     try:
         _d, _b, _h = collect_all(_pkg)
         _datas += _d
