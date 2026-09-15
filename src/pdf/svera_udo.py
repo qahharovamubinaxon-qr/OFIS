@@ -198,7 +198,7 @@ def render_udostoverenie(page: fitz.Page, data: UdoData) -> None:
         pen.text(_L_FIO_X, base, line, font=_BI, size=size)
         pen.rule(_L_FIO_X, _L_FIO_X + pen.width(line, _BI, size), base + 2.1)
 
-    pen.text(0, 170.3, "в том, что он(а) исвоил(а) программу",
+    pen.text(0, 170.3, "в том, что он(а) освоил(а) программу",
              font=_BI, size=7.5, centre=_L_CENTRE)
     pen.text(0, 176.8, "профессионального обучения по профессии:",
              font=_BI, size=7.5, centre=_L_CENTRE)
