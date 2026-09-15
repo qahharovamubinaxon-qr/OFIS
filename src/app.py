@@ -113,12 +113,12 @@ def build_container() -> Container:
     container.register_instance(TrudService, TrudService())
 
     # AI / OCR — a chain of four, tried in this order, each keyed from settings
-    # (or its own env var). Mistral does document OCR, so it reads small print
-    # and the machine-readable zone best; Groq answers fastest; Gemini is the
-    # one the office has been using all along; OpenRouter sits behind all of
-    # them with many models on one key, for the day one provider withdraws a
-    # model or runs out. A provider with no key is skipped, and the service
-    # degrades to «use manual fill» only when not one of the four has a key.
+    # (or its own env var). Gemini leads: the office's main reader, a passport
+    # in under a second. Mistral reads small print and the machine-readable
+    # zone well; Groq answers fastest; OpenRouter sits behind all of them with
+    # many models on one key, for the day one provider withdraws a model or
+    # runs out. A provider with no key is skipped, and the service degrades to
+    # «use manual fill» only when not one of the four has a key.
     from src.ai.gemini_provider import GeminiProvider
     from src.ai.groq_provider import GroqProvider
     from src.ai.manager import AiManager
@@ -130,13 +130,14 @@ def build_container() -> Container:
         return lambda: str(settings.get(f"ai.{name}_key", "") or "")
 
     ai_manager = AiManager([
+        # Gemini FIRST — the office's primary reader; it answers a passport in
+        # under a second, and the office asked for it to lead. The rest are
+        # fallbacks, tried in turn only when Gemini has no key or fails.
+        GeminiProvider(key_getter=_key_getter("gemini")),
         MistralProvider(key_getter=_key_getter("mistral")),
         GroqProvider(key_getter=_key_getter("groq")),
-        GeminiProvider(key_getter=_key_getter("gemini")),
-        # Last, deliberately: Gemini answers a passport in under a second and
-        # should keep the job. OpenRouter is the door that stays open when
-        # Google withdraws a model or the day's quota runs out — which is the
-        # very thing the office asked for after a day of both.
+        # OpenRouter last: many models on one key — the door that stays open
+        # when a provider withdraws a model or the day's quota runs out.
         OpenRouterProvider(key_getter=_key_getter("openrouter")),
     ])
     container.register_instance(AiManager, ai_manager)
