@@ -106,6 +106,11 @@ class Field:
     #: puts every character at a fixed interval, which is the only way a
     #: value lands one letter per printed box on a celled blank.
     pitch: float = 0.0
+    #: How wide one printed line may be, as a share of the page width. Zero
+    #: keeps the value on a single line however long it runs. Anything above
+    #: it wraps the text on word boundaries — which is how a long ФИО lands
+    #: inside a narrow box on two or three lines instead of running off it.
+    wrap: float = 0.0
 
     def label(self) -> str:
         return CATALOGUE.get(self.key, self.key)
@@ -124,6 +129,8 @@ class Field:
             made["rotate"] = int(self.rotate)
         if self.pitch:
             made["pitch"] = round(self.pitch, 5)
+        if self.wrap:
+            made["wrap"] = round(self.wrap, 5)
         return made
 
     @staticmethod
@@ -141,4 +148,5 @@ class Field:
                      font=str(font),
                      colour=tuple(float(c) for c in colour[:3]),
                      rotate=int(raw.get("rotate") or 0),
-                     pitch=float(raw.get("pitch") or 0.0))
+                     pitch=float(raw.get("pitch") or 0.0),
+                     wrap=float(raw.get("wrap") or 0.0))

@@ -299,6 +299,24 @@ class FieldEditor(QDialog):
                          "қандай ёзса, шундай")
         plain.clicked.connect(self._plain_pitch)
         spacing.addWidget(plain)
+        spacing.addSpacing(16)
+        # Long values in narrow boxes. A ФИО that does not fit its printed box
+        # used to run off the end of it; given a width here it breaks on word
+        # boundaries and lands on two or three lines inside the box instead.
+        spacing.addWidget(QLabel("Қатор кенглиги:"))
+        self._wrap_shown = QDoubleSpinBox()
+        self._wrap_shown.setDecimals(0)
+        self._wrap_shown.setRange(0.0, 100.0)
+        self._wrap_shown.setSuffix(" %")
+        self._wrap_shown.setSpecialValueText("чегарасиз")
+        self._wrap_shown.setMinimumWidth(110)
+        self._wrap_shown.setKeyboardTracking(False)
+        self._wrap_shown.setToolTip(
+            "Матн шу кенгликдан ошса, сўзи бутун ҳолда кейинги қаторга "
+            "тушади (ФИО каби узун матнлар учун). Рақам - саҳифа энининг "
+            "фоизи. 0 - чегарасиз, бир қаторда ёзилади.")
+        self._wrap_shown.valueChanged.connect(self._typed_wrap)
+        spacing.addWidget(self._wrap_shown)
         spacing.addStretch(1)
         outer.addLayout(spacing)
 
@@ -436,6 +454,21 @@ class FieldEditor(QDialog):
         self._pitch_mm.setText(
             "" if not pitch else f"≈ {pitch * A4_MM:.1f} мм (A4)")
 
+    # ------------------------------------------------------ line wrapping
+    def _typed_wrap(self, shown: float) -> None:
+        """The office set how wide one printed line of this value may be."""
+        if self._filling or self._picked() is None:
+            return
+        self._restyle(wrap=round(float(shown) / 100.0, 5))
+
+    def _show_wrap(self, index: int | None) -> None:
+        wrap = 0.0 if index is None else (
+            getattr(self._drafts[index].field, "wrap", 0.0) or 0.0)
+        was = self._filling
+        self._filling = True                  # showing it is not typing it
+        self._wrap_shown.setValue(round(wrap * 100.0))
+        self._filling = was
+
     # --------------------------------------------------------------- zoom
     def _zoom_by(self, delta: float) -> None:
         self._set_zoom(self._zoom + delta)
@@ -490,9 +523,10 @@ class FieldEditor(QDialog):
         self._filling = True
         enabled = index is not None
         for widget in (self._colour, self._weight, self._turn, self._font,
-                       self._spread, self._pitch_shown):
+                       self._spread, self._pitch_shown, self._wrap_shown):
             widget.setEnabled(enabled)
         self._show_pitch(index)
+        self._show_wrap(index)
         if enabled:
             field = self._drafts[index].field
             self._weight.setCurrentIndex(1 if field.bold else 0)
@@ -573,12 +607,13 @@ class FieldEditor(QDialog):
             if not ok or not said:
                 return
             key = self._own_prefix + said
-            if key in self._cat:
-                QMessageBox.information(
-                    self, "Бор экан", f"«{said}» аллақачон қўшилган.")
-                return
-            self._cat[key] = f"✎ {said}"
-            self._samples[key] = said
+            # A box already on this blank is NOT refused: the office puts the
+            # same value - ФИО, серия, протокол - in two or three places on
+            # one form, and every copy prints the same thing. Only a name it
+            # has never used before is added to the picker.
+            if key not in self._cat:
+                self._cat[key] = f"✎ {said}"
+                self._samples[key] = said
         model = self._drafts[self._picked()].field if self._picked() is not None \
             else None
         made = Field(key=key, page=self._page)

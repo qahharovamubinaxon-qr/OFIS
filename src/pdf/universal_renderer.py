@@ -19,6 +19,7 @@ shape, so a stamp never comes out an oval.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import fitz
@@ -89,6 +90,111 @@ def _draw_picture(page, item: Field, png: bytes) -> None:
 MRZ_LEADING = 1.35
 
 
+#: How close two values must sit vertically to count as the same printed
+#: line, as a share of the page height.
+SAME_ROW = 0.006
+#: The gap left between two values that had to be pushed apart, as a share of
+#: the page width - about one space at ordinary type sizes.
+FLOW_GAP = 0.004
+
+#: Measuring faces, opened once each: every value on the sheet is measured.
+_FACES: dict[str, fitz.Font] = {}
+
+
+def _face_of(path) -> fitz.Font:
+    key = str(path)
+    got = _FACES.get(key)
+    if got is None:
+        got = fitz.Font(fontfile=key)
+        _FACES[key] = got
+    return got
+
+
+def text_width(page, item: Field, text: str) -> float:
+    """How wide this value prints on this page, in points."""
+    if not text:
+        return 0.0
+    if item.pitch:                 # one letter to a printed box
+        return len(text) * item.pitch * page.rect.width
+    face, _ = font_file(item.font, item.bold)
+    return _face_of(face).text_length(text, item.size * page.rect.height)
+
+
+def _lines(page, item: Field, text: str) -> list[str]:
+    """The value split into the lines it prints as.
+
+    A newline the value already carries always breaks. Beyond that, a field
+    given a ``wrap`` width breaks on word boundaries, so a long FIO lands
+    inside its narrow box on two or three lines instead of running off it.
+    """
+    rows = str(text).split("\n")
+    if not item.wrap:
+        return rows
+    limit = item.wrap * page.rect.width
+    out: list[str] = []
+    for row in rows:
+        words = row.split()
+        if not words:
+            out.append("")
+            continue
+        line = words[0]
+        for word in words[1:]:
+            trial = f"{line} {word}"
+            if text_width(page, item, trial) <= limit:
+                line = trial
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+    return out
+
+
+def flowed(doc, items: list[tuple[int, Field, str]]
+           ) -> list[tuple[int, Field, str]]:
+    """The same values, moved right where one would print over the next.
+
+    The office puts FIO, birth date and sex side by side on one line; a long
+    FIO used to run straight over its neighbours. Here every value on a line
+    is measured and anything that would be covered starts where the one
+    before it ends instead. A value that already fits is left exactly where
+    the office put it, and a turned value (it runs up the sheet's edge, where
+    nothing else stands) never flows.
+    """
+    out: list[tuple[int, Field, str]] = []
+    by_page: dict[int, list[tuple[Field, str]]] = {}
+    for page_no, item, text in items:
+        if item.rotate in (90, 270):
+            out.append((page_no, item, text))     # turned: left alone
+            continue
+        by_page.setdefault(page_no, []).append((item, text))
+
+    for page_no, on_page in by_page.items():
+        page = doc[page_no - 1]
+        width = page.rect.width
+        rows: list[list[tuple[Field, str]]] = []
+        for pair in sorted(on_page, key=lambda p: (p[0].baseline, p[0].x)):
+            for row in rows:
+                if abs(row[0][0].baseline - pair[0].baseline) <= SAME_ROW:
+                    row.append(pair)
+                    break
+            else:
+                rows.append([pair])
+        for row in rows:
+            row.sort(key=lambda p: p[0].x)
+            cursor = None
+            for item, text in row:
+                start = item.x * width
+                if cursor is not None and start < cursor:
+                    start = cursor
+                    item = replace(item, x=start / width)
+                widest = max((text_width(page, item, line)
+                              for line in _lines(page, item, text)),
+                             default=0.0)
+                cursor = start + widest + FLOW_GAP * width
+                out.append((page_no, item, text))
+    return out
+
+
 def _draw_text(page, item: Field, text: str) -> None:
     """One value at its spot — as a line, as spaced letters, or as a strip."""
     width, height = page.rect.width, page.rect.height
@@ -104,7 +210,7 @@ def _draw_text(page, item: Field, text: str) -> None:
     }
     left, base = item.x * width, item.baseline * height
 
-    for row, line in enumerate(str(text).split("\n")):
+    for row, line in enumerate(_lines(page, item, text)):
         y = base + row * size * MRZ_LEADING
         if not item.pitch:
             page.insert_text((left, y), line, **common)
@@ -125,6 +231,7 @@ def render(data: UniversalData, template: Path | str,
     doc = open_blank(template)
     try:
         written = 0
+        pending: list[tuple[int, Field, str]] = []
         for item in fields:
             if item.page < 1 or item.page > doc.page_count:
                 continue
@@ -138,7 +245,12 @@ def render(data: UniversalData, template: Path | str,
             text = texts.get(item.key) or ""
             if not text:
                 continue
-            _draw_text(page, item, text)
+            pending.append((item.page, item, text))
+
+        # Measured and pushed along, so a long value never prints over the one
+        # standing beside it on the same line (see `flowed`).
+        for page_no, item, text in flowed(doc, pending):
+            _draw_text(doc[page_no - 1], item, text)
             written += 1
         log.info("УНИВЕРСАЛ: %s — %d та матн, %d саҳифа",
                  Path(template).stem, written, doc.page_count)

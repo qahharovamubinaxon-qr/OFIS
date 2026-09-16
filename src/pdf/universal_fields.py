@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 
-from src.domain.mrz import as_text, build
+from src.domain.mrz import FILLER, as_text, build, latin
 from src.domain.russian_case import (
     CASE_NAMES,
     CASES,
@@ -104,11 +104,17 @@ def _dates(prefix: str, name: str) -> dict[str, str]:
 def _catalogue() -> dict[str, str]:
     made: dict[str, str] = {
         # ---- the worker
-        "fio": "ФИО — тўлиқ (Фамилия Исм Отчество)",
-        "fio_upper": "ФИО — БОШ ҲАРФЛАРДА",
-        "surname": "Фамилия",
-        "name": "Исм",
-        "patronymic": "Отчество",
+        "fio": "ФИО — тўлиқ, кириллча (Фамилия Исм Отчество)",
+        "fio_upper": "ФИО — БОШ ҲАРФЛАРДА, кириллча",
+        "surname": "Фамилия — кириллча",
+        "name": "Исм — кириллча",
+        "patronymic": "Отчество — кириллча",
+        # The same name in the letters a foreign form wants. The office asked
+        # to CHOOSE: some blanks want «Исоев», others «ISOEV».
+        "fio_latin": "ФИО — тўлиқ, ЛОТИНЧА (ISOEV ASLIDIN)",
+        "surname_latin": "Фамилия — ЛОТИНЧА",
+        "name_latin": "Исм — ЛОТИНЧА",
+        "patronymic_latin": "Отчество — ЛОТИНЧА",
         "gender": "Жинси (Мужской/Женский)",
         "citizenship": "Гражданство",
         "birth_place": "Туғилган жой",
@@ -180,6 +186,9 @@ CATALOGUE: dict[str, str] = _catalogue()
 SAMPLES: dict[str, str] = {
     "fio": "Исоев Аслидин Холбердиевич",
     "fio_upper": "ИСОЕВ АСЛИДИН ХОЛБЕРДИЕВИЧ",
+    "fio_latin": "ISOEV ASLIDIN KHOLBERDIEVICH",
+    "surname_latin": "ISOEV", "name_latin": "ASLIDIN",
+    "patronymic_latin": "KHOLBERDIEVICH",
     "surname": "Исоев", "name": "Аслидин", "patronymic": "Холбердиевич",
     "gender": "Мужской", "citizenship": "Таджикистан",
     "birth_place": "Таджикистан",
@@ -351,11 +360,24 @@ def _spread(out: dict[str, str], prefix: str, when: date | None) -> None:
                               f"{when.year}")
 
 
+def _latin_name(text: str | None) -> str:
+    """«Исоев Аслидин» → «ISOEV ASLIDIN».
+
+    The machine strip packs a name with «<»; a printed line wants spaces, so
+    the filler is put back as one and the ends trimmed.
+    """
+    return " ".join(latin(text or "").replace(FILLER, " ").split())
+
+
 def values(data: UniversalData) -> dict[str, str]:
     """Every key's text for THIS worker. Missing ones come back empty."""
     out: dict[str, str] = {
         "fio": data.fio(),
         "fio_upper": data.fio().upper(),
+        "fio_latin": _latin_name(data.fio()),
+        "surname_latin": _latin_name(data.surname),
+        "name_latin": _latin_name(data.name),
+        "patronymic_latin": _latin_name(data.patronymic),
         "surname": (data.surname or "").strip(),
         "name": (data.name or "").strip(),
         "patronymic": (data.patronymic or "").strip(),
