@@ -8,6 +8,11 @@
 Тўлдирилмаган майдон барибир кўринади — офис кейинчалик реестрдан маълумот
 олиб тўлдиради, саҳифанинг тузилиши эса ўзгармайди.
 
+Юқориси ҳам ўша кўринишда: чапда логотип ва дўкон номи, ўнгда тил тугмалари
+(РУС/ENG), дўкон тугмаси ва «Помощь»; остида текшириш варағи ва код бўйича
+қидирув. Тил **ҳақиқатан** алмашади — ҳар ёрлиқнинг инглизчаси ўзи билан
+юради, қийматлар эса оператор киритганича қолади.
+
 Кўриниши атайин ДАВЛАТ тизиминики каби эмас: ўз ранги, ўз логотипи, ва пастда
 «бу дўконнинг ўз маълумотномаси, давлат ВСД си эмас» деб очиқ ёзилган. Ҳужжат
 ҳалол бўлиши — мижоз учун ҳам, дўкон учун ҳам шундай хавфсизроқ.
@@ -20,24 +25,59 @@ from html import escape as _e
 from src.domain.vetdoc import Shop, VetRecord
 
 DOC_TITLE = "Справка о продаже и ветеринарной обработке животного"
+DOC_TITLE_EN = "Certificate of sale and veterinary treatment of an animal"
 #: Дўкон ранги — давлат тизимининг тўқ қизилидан атайин бошқача.
 BRAND = "#12605b"
 BRAND_DARK = "#0d4b47"
 
+DISCLAIMER_RU = ("Это <b>собственная справка магазина</b> о продаже и "
+                 "ветеринарной обработке животного. Документ подтверждает "
+                 "сведения, внесённые продавцом, и не является ветеринарным "
+                 "сопроводительным документом (ВСД) государственной системы.")
+DISCLAIMER_EN = ("This is the <b>shop's own certificate</b> of sale and "
+                 "veterinary treatment of an animal. It confirms the details "
+                 "entered by the seller and is not a state veterinary "
+                 "accompanying document.")
+
 _CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:#f4f6f7;color:#243;font:14px/1.5 "Segoe UI",Arial,sans-serif}
-header{background:__BRAND__;color:#fff;padding:10px 20px;display:flex;
-  align-items:center;gap:12px;flex-wrap:wrap}
+.top{background:__DARK__;color:#fff;display:flex;align-items:stretch;
+  min-height:46px;flex-wrap:wrap}
+.top .mark{display:flex;align-items:center;gap:10px;padding:6px 16px}
 .logo{width:26px;height:26px;border-radius:6px;background:#fff;color:__BRAND__;
-  display:grid;place-items:center;font-weight:700;font-size:15px;flex:none}
-.brand{font-size:19px;font-weight:600;letter-spacing:.5px}
-.brand small{display:block;font-size:11px;font-weight:400;opacity:.85;letter-spacing:0}
-header .sp{margin-left:auto}
-.btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
-  color:#fff;border-radius:5px;padding:5px 12px;font-size:13px;cursor:pointer}
-main{max-width:1180px;margin:0 auto;padding:18px 20px 40px}
-h1{font-size:21px;font-weight:500;color:__BRAND__;margin:10px 0 18px}
+  display:grid;place-items:center;font-weight:700;font-size:15px;flex:none;
+  overflow:hidden}
+.logo img{width:100%;height:100%;object-fit:contain}
+.brand{font-size:17px;font-weight:600;letter-spacing:.4px;line-height:1.1}
+.brand small{display:block;font-size:10.5px;font-weight:400;opacity:.8;
+  letter-spacing:0}
+.top .sp{flex:1}
+.lang{display:flex}
+.lang button,.tbtn{background:transparent;border:0;border-left:1px solid
+  rgba(255,255,255,.18);color:#fff;padding:0 15px;font:inherit;font-size:12.5px;
+  cursor:pointer;display:flex;align-items:center;gap:6px;text-decoration:none}
+.lang button{padding:0 13px;opacity:.72}
+.lang button.on{background:rgba(0,0,0,.22);opacity:1;font-weight:600}
+.tbtn:hover,.lang button:hover{background:rgba(0,0,0,.14)}
+.tabs{background:#fff;border-bottom:1px solid #dde3e3;display:flex;
+  align-items:center;gap:10px;padding:0 16px;flex-wrap:wrap}
+.tab{padding:11px 4px 9px;border-bottom:2px solid __BRAND__;color:__BRAND__;
+  font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+.tabs .sp{flex:1}
+.find{display:flex;gap:0;margin:7px 0}
+.find input{width:270px;max-width:46vw;padding:5px 10px;font-size:12.5px;
+  border:1px solid #cfd8d8;border-right:0;border-radius:4px 0 0 4px}
+.find button{background:#eef2f2;border:1px solid #cfd8d8;border-radius:0 4px 4px 0;
+  padding:5px 12px;cursor:pointer;font-size:12.5px;color:#4a5a58}
+.find button:hover{background:#e3eaea}
+main{max-width:1180px;margin:0 auto;padding:10px 20px 40px}
+.head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:14px 0 6px}
+h1{font-size:22px;font-weight:400;color:#4b7f98;margin:0}
+.head .sp{flex:1}
+.print{background:none;border:0;color:#4b7f98;font:inherit;font-size:13px;
+  cursor:pointer;padding:0}
+.print:hover{text-decoration:underline}
 h2{font-size:13px;font-weight:600;color:#6b7b7a;text-transform:uppercase;
   letter-spacing:.6px;margin:26px 0 8px;border-bottom:1px solid #dde3e3;padding-bottom:6px}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}
@@ -60,130 +100,295 @@ td{padding:8px 12px;vertical-align:top}
 footer{max-width:1180px;margin:0 auto;padding:16px 20px 40px;color:#7a8785;font-size:12px}
 .note{background:#fff8e6;border:1px solid #f0e0b0;border-radius:5px;
   padding:10px 14px;color:#6b5b2a;font-size:12.5px;margin-top:22px}
-@media print{header .sp,.btn{display:none}body{background:#fff}}
-""".replace("__BRAND__", BRAND)
+dialog{border:1px solid #dde3e3;border-radius:8px;padding:0;max-width:560px;
+  width:92vw;color:#243}
+dialog::backdrop{background:rgba(10,30,28,.45)}
+dialog .dh{background:__DARK__;color:#fff;padding:10px 16px;font-weight:600}
+dialog .db{padding:14px 16px;font-size:13.5px}
+dialog .db p{margin:0 0 10px}
+dialog .dc{padding:0 16px 14px;text-align:right}
+dialog .dc button{background:__BRAND__;color:#fff;border:0;border-radius:5px;
+  padding:7px 18px;font:inherit;cursor:pointer}
+@media print{.top,.tabs,.print,dialog{display:none}body{background:#fff}
+  main{padding-top:0}}
+""".replace("__BRAND__", BRAND).replace("__DARK__", BRAND_DARK)
+
+_SCRIPT = """
+function vetLang(code){
+  document.querySelectorAll('[data-en]').forEach(function(node){
+    if(node.dataset.ru===undefined){node.dataset.ru=node.textContent;}
+    node.textContent = code==='en' ? node.dataset.en : node.dataset.ru;
+  });
+  document.querySelectorAll('[data-en-ph]').forEach(function(node){
+    if(node.dataset.ruPh===undefined){node.dataset.ruPh=node.placeholder;}
+    node.placeholder = code==='en' ? node.dataset.enPh : node.dataset.ruPh;
+  });
+  document.querySelectorAll('[data-en-html]').forEach(function(node){
+    if(node.dataset.ruHtml===undefined){node.dataset.ruHtml=node.innerHTML;}
+    node.innerHTML = code==='en' ? node.dataset.enHtml : node.dataset.ruHtml;
+  });
+  document.querySelectorAll('.lang button').forEach(function(btn){
+    btn.classList.toggle('on', btn.dataset.lang===code);
+  });
+  document.documentElement.lang = code==='en' ? 'en' : 'ru';
+  try{localStorage.setItem('vetdoc.lang', code);}catch(e){}
+}
+function vetHelp(){var d=document.getElementById('help'); if(d) d.showModal();}
+function vetFind(event){
+  event.preventDefault();
+  var box=document.getElementById('code');
+  var value=box ? box.value.trim().toUpperCase() : '';
+  if(value){location.href=encodeURIComponent(value)+'.html';}
+}
+(function(){
+  var saved='ru';
+  try{saved=localStorage.getItem('vetdoc.lang')||'ru';}catch(e){}
+  vetLang(saved);
+})();
+"""
+
+
+def _t(ru: str, en: str) -> str:
+    """Икки тилли ёрлиқ. Саҳифа русча очилади, ENG босилса инглизчага ўтади."""
+    return f'<span data-en="{_e(en)}">{_e(ru)}</span>'
 
 
 def _rows(pairs: list[tuple[str, str]]) -> str:
-    """Бир жадвал: майдон номи — қиймати.
+    """Бир жадвал: ёрлиқ (тайёр HTML) — қиймат.
 
     Бўш майдон ҳам кўрсатилади, реестрдаги кўриниш билан бир хил бўлсин: офис
     кейин тўлдиради, саҳифанинг тузилиши эса ҳар ёзувда ўзгармайди.
     """
-    out = [f"<tr><th>{_e(str(label))}</th><td>{value or ''}</td></tr>"
+    out = [f"<tr><th>{label}</th><td>{value or ''}</td></tr>"
            for label, value in pairs]
     return "<table>" + "".join(out) + "</table>"
 
 
-def _wide(head: str, body: str, *, empty: str, span: int) -> str:
+def _wide(head: str, body: str, *, empty: str, empty_en: str,
+          span: int) -> str:
     """Кенг жадвал — тор экранда ўзи сурилади."""
     if not body:
-        body = f'<tr class="empty"><td colspan="{span}">{_e(empty)}</td></tr>'
+        body = (f'<tr class="empty"><td colspan="{span}">'
+                f"{_t(empty, empty_en)}</td></tr>")
     return f'<div class="scroll"><table class="grid">{head}{body}</table></div>'
 
 
 def _docs(record: VetRecord) -> str:
-    head = ("<tr><th>Серия</th><th>Номер</th><th>Дата выдачи</th>"
-            "<th>Тип документа</th></tr>")
+    head = ("<tr>"
+            f"<th>{_t('Серия', 'Series')}</th>"
+            f"<th>{_t('Номер', 'Number')}</th>"
+            f"<th>{_t('Дата выдачи', 'Date of issue')}</th>"
+            f"<th>{_t('Тип документа', 'Document type')}</th></tr>")
     body = "".join(
         f"<tr><td>{_e(d.series)}</td><td>{_e(d.number)}</td>"
         f"<td>{_e(d.issued)}</td><td>{_e(d.kind)}</td></tr>"
         for d in record.docs)
     return _wide(head, body, span=4,
-                 empty="сопроводительные документы не указаны")
+                 empty="сопроводительные документы не указаны",
+                 empty_en="no accompanying documents listed")
 
 
 def _animals(record: VetRecord) -> str:
-    head = ("<tr><th>№ п/п</th><th>Номер животного/группы</th>"
-            "<th>Номер средства маркирования</th>"
-            "<th>Внутрихозяйственный номер</th><th>Кличка</th><th>Пол</th>"
-            "<th>Порода</th><th>Возраст</th><th>Вес (кг)</th>"
-            "<th>Кол-во</th><th>Примечание</th></tr>")
+    head = ("<tr>"
+            f"<th>{_t('№ п/п', 'No.')}</th>"
+            f"<th>{_t('Номер животного/группы', 'Animal/group number')}</th>"
+            f"<th>{_t('Номер средства маркирования', 'Marking device number')}</th>"
+            f"<th>{_t('Внутрихозяйственный номер', 'On-farm number')}</th>"
+            f"<th>{_t('Кличка', 'Name')}</th>"
+            f"<th>{_t('Пол', 'Sex')}</th>"
+            f"<th>{_t('Порода', 'Breed')}</th>"
+            f"<th>{_t('Возраст', 'Age')}</th>"
+            f"<th>{_t('Вес (кг)', 'Weight (kg)')}</th>"
+            f"<th>{_t('Кол-во', 'Count')}</th>"
+            f"<th>{_t('Примечание', 'Note')}</th></tr>")
     body = "".join(
         f"<tr><td>{i}</td><td>{_e(a.group_no)}</td><td>{_e(a.mark)}</td>"
         f"<td>{_e(a.farm_no)}</td><td>{_e(a.nickname)}</td><td>{_e(a.sex)}</td>"
         f"<td>{_e(a.breed)}</td><td>{_e(a.age)}</td><td>{_e(a.weight)}</td>"
         f"<td>{_e(a.count)}</td><td>{_e(a.note)}</td></tr>"
         for i, a in enumerate(record.animals, 1))
-    return _wide(head, body, span=11, empty="животные не указаны")
+    return _wide(head, body, span=11, empty="животные не указаны",
+                 empty_en="no animals listed")
 
 
 def _treatments(record: VetRecord) -> str:
-    head = ("<tr><th>Тип</th><th>Наименование</th><th>Дата проведения</th>"
-            "<th>Название и производитель препарата</th>"
-            "<th>Номер серии препарата</th><th>Действует до</th></tr>")
+    head = ("<tr>"
+            f"<th>{_t('Тип', 'Type')}</th>"
+            f"<th>{_t('Наименование', 'Name')}</th>"
+            f"<th>{_t('Дата проведения', 'Date')}</th>"
+            f"<th>{_t('Название и производитель препарата', 'Drug and manufacturer')}</th>"
+            f"<th>{_t('Номер серии препарата', 'Drug batch number')}</th>"
+            f"<th>{_t('Действует до', 'Valid until')}</th></tr>")
     body = "".join(
         f"<tr><td>{_e(t.kind)}</td><td>{_e(t.name)}</td><td>{_e(t.done)}</td>"
         f"<td>{_e(t.drug)}</td><td>{_e(t.series)}</td><td>{_e(t.until)}</td></tr>"
         for t in record.treatments)
-    return _wide(head, body, span=6, empty="обработка не проводилась")
+    return _wide(head, body, span=6, empty="обработка не проводилась",
+                 empty_en="no treatment carried out")
+
+
+def _chrome(shop: Shop, *, tab_ru: str, tab_en: str) -> str:
+    """Юқори қатор: логотип, ном, тиллар, дўкон ва «Помощь» тугмалари."""
+    name = shop.name or "ВЕТ-МАГАЗИН"
+    mark = _e(name[:1].upper() or "В")
+    site = (shop.site or "").strip()
+    shop_button = ""
+    if site:
+        if not site.startswith(("http://", "https://")):
+            site = "https://" + site
+        shop_button = (f'<a class="tbtn" href="{_e(site)}">'
+                       f"{_t('Магазин', 'Shop')}</a>")
+    return f"""<header class="top">
+  <div class="mark">
+    <div class="logo">{mark}</div>
+    <div class="brand">{_e(name)}
+      <small>{_t('ветеринарный магазин · аптека',
+                 'veterinary shop · pharmacy')}</small></div>
+  </div>
+  <div class="sp"></div>
+  <div class="lang">
+    <button type="button" class="on" data-lang="ru"
+            onclick="vetLang('ru')">РУС</button>
+    <button type="button" data-lang="en" onclick="vetLang('en')">ENG</button>
+  </div>
+  {shop_button}
+  <button type="button" class="tbtn" onclick="vetHelp()">
+    {_t('Помощь', 'Help')}</button>
+</header>
+<nav class="tabs">
+  <span class="tab">✔ {_t(tab_ru, tab_en)}</span>
+  <div class="sp"></div>
+  <form class="find" onsubmit="vetFind(event)">
+    <input id="code" maxlength="12" autocomplete="off"
+           placeholder="поиск по коду справки"
+           data-en-ph="search by certificate code"
+           aria-label="Код справки">
+    <button type="submit">🔍</button>
+  </form>
+</nav>"""
+
+
+def _help_dialog(shop: Shop) -> str:
+    contact = " · ".join(x for x in (shop.address, shop.phone) if x)
+    return f"""<dialog id="help">
+  <div class="dh">{_t('Помощь', 'Help')}</div>
+  <div class="db">
+    <p data-en-html="This page shows a certificate issued by the shop. Scan the
+       QR code on the paper copy, or type its verification code above — the
+       details on screen must match the paper.">Эта страница показывает справку,
+       выданную магазином. Отсканируйте QR-код на бумажной справке или введите
+       её код проверки в поле выше — сведения на экране должны совпадать с
+       бумагой.</p>
+    <p data-en-html="The certificate is the shop's own document. It is not a
+       state veterinary accompanying document.">Справка является собственным
+       документом магазина и не является ветеринарным сопроводительным
+       документом государственной системы.</p>
+    <p>{_e(contact)}</p>
+  </div>
+  <div class="dc"><button type="button"
+    onclick="document.getElementById('help').close()">
+    {_t('Закрыть', 'Close')}</button></div>
+</dialog>"""
+
+
+def _note() -> str:
+    return (f'<div class="note" data-en-html="{_e(DISCLAIMER_EN)}">'
+            f"{DISCLAIMER_RU}</div>")
+
+
+def _footer(shop: Shop) -> str:
+    name = shop.name or "ВЕТ-МАГАЗИН"
+    tail = " · ".join(x for x in (shop.legal or name, shop.address, shop.phone)
+                      if x)
+    return f"<footer>{_e(tail)}</footer>"
 
 
 def page_html(record: VetRecord, shop: Shop) -> str:
     """Битта ёзувнинг очиқ саҳифаси, ўзи-ўзига етарли HTML."""
     name = shop.name or "ВЕТ-МАГАЗИН"
     issued = record.issued.strftime("%d.%m.%Y") if record.issued else ""
-    mark = _e(name[:1].upper() or "В")
     seller = shop.legal or name
 
     general = _rows([
-        ("Статус", f'<span class="ok">{_e(record.status)}</span>'),
-        ("Номер справки", f"<b>{_e(record.number or record.code)}</b>"),
-        ("Код проверки", f'<span class="code">{_e(record.code)}</span>'),
-        ("Уникальный идентификатор", f'<span class="code">{_e(record.uid)}</span>'),
-        ("Учёт", _e(record.accounting)),
-        ("Дата оформления", _e(issued)),
-        ("Наименование документа", _e(DOC_TITLE)),
-        ("Способ оформления", _e(record.made_by)),
-        ("Номер бланка", _e(record.blank_no)),
-        ("Выдал", _e(seller)),
+        (_t("Статус", "Status"),
+         f'<span class="ok">{_e(record.status)}</span>'),
+        (_t("Номер справки", "Certificate number"),
+         f"<b>{_e(record.number or record.code)}</b>"),
+        (_t("Код проверки", "Verification code"),
+         f'<span class="code">{_e(record.code)}</span>'),
+        (_t("Уникальный идентификатор", "Unique identifier"),
+         f'<span class="code">{_e(record.uid)}</span>'),
+        (_t("Учёт", "Record keeping"), _e(record.accounting)),
+        (_t("Дата оформления", "Date of issue"), _e(issued)),
+        (_t("Наименование документа", "Document title"),
+         _t(DOC_TITLE, DOC_TITLE_EN)),
+        (_t("Способ оформления", "Issuing method"), _e(record.made_by)),
+        (_t("Номер бланка", "Form number"), _e(record.blank_no)),
+        (_t("Выдал", "Issued by"), _e(seller)),
     ])
     product = _rows([
-        ("Номер производственной партии", _e(record.batch)),
-        ("Тип продукции", _e(record.kind)),
-        ("Продукция", _e(record.product)),
-        ("Вид продукции", _e(record.species)),
-        ("Наименование продукции", _e(record.title)),
-        ("Объём", _e(record.volume)),
-        ("Дата рождения", _e(record.birth)),
-        ("Благополучие местности", _e(record.wellbeing)),
-        ("Направление", _e(record.purpose)),
-        ("Животные содержались", _e(record.held_since)),
-        ("Место для карантинирования", _e(record.quarantine_place)),
-        ("Количество дней карантинирования", _e(record.quarantine_days)),
-        ("Особые отметки", _e(record.notes)),
-        ("Номер и дата входящего документа", _e(record.incoming_doc)),
-        ("Номер и дата производственного документа", _e(record.production_doc)),
-        ("Примечание", _e(record.remark)),
+        (_t("Номер производственной партии", "Production batch number"),
+         _e(record.batch)),
+        (_t("Тип продукции", "Product type"), _e(record.kind)),
+        (_t("Продукция", "Product"), _e(record.product)),
+        (_t("Вид продукции", "Product kind"), _e(record.species)),
+        (_t("Наименование продукции", "Product name"), _e(record.title)),
+        (_t("Объём", "Volume"), _e(record.volume)),
+        (_t("Дата рождения", "Date of birth"), _e(record.birth)),
+        (_t("Благополучие местности", "Area health status"),
+         _e(record.wellbeing)),
+        (_t("Направление", "Purpose"), _e(record.purpose)),
+        (_t("Животные содержались", "Animals were kept"),
+         _e(record.held_since)),
+        (_t("Место для карантинирования", "Quarantine location"),
+         _e(record.quarantine_place)),
+        (_t("Количество дней карантинирования", "Quarantine days"),
+         _e(record.quarantine_days)),
+        (_t("Особые отметки", "Special notes"), _e(record.notes)),
+        (_t("Номер и дата входящего документа",
+            "Incoming document no. and date"), _e(record.incoming_doc)),
+        (_t("Номер и дата производственного документа",
+            "Production document no. and date"), _e(record.production_doc)),
+        (_t("Примечание", "Remark"), _e(record.remark)),
     ])
     transport = _rows([
-        ("Тип транзакции", _e(record.transaction)),
-        ("Тип транспорта", _e(record.transport)),
-        ("Способ хранения при перевозке", _e(record.storage)),
+        (_t("Тип транзакции", "Transaction type"), _e(record.transaction)),
+        (_t("Тип транспорта", "Transport type"), _e(record.transport)),
+        (_t("Способ хранения при перевозке", "Storage during transport"),
+         _e(record.storage)),
     ])
     issuing = _rows([
-        ("Учреждение", _e(record.institution or seller)),
-        ("Ф.И.О.", _e(record.vet_name)),
-        ("Должность", _e(record.vet_post)),
-        ("Контактный телефон", _e(record.vet_phone or shop.phone)),
+        (_t("Учреждение", "Institution"), _e(record.institution or seller)),
+        (_t("Ф.И.О.", "Full name"), _e(record.vet_name)),
+        (_t("Должность", "Position"), _e(record.vet_post)),
+        (_t("Контактный телефон", "Contact phone"),
+         _e(record.vet_phone or shop.phone)),
     ])
     origin = _rows([
-        ("Страна происхождения", _e(record.origin_country)),
-        ("Выработана / выращены", _e(record.produced_by)),
-        ("Наименование продукции при производстве", _e(record.production_name)),
-        ("Документ о происхождении", _e(record.origin_doc)),
+        (_t("Страна происхождения", "Country of origin"),
+         _e(record.origin_country)),
+        (_t("Выработана / выращены", "Produced / raised by"),
+         _e(record.produced_by)),
+        (_t("Наименование продукции при производстве",
+            "Product name at production"), _e(record.production_name)),
+        (_t("Документ о происхождении", "Document of origin"),
+         _e(record.origin_doc)),
     ])
     receiver = _rows([
-        ("Название предприятия", _e(record.receiver_company)),
-        ("Хозяйствующий субъект (владелец)", _e(record.receiver_subject)),
-        ("Покупатель", _e(record.buyer)),
+        (_t("Название предприятия", "Company name"),
+         _e(record.receiver_company)),
+        (_t("Хозяйствующий субъект (владелец)", "Business entity (owner)"),
+         _e(record.receiver_subject)),
+        (_t("Покупатель", "Buyer"), _e(record.buyer)),
     ])
     sender = _rows([
-        ("Название предприятия", _e(record.sender_company or seller)),
-        ("Хозяйствующий субъект (владелец)", _e(record.sender_subject)),
-        ("Адрес", _e(shop.address)),
-        ("Телефон", _e(shop.phone)),
-        ("ИНН", _e(shop.inn)),
+        (_t("Название предприятия", "Company name"),
+         _e(record.sender_company or seller)),
+        (_t("Хозяйствующий субъект (владелец)", "Business entity (owner)"),
+         _e(record.sender_subject)),
+        (_t("Адрес", "Address"), _e(shop.address)),
+        (_t("Телефон", "Phone"), _e(shop.phone)),
+        (_t("ИНН", "Tax ID"), _e(shop.inn)),
     ])
 
     return f"""<!doctype html>
@@ -192,75 +397,60 @@ def page_html(record: VetRecord, shop: Shop) -> str:
 <meta name="robots" content="noindex">
 <title>{_e(name)} — справка {_e(record.code)}</title>
 <style>{_CSS}</style></head><body>
-<header>
-  <div class="logo">{mark}</div>
-  <div class="brand">{_e(name)}<small>ветеринарный магазин · аптека</small></div>
-  <div class="sp"></div>
-  <button class="btn" onclick="window.print()">Печать</button>
-</header>
+{_chrome(shop, tab_ru="Проверка справки", tab_en="Check certificate")}
 <main>
-  <h1>Проверка справки № {_e(record.number or record.code)}</h1>
+  <div class="head">
+    <h1>{_t('Просмотр информации о справке', 'Certificate details')}</h1>
+    <div class="sp"></div>
+    <button type="button" class="print" onclick="window.print()">
+      🖨 {_t('Печать', 'Print')}</button>
+  </div>
 
-  <h2>Общие сведения</h2>
+  <h2>{_t('Общие сведения', 'General information')}</h2>
   {general}
 
   <div class="cols">
-    <div><h2>Информация о продукции</h2>{product}</div>
+    <div><h2>{_t('Информация о продукции', 'Product information')}</h2>
+      {product}</div>
     <div>
-      <h2>Сведения о транспорте</h2>{transport}
-      <h2>Сведения об оформлении</h2>{issuing}
+      <h2>{_t('Сведения о транспорте', 'Transport details')}</h2>{transport}
+      <h2>{_t('Сведения об оформлении', 'Issuing details')}</h2>{issuing}
     </div>
   </div>
 
-  <h2>Сведения о происхождении продукции</h2>
+  <h2>{_t('Сведения о происхождении продукции', 'Product origin')}</h2>
   {origin}
 
   <div class="cols">
-    <div><h2>Сведения о получателе</h2>{receiver}</div>
-    <div><h2>Сведения об отправителе</h2>{sender}</div>
+    <div><h2>{_t('Сведения о получателе', 'Consignee')}</h2>{receiver}</div>
+    <div><h2>{_t('Сведения об отправителе', 'Consignor')}</h2>{sender}</div>
   </div>
 
-  <h2>Сведения о документах</h2>
+  <h2>{_t('Сведения о документах', 'Documents')}</h2>
   {_docs(record)}
 
-  <h2>Опись живых животных ({record.head_count()})</h2>
+  <h2>{_t('Опись живых животных', 'List of live animals')}</h2>
   {_animals(record)}
 
-  <h2>Сведения об иммунизации и обработке против паразитов</h2>
+  <h2>{_t('Сведения об иммунизации и обработке против паразитов',
+          'Immunisation and antiparasitic treatment')}</h2>
   {_treatments(record)}
 
-  <div class="note">
-    Это <b>собственная справка магазина</b> о продаже и ветеринарной обработке
-    животного. Документ подтверждает сведения, внесённые продавцом, и не является
-    ветеринарным сопроводительным документом (ВСД) государственной системы.
-  </div>
+  {_note()}
 </main>
-<footer>{_e(seller)}{' · ' + _e(shop.address) if shop.address else ''}
-{' · ' + _e(shop.phone) if shop.phone else ''}</footer>
+{_footer(shop)}
+{_help_dialog(shop)}
+<script>{_SCRIPT}</script>
 </body></html>"""
-
-
-_INDEX_CSS = _CSS + """
-.find{display:flex;gap:8px;margin:14px 0 6px;flex-wrap:wrap}
-.find input{flex:1;min-width:200px;padding:8px 11px;border:1px solid #cfd8d8;
-  border-radius:5px;font-size:14px}
-.find button{background:__BRAND__;color:#fff;border:0;border-radius:5px;
-  padding:8px 18px;font-size:14px;cursor:pointer}
-.list td{white-space:normal}
-.list a{color:__BRAND__;font-weight:600;text-decoration:none}
-.list tr:hover td{background:#f7faf9}
-.none{color:#8a9593;padding:14px 2px}
-""".replace("__BRAND__", BRAND)
 
 
 def index_html(records: list[VetRecord], shop: Shop) -> str:
     """Дўкон саҳифаларининг рўйхати — код бўйича текшириш шу ерда.
 
-    Мижоз QR'ни сканерлай олмаса, кодни шу ерга теради ва ўз ёзувига тушади.
-    Қидириш саҳифанинг ўзида, браузерда ишлайди: сервер керак эмас.
+    Мижоз QR'ни сканерлай олмаса, кодни юқоридаги қидирувга теради ва ўз
+    ёзувига тушади. Қидириш саҳифанинг ўзида, браузерда ишлайди.
     """
     name = shop.name or "ВЕТ-МАГАЗИН"
-    mark = _e(name[:1].upper() or "В")
     rows = []
     for record in records:
         issued = record.issued.strftime("%d.%m.%Y") if record.issued else ""
@@ -271,47 +461,42 @@ def index_html(records: list[VetRecord], shop: Shop) -> str:
             f"<td>{_e(title)}</td><td>{_e(record.volume)}</td>"
             f"<td>{_e(record.buyer)}</td>"
             f'<td><span class="ok">{_e(record.status)}</span></td></tr>')
-    body = "".join(rows) or (
-        '<tr><td colspan="7" class="none">записей пока нет</td></tr>')
+    head = ("<tr>"
+            f"<th>{_t('Код', 'Code')}</th>"
+            f"<th>{_t('Номер', 'Number')}</th>"
+            f"<th>{_t('Дата', 'Date')}</th>"
+            f"<th>{_t('Продукция', 'Product')}</th>"
+            f"<th>{_t('Объём', 'Volume')}</th>"
+            f"<th>{_t('Покупатель', 'Buyer')}</th>"
+            f"<th>{_t('Статус', 'Status')}</th></tr>")
+    table = _wide(head, "".join(rows), span=7, empty="записей пока нет",
+                  empty_en="no records yet")
 
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(name)} — проверка справок</title>
-<style>{_INDEX_CSS}</style></head><body>
-<header>
-  <div class="logo">{mark}</div>
-  <div class="brand">{_e(name)}<small>ветеринарный магазин · аптека</small></div>
-</header>
+<style>{_CSS}
+.list td{{white-space:normal}}
+.list a{{color:{BRAND};font-weight:600;text-decoration:none}}
+.list tr:hover td{{background:#f7faf9}}
+</style></head><body>
+{_chrome(shop, tab_ru="Проверка справки", tab_en="Check certificate")}
 <main>
-  <h1>Проверка справки</h1>
-  <p>Введите код с бумажной справки — или отсканируйте QR-код на ней.</p>
-  <form class="find" onsubmit="go(event)">
-    <input id="code" placeholder="например, A7K2M9" autocomplete="off"
-           maxlength="12" aria-label="Код справки">
-    <button type="submit">Проверить</button>
-  </form>
-
-  <h2>Выданные справки</h2>
-  <div class="scroll"><table class="grid list">
-    <tr><th>Код</th><th>Номер</th><th>Дата</th><th>Продукция</th>
-        <th>Объём</th><th>Покупатель</th><th>Статус</th></tr>
-    {body}
-  </table></div>
-
-  <div class="note">
-    Справки на этой странице — <b>собственные документы магазина</b> о продаже и
-    ветеринарной обработке животных. Они не являются ветеринарными
-    сопроводительными документами (ВСД) государственной информационной системы.
+  <div class="head">
+    <h1>{_t('Проверка справки', 'Certificate check')}</h1>
   </div>
+  <p>{_t('Введите код с бумажной справки в поле поиска наверху — '
+         'или отсканируйте QR-код на ней.',
+         'Type the code from the paper certificate into the search box above '
+         '— or scan the QR code on it.')}</p>
+
+  <h2>{_t('Выданные справки', 'Issued certificates')}</h2>
+  <div class="list">{table}</div>
+
+  {_note()}
 </main>
-<footer>{_e(shop.legal or name)}{' · ' + _e(shop.address) if shop.address else ''}
-{' · ' + _e(shop.phone) if shop.phone else ''}</footer>
-<script>
-function go(e){{
-  e.preventDefault();
-  var v=document.getElementById('code').value.trim().toUpperCase();
-  if(v) location.href=encodeURIComponent(v)+'.html';
-}}
-</script>
+{_footer(shop)}
+{_help_dialog(shop)}
+<script>{_SCRIPT}</script>
 </body></html>"""

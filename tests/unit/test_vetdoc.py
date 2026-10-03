@@ -111,9 +111,16 @@ def test_page_has_every_registry_section():
 
 
 def test_page_escapes_values():
+    """Оператор ёзган матн ҳеч қачон жонли HTML бўлмайди.
+
+    Саҳифанинг ўзида тил алмаштирадиган ``<script>`` бор, шунинг учун
+    текширув айнан киритилган қийматга қаралади.
+    """
     record = _record()
     record.buyer = '<script>alert("x")</script>'
-    assert "<script>" not in page_html(record, _shop())
+    html = page_html(record, _shop())
+    assert "<script>alert" not in html
+    assert "&lt;script&gt;" in html
 
 
 def test_index_lists_the_code():
