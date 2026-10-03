@@ -94,6 +94,8 @@ _NAV = [
      "Промышленный альпинист удостоверенияси — расм, имзо, печать", "🧗"),
     (None, "nav.alliance", "АЛЬЯНСКОТ 2400",
      "Удостоверение + 2 справка → 3 PDF (расм, имзо, +3 йил)", "🪪"),
+    (None, "nav.vetdoc", "МЕРКУРИЙ",
+     "Вет-дўкон справкаси — AI ўқийди, QR сайтга, PDF чиқади", "🐾"),
     (None, "nav.imgbb", "IMGBB",
      "Расм → i.ibb.co прямой ҳавола ва QR код", "🖼"),
     (None, "nav.spr3", "3-СПРАВКА",
@@ -377,6 +379,15 @@ class MainWindow(QMainWindow):
             return AllianceView(AllianceController(
                 self._container.resolve(OcrService),
                 AllianceService(self._settings),
+            ))
+        if key == "nav.vetdoc":
+            from src.controllers.vetdoc_controller import VetDocController
+            from src.services.vetdoc_service import VetDocService
+            from src.ui.views.vetdoc_view import VetDocView
+
+            return VetDocView(VetDocController(
+                self._container.resolve(OcrService),
+                VetDocService(self._settings),
             ))
         if key == "nav.kukchek":
             from src.controllers.kukchek_controller import KukChekController
