@@ -64,13 +64,22 @@ class BeydjikController:
         firm: str | None = None,
         dolzhnost: str = "",
         territory: str = "",
+        series: str = "",
         photo_path: Path | None = None,
+        **extra: object,
     ) -> BeydjikResult:
-        """The badge, from the passport values IN THE BOXES."""
+        """The badge, from the passport values IN THE BOXES.
+
+        ``series`` — картага босиладиган сон (оператор ёзгани); ``region``
+        фақат макетни танлайди. ``extra`` — бўлимнинг ўз қўшимчаси: ПАТЕНТ
+        ундан танланган бланка номини (``blank``) узатади, шунда битта
+        контроллер иккала бўлимга ҳам етади.
+        """
         return self._beydjik.generate(
             passport, region=region, personal_number=personal_number, inn=inn,
             issue_date=issue_date, firm=firm, dolzhnost=dolzhnost,
-            territory=territory, photo_path=photo_path)
+            territory=territory, series=series, photo_path=photo_path,
+            **extra)
 
     def generate_from_image(
         self,
@@ -83,7 +92,9 @@ class BeydjikController:
         firm: str | None = None,
         dolzhnost: str = "",
         territory: str = "",
+        series: str = "",
         photo_path: Path | None = None,
+        **extra: object,
     ) -> BeydjikResult:
         """Read and print in one go — kept for callers with no screen.
 
@@ -94,7 +105,8 @@ class BeydjikController:
         return self.generate(
             passport, region=region, personal_number=personal_number, inn=inn,
             issue_date=issue_date, firm=firm, dolzhnost=dolzhnost,
-            territory=territory, photo_path=photo_path)
+            territory=territory, series=series, photo_path=photo_path,
+            **extra)
 
     @staticmethod
     def read_image(path: Path) -> bytes:

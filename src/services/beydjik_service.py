@@ -266,7 +266,8 @@ class BeydjikService:
 
     def qr_text(self, passport: Passport, *, region: str, personal_number: str,
                 inn: str, issue_date: date, firm: str, pr: str,
-                dolzhnost: str = "", territory: str = "") -> str:
+                dolzhnost: str = "", territory: str = "",
+                series: str = "") -> str:
         """Fill the office's template with this badge's own values.
 
         An unknown placeholder is left as it was typed rather than raising —
@@ -281,7 +282,9 @@ class BeydjikService:
             "citizenship": _title(passport.nationality or ""),
             "passport": f"{passport.series or ''}{passport.number or ''}".strip(),
             "inn": inn.strip(),
-            "region": region,
+            # ёзувда картада босилган серия туради, қайси макет танлангани
+            # эмас: офис «77» бланкасига 416 ни ҳам ёзади
+            "region": (series or "").strip() or region,
             "personal_number": personal_number.strip(),
             "pr": pr,
             "firm": firm,
@@ -313,6 +316,7 @@ class BeydjikService:
         firm: str | None = None,
         dolzhnost: str = "",
         territory: str = "",
+        series: str = "",
         photo_path: Path | None = None,
         output_dir: Path | None = None,
     ) -> BeydjikResult:
@@ -332,6 +336,11 @@ class BeydjikService:
         # the office types the patent territory per badge; the region's own
         # wording is only the starting suggestion
         territory = territory.strip() or REGIONS[region]["territory"]
+        # ...and so is the region's own code. The operator types the series
+        # that is actually on this card — 416, 40, 33 — and that is what gets
+        # printed, goes into the QR record and names the file. The combo only
+        # says WHICH LAYOUT is being printed, never what number it carries.
+        printed = (series or "").strip() or region
 
         doc = fitz.open(blank)
         try:
@@ -342,6 +351,7 @@ class BeydjikService:
             font = fitz.Font(fontfile=str(_font_file(_FONT)))
             serif = fitz.Font(fontfile=str(_font_file(_SERIF)))
             self._fill_front(page, font, passport, region=region,
+                             series=printed,
                              personal_number=personal_number.strip(),
                              inn=inn.strip(), dolzhnost=dolzhnost.strip())
             self._fill_back(page, font, serif, firm=firm, issue_date=issue_date,
@@ -350,21 +360,26 @@ class BeydjikService:
             self._place_qr(page, self.qr_text(
                 passport, region=region, personal_number=personal_number.strip(),
                 inn=inn.strip(), issue_date=issue_date, firm=firm, pr=pr,
-                dolzhnost=dolzhnost.strip(), territory=territory))
-            out = self._output_path(passport, region, output_dir)
+                dolzhnost=dolzhnost.strip(), territory=territory,
+                series=printed))
+            out = self._output_path(passport, printed, output_dir)
             doc.save(str(out), garbage=4, deflate=True)
         finally:
             doc.close()
 
-        log.info("БЕЙДЖИК %s %s for %s", region, pr, passport.surname)
+        log.info("БЕЙДЖИК %s (макет %s) %s for %s", printed, region, pr,
+                 passport.surname)
         return BeydjikResult(pdf_path=out, pr_number=pr,
-                             surname=passport.surname, region=region)
+                             surname=passport.surname, region=printed)
 
     # ------------------------------------------------------------------
     def _fill_front(self, page, font, passport: Passport, *, region: str,
-                    personal_number: str, inn: str, dolzhnost: str) -> None:
-        self._text(page, font, region, _SERIA_REGION_X, _SERIA_BASE,
-                   size=_SERIA_SIZE)
+                    personal_number: str, inn: str, dolzhnost: str,
+                    series: str = "") -> None:
+        """``region`` — макет (должность бор-йўқлиги), ``series`` — картага
+        босиладиган сон. Иккиси бир хил бўлиши шарт эмас."""
+        self._text(page, font, (series or "").strip() or region,
+                   _SERIA_REGION_X, _SERIA_BASE, size=_SERIA_SIZE)
         self._text(page, font, personal_number, _SERIA_NUMBER_X, _SERIA_BASE,
                    size=_SERIA_SIZE, max_x=_VALUE_MAX_X)
 

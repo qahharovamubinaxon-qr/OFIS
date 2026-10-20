@@ -82,10 +82,89 @@ def blank_source(region: str, side: str) -> tuple[Path, bool]:
     return bundled_blank(region, side), False
 
 
-def import_blank(region: str, side: str, source: Path) -> Path:
-    """Adopt ``source`` as this region's front or back, after a size check."""
-    if region not in badge.REGIONS or side not in SIDES:
-        raise OfisError("Регион ёки томон нотўғри.")
+def blanks_dir() -> Path:
+    """Офис юклаган бланка тўпламлари турадиган жой.
+
+    Ҳар тўплам — ўз папкаси: ``templates/patent/blanks/<ном>/front.pdf`` ва
+    ``back.pdf``. Шунинг учун нечта намуна юкланса, ҳаммаси алоҳида сақланади
+    ва бири иккинчисининг ўрнига тушмайди.
+    """
+    folder = paths.user_templates_dir() / "patent" / "blanks"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def safe_name(name: str) -> str:
+    """Папка номи сифатида ёзиб бўладиган ном (бўш бўлса — хато)."""
+    cleaned = "".join(c for c in str(name).strip()
+                      if c.isalnum() or c in " _-()№.").strip()
+    if not cleaned:
+        raise OfisError("Бланкага ном беринг (масалан: «Москва 416»).")
+    return cleaned[:60]
+
+
+@dataclass(frozen=True)
+class BlankSet:
+    """Битта юкланган намуна: номи ва иккала томони."""
+
+    name: str
+    front: Path | None
+    back: Path | None
+
+    @property
+    def complete(self) -> bool:
+        return self.front is not None and self.back is not None
+
+    def state(self) -> str:
+        if self.complete:
+            return "олд + орқа"
+        if self.front is not None:
+            return "фақат ОЛД"
+        if self.back is not None:
+            return "фақат ОРҚА"
+        return "бўш"
+
+
+def blank_sets() -> list[BlankSet]:
+    """Юкланган намуналар — ном бўйича тартибда, ҳар бири алоҳида."""
+    found = []
+    for folder in sorted(blanks_dir().iterdir()) if blanks_dir().exists() else []:
+        if not folder.is_dir():
+            continue
+        front = folder / "front.pdf"
+        back = folder / "back.pdf"
+        found.append(BlankSet(name=folder.name,
+                              front=front if front.exists() else None,
+                              back=back if back.exists() else None))
+    return found
+
+
+def blank_set(name: str) -> BlankSet | None:
+    for found in blank_sets():
+        if found.name == name:
+            return found
+    return None
+
+
+def import_blank_set(name: str, side: str, source: Path) -> Path:
+    """Намунанинг бир томонини ЎЗ номи остида сақлаш.
+
+    Ҳар ном — ўз папкаси, шунинг учун янги намуна эскисини ўчирмайди. Бир хил
+    ном билан қайта юкланса, фақат ўша номдаги ўша томон янгиланади — офис
+    атайин шуни хоҳлаганда.
+    """
+    if side not in SIDES:
+        raise OfisError("Томон нотўғри.")
+    _check_landscape(source)
+    dest = blanks_dir() / safe_name(name) / f"{side}.pdf"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, dest)
+    log.info("Патент намунаси юкланди: %s / %s", dest.parent.name, side)
+    return dest
+
+
+def _check_landscape(source: Path) -> None:
+    """Бланка кўндаланг PDF эканини текшириш."""
     try:
         doc = fitz.open(source)
     except Exception as exc:                      # noqa: BLE001
@@ -100,11 +179,40 @@ def import_blank(region: str, side: str, source: Path) -> Path:
                 "томони.")
     finally:
         doc.close()
+
+
+def import_blank(region: str, side: str, source: Path) -> Path:
+    """Adopt ``source`` as this region's front or back, after a size check."""
+    if region not in badge.REGIONS or side not in SIDES:
+        raise OfisError("Регион ёки томон нотўғри.")
+    _check_landscape(source)
     dest = user_blank_path(region, side)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, dest)
     log.info("Патент бланкаси юкланди: %s / %s", region, side)
     return dest
+
+
+def resolve_blanks(region: str, name: str = "") -> dict[str, Path]:
+    """Қайси қоғозга босилади: танланган намуна, бўлмаса регионники."""
+    if name:
+        chosen = blank_set(name)
+        if chosen is None:
+            raise OfisError(f"«{name}» номли бланка топилмади.")
+        if not chosen.complete:
+            raise OfisError(
+                f"«{name}» намунасида {chosen.state()} бор — иккала томонни "
+                "ҳам юкланг.")
+        return {"front": chosen.front, "back": chosen.back}
+    pair: dict[str, Path] = {}
+    for side in SIDES:
+        path, _own = blank_source(region, side)
+        if not path.exists():
+            raise OfisError(
+                f"Патент бланкаси топилмади ({side}). Бўлимдаги «Бланка "
+                "юклаш» орқали олд ва орқа PDF ни юкланг.")
+        pair[side] = path
+    return pair
 
 
 class PatentService(badge.BeydjikService):
@@ -129,19 +237,14 @@ class PatentService(badge.BeydjikService):
         firm: str | None = None,
         dolzhnost: str = "",
         territory: str = "",
+        series: str = "",
+        blank: str = "",
         photo_path: Path | None = None,
         output_dir: Path | None = None,
     ) -> PatentResult:
         if region not in badge.REGIONS:
             raise OfisError("Регион танланг: 77 (Москва) ёки 50 (область).")
-        blanks = {}
-        for side in SIDES:
-            path, _own = blank_source(region, side)
-            if not path.exists():
-                raise OfisError(
-                    f"Патент бланкаси топилмади ({side}). Бўлимдаги «Шаблон "
-                    "юклаш» орқали олд ва орқа PDF ни юкланг.")
-            blanks[side] = path
+        blanks = resolve_blanks(region, blank)
         if not personal_number.strip():
             raise OfisError("Шахсий номерни киритинг.")
 
@@ -149,11 +252,14 @@ class PatentService(badge.BeydjikService):
         firm = (firm or self.firm()).strip()
         self.remember_firm(firm)
         territory = territory.strip() or badge.REGIONS[region]["territory"]
+        # картада босиладиган серия — операторники. Макет «77» бўлса ҳам,
+        # картада 416 туриши мумкин; комбо фақат макетни танлайди.
+        printed = (series or "").strip() or region
 
         overlay = self._values_overlay(
             passport, region=region, personal_number=personal_number.strip(),
             inn=inn.strip(), issue_date=issue_date, firm=firm, pr=pr,
-            dolzhnost=dolzhnost.strip(), territory=territory)
+            dolzhnost=dolzhnost.strip(), territory=territory, series=printed)
         try:
             out = fitz.open()
             out.insert_pdf(fitz.open(str(blanks["front"])))
@@ -169,22 +275,24 @@ class PatentService(badge.BeydjikService):
             self._place_qr_here(out[1], self.qr_text(
                 passport, region=region, personal_number=personal_number.strip(),
                 inn=inn.strip(), issue_date=issue_date, firm=firm, pr=pr,
-                dolzhnost=dolzhnost.strip(), territory=territory))
+                dolzhnost=dolzhnost.strip(), territory=territory,
+                series=printed))
             target = self._output_path(passport, output_dir)
             out.save(str(target), garbage=4, deflate=True)
             out.close()
         finally:
             overlay.close()
 
-        log.info("ПАТЕНТ %s %s for %s", region, pr, passport.surname)
+        log.info("ПАТЕНТ %s (макет %s, бланка «%s») %s for %s", printed,
+                 region, blank or "регионники", pr, passport.surname)
         return PatentResult(pdf_path=target, pr_number=pr,
-                            surname=passport.surname, region=region)
+                            surname=passport.surname, region=printed)
 
     # ------------------------------------------------------------------
     def _values_overlay(self, passport: Passport, *, region: str,
                         personal_number: str, inn: str, issue_date: date,
                         firm: str, pr: str, dolzhnost: str,
-                        territory: str) -> fitz.Document:
+                        territory: str, series: str = "") -> fitz.Document:
         """The badge's own values, drawn on nothing but themselves.
 
         A PDF page paints no background of its own, so stamping this over the
@@ -198,7 +306,7 @@ class PatentService(badge.BeydjikService):
         page.insert_font(fontname="bjs", fontfile=str(_font_file(badge._SERIF)))
         font = fitz.Font(fontfile=str(_font_file(badge._FONT)))
         serif = fitz.Font(fontfile=str(_font_file(badge._SERIF)))
-        self._fill_front(page, font, passport, region=region,
+        self._fill_front(page, font, passport, region=region, series=series,
                          personal_number=personal_number, inn=inn,
                          dolzhnost=dolzhnost)
         self._fill_back(page, font, serif, firm=firm, issue_date=issue_date,

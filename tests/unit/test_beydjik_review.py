@@ -164,17 +164,74 @@ def test_the_one_shot_path_stays_for_screenless_callers() -> None:
     assert hasattr(BeydjikController, "generate")
 
 
-def test_patent_is_the_same_screen_with_the_review(view, monkeypatch) -> None:
-    """ПАТЕНТ inherits БЕЙДЖИК, so it gets the panel for free."""
+def _patent_screen(view, monkeypatch):
+    """ПАТЕНТ экрани, сохта контроллер билан."""
     import src.ui.views.patent_view as pv
 
+    class _Set:
+        def __init__(self, name, complete=True):
+            self.name = name
+            self._complete = complete
+
+        @property
+        def complete(self):
+            return self._complete
+
+        def state(self):
+            return "олд + орқа" if self._complete else "фақат ОЛД"
+
     class _PatentCtl(_Controller):
+        sets = [_Set("Москва 416"), _Set("Область 33", complete=False)]
+
         def blank_state(self, region):
             return "юкланмаган"
 
         def import_blank(self, *a):
             pass
 
-    screen = pv.PatentView(_PatentCtl(_passport()))
+        def import_blank_set(self, *a):
+            pass
+
+        def blank_sets(self):
+            return list(self.sets)
+
+        def blank_set(self, name):
+            return next((s for s in self.sets if s.name == name), None)
+
+        @staticmethod
+        def safe_name(name):
+            return name
+
+    return pv.PatentView(_PatentCtl(_passport()))
+
+
+def test_patent_is_the_same_screen_with_the_review(view, monkeypatch) -> None:
+    """ПАТЕНТ inherits БЕЙДЖИК, so it gets the panel for free."""
+    screen = _patent_screen(view, monkeypatch)
     assert hasattr(screen, "_review")
     assert screen._review.isHidden()
+
+
+def test_patent_lists_every_uploaded_blank_separately(view, monkeypatch) -> None:
+    """Юкланган ҳар намуна рўйхатда алоҳида туради, бири иккинчисини
+    ўчирмайди."""
+    screen = _patent_screen(view, monkeypatch)
+    names = [screen._blank.itemData(i) for i in range(screen._blank.count())]
+    assert names == ["", "Москва 416", "Область 33"]
+    # ҳеч нарса танланмаса — регионнинг ўз бланкаси
+    assert screen._extra_args() == {"blank": ""}
+    screen._blank.setCurrentIndex(1)
+    assert screen._extra_args() == {"blank": "Москва 416"}
+    assert "олд + орқа" in screen._blank_note.text()
+    # тугалланмаган намуна очиқ айтилади
+    screen._blank.setCurrentIndex(2)
+    assert "иккала томонни" in screen._blank_note.text()
+
+
+def test_patent_sends_the_typed_series(view, monkeypatch) -> None:
+    """«77 ЖОЙИНИ 416 КИЛСАМ» — шакл ўша сонни юборади."""
+    screen = _patent_screen(view, monkeypatch)
+    assert screen._region_code.text() == "77"       # макетнинг таклифи
+    screen._region_code.setText("416")
+    screen._region.setCurrentIndex(1)               # макет алмашди…
+    assert screen._region_code.text() == "416"      # …ёзилгани тегилмади

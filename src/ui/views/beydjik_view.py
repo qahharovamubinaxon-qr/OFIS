@@ -179,6 +179,10 @@ class BeydjikView(QWidget):
         self._region_changed()
 
     # ------------------------------------------------------------------
+    def _extra_args(self) -> dict:
+        """Бўлимнинг ўз қўшимча аргументлари (ПАТЕНТ — танланган бланка)."""
+        return {}
+
     def _current_region(self) -> str:
         return str(self._region.currentData() or "77")
 
@@ -187,8 +191,13 @@ class BeydjikView(QWidget):
         wants = bool(REGIONS.get(code, {}).get("dolzhnost"))
         self._dolzh_label.setVisible(wants)
         self._dolzhnost.setVisible(wants)
-        if not self._region_code.text().strip():
+        # Макет алмашса, таклиф қилинган сон ҳам алмашади — лекин фақат
+        # оператор уни ўзи ўзгартирмаган бўлса. Қўлда ёзилган 416 ҳеч қачон
+        # ўчиб кетмайди.
+        typed = self._region_code.text().strip()
+        if not typed or typed == getattr(self, "_suggested_code", ""):
             self._region_code.setText(code)
+            self._suggested_code = code
         # the region's own wording is a suggestion the operator may overwrite
         self._territory.setText(self._c.territory(code))
         self._show_pr()
@@ -277,6 +286,10 @@ class BeydjikView(QWidget):
         run_async(
             self._c.generate, self._review.edited(),
             region=self._current_region(),
+            # комбо фақат макетни танлайди; картага босиладиган сонни
+            # оператор ёзади — 416 бўлса 416 босилади, 77 эмас
+            series=self._region_code.text().strip(),
+            **self._extra_args(),
             personal_number=self._personal.text().strip(),
             inn=self._inn.text().strip(),
             issue_date=self._issue_date(),

@@ -177,3 +177,91 @@ def test_an_uploaded_blank_is_used_instead(tmp_path, monkeypatch) -> None:
     used, own = patent_service.blank_source("77", "front")
     assert own is True
     assert used == store / "patent" / "77" / "front.pdf"
+
+
+# ------------------------------------------------------------------ серия
+# «77 ЖОЙИНИ 416 КИЛМОКЧИ БОСАМ 77 БОП КОЛЯПТИ» — комбо макетни танлайди,
+# картага босиладиган сонни эса оператор ёзади.
+def test_the_typed_series_is_what_gets_printed(tmp_path) -> None:
+    flat = _text(_make(tmp_path, region="77", series="416").pdf_path)
+    assert " 416 " in f" {flat} "
+
+
+def test_the_typed_series_reaches_the_qr_record(tmp_path) -> None:
+    text = _text(_make(tmp_path, region="50", series="33").pdf_path)
+    assert " 33 " in f" {text} "
+
+
+def test_the_series_falls_back_to_the_region(tmp_path) -> None:
+    """Ҳеч нарса ёзилмаса — макетнинг ўз сони."""
+    assert _make(tmp_path, region="50").region == "50"
+    assert _make(tmp_path, region="77", series="   ").region == "77"
+
+
+def test_the_series_does_not_change_the_layout(tmp_path) -> None:
+    """416 ёзилгани билан «77» макети «50» бўлиб қолмайди."""
+    flat = _text(_make(tmp_path, region="77", series="416").pdf_path)
+    assert "ПОДСОБНЫЙ РАБОЧИЙ" not in flat        # 77 макетида должность йўқ
+    assert "г. Москва" in flat
+
+
+# ------------------------------------------------------ нечта бланка бўлса
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    folder = tmp_path / "appdata"
+    monkeypatch.setattr(patent_service.paths, "user_templates_dir",
+                        lambda: folder)
+    return folder
+
+
+def test_every_uploaded_blank_is_kept_separately(store) -> None:
+    """«НЕЧТА КОШСАМ ОШАЛАР ХАММАСИ ОЗИ АЛОХИДА КОШИЛСИН»."""
+    patent_service.import_blank_set("Москва 416", "front",
+                                    BLANKS / "77" / "front.pdf")
+    patent_service.import_blank_set("Москва 416", "back",
+                                    BLANKS / "77" / "back.pdf")
+    patent_service.import_blank_set("Область 33", "front",
+                                    BLANKS / "50" / "front.pdf")
+    names = [s.name for s in patent_service.blank_sets()]
+    assert names == ["Москва 416", "Область 33"]
+    assert patent_service.blank_set("Москва 416").complete is True
+    assert patent_service.blank_set("Область 33").complete is False
+
+
+def test_a_second_upload_does_not_replace_the_first(store) -> None:
+    patent_service.import_blank_set("Биринчи", "front",
+                                    BLANKS / "77" / "front.pdf")
+    patent_service.import_blank_set("Иккинчи", "front",
+                                    BLANKS / "50" / "front.pdf")
+    first = patent_service.blank_set("Биринчи")
+    assert first is not None and first.front is not None
+    assert first.front.exists()
+
+
+def test_a_named_blank_is_the_paper_that_gets_printed(store, tmp_path) -> None:
+    patent_service.import_blank_set("Намуна", "front",
+                                    BLANKS / "50" / "front.pdf")
+    patent_service.import_blank_set("Намуна", "back",
+                                    BLANKS / "50" / "back.pdf")
+    chosen = patent_service.resolve_blanks("77", "Намуна")
+    assert chosen["front"] == store / "patent" / "blanks" / "Намуна" / "front.pdf"
+    out = _make(tmp_path, region="77", blank="Намуна", series="416")
+    assert out.pdf_path.exists()
+    assert fitz.open(str(out.pdf_path)).page_count == 2
+
+
+def test_an_unfinished_set_is_refused_with_a_clear_word(store, tmp_path) -> None:
+    patent_service.import_blank_set("Ярим", "front", BLANKS / "77" / "front.pdf")
+    with pytest.raises(OfisError, match="иккала томонни"):
+        _make(tmp_path, blank="Ярим")
+
+
+def test_an_unknown_blank_is_refused(store, tmp_path) -> None:
+    with pytest.raises(OfisError):
+        _make(tmp_path, blank="бундай ном йўқ")
+
+
+def test_a_blank_needs_a_name(store) -> None:
+    with pytest.raises(OfisError):
+        patent_service.import_blank_set("   ", "front",
+                                        BLANKS / "77" / "front.pdf")

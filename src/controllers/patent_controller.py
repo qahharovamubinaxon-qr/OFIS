@@ -22,6 +22,25 @@ class PatentController(BeydjikController):
         """Adopt the office's own front or back for this region."""
         return patent_service.import_blank(region, side, Path(source))
 
+    # ------------------------------------------------------- намуналар
+    # Ҳар намуна ўз номи билан сақланади, шунинг учун нечтаси бўлса ҳам
+    # бир-бирининг устига ёзилмайди.
+    @staticmethod
+    def import_blank_set(name: str, side: str, source: Path) -> Path:
+        return patent_service.import_blank_set(name, side, Path(source))
+
+    @staticmethod
+    def blank_sets() -> list[patent_service.BlankSet]:
+        return patent_service.blank_sets()
+
+    @staticmethod
+    def blank_set(name: str) -> patent_service.BlankSet | None:
+        return patent_service.blank_set(name)
+
+    @staticmethod
+    def safe_name(name: str) -> str:
+        return patent_service.safe_name(name)
+
     @staticmethod
     def blank_state(region: str) -> str:
         """What the section is printing on, for the operator to see."""
