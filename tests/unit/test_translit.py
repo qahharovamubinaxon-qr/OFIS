@@ -292,3 +292,34 @@ def test_as_printed_only_tidies_the_spaces() -> None:
     assert as_printed("  T566BE40 ") == "T566BE40"
     assert as_printed("50  ОЕ   202246") == "50 ОЕ 202246"
     assert as_printed(None) == ""
+
+
+# Қоида ТОР бўлиши шарт: манзилдаги «D.33», «19-MAVZE» белги эмас — улар
+# нуқта/тире билан ёзилади ва русчага ўгирилиши керак. Акс ҳолда манзил ярим
+# лотин бўлиб қолади.
+@pytest.mark.parametrize("latin, russian", [
+    ("UL. LENINA, D. 5, KV. 12", "УЛ. ЛЕНИНА, Д. 5, КВ. 12"),
+    ("D.33 KORP.2 KV.15", "Д.33 КОРП.2 КВ.15"),
+    ("19-MAVZE, 4-UY", "19-МАВЗЕ, 4-УЙ"),
+    ("1-SON", "1-СОН"),
+])
+def test_an_address_with_numbers_still_becomes_russian(latin, russian) -> None:
+    assert to_cyrillic(latin) == russian
+
+
+@pytest.mark.parametrize("token, identifier", [
+    ("FB2254876", True), ("T566BE40", True), ("77AB123456", True),
+    ("XW8ZZZ61ZJG011111", True), ("Т566ВЕ40", True),
+    ("D.33", False), ("19-MAVZE", False), ("KV.15", False),
+    ("4-UY", False), ("D5", False),          # жуда қисқа — манзил бўлаги
+    ("LENINA", False), ("12", False),
+])
+def test_what_counts_as_an_identifier(token, identifier) -> None:
+    from src.ocr.translit import is_identifier
+
+    assert is_identifier(token) is identifier
+
+
+def test_an_identifier_in_brackets_is_still_left_alone() -> None:
+    assert to_cyrillic("(FB2254876)") == "(FB2254876)"
+    assert to_cyrillic("VIN: XW8ZZZ61ZJG011111") == "ВИН: XW8ZZZ61ZJG011111"

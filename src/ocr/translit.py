@@ -18,11 +18,26 @@ import re
 
 from src.domain.passport_rules import in_russian_letters, issuer_in_russian
 
-#: Ичида рақами бор сўз — бу СЎЗ эмас, БЕЛГИ: паспорт серияси, машина давлат
-#: рақами, ВИН, бланка рақами. Улар ҳужжатга қандай босилган бўлса, шундайлигича
-#: кўчирилади.
+#: БЕЛГИ — ҳарфи ҳам, рақами ҳам бор, ичида бўлувчи белгиси (нуқта, тире) йўқ
+#: ва камида тўрт белгили сўз: FB2254876, T566BE40, XW8ZZZ61ZJG011111. Шундай
+#: сўз таржима қилинмайди.
+#:
+#: Нуқта ёки тире борлари атайин четда қолди — улар манзил бўлаги бўлади
+#: («D.33», «KORP.2», «19-MAVZE», «1-SON»), ва уларни ўгирмаслик манзилни
+#: ярим лотин қилиб қўяди.
 _HAS_DIGIT = re.compile(r"\d")
 _SPLIT = re.compile(r"(\s+)")
+#: Сўзнинг четидаги тиниш белгилари — улар белгининг ўзига кирмайди.
+_EDGES = ".,;:()[]{}«»\"'!?"
+IDENTIFIER_MIN = 4
+
+
+def is_identifier(token: str) -> bool:
+    """Бу сўз БЕЛГИми — серия, давлат рақами, ВИН, бланка рақамими?"""
+    core = token.strip(_EDGES)
+    return (len(core) >= IDENTIFIER_MIN and core.isalnum()
+            and any(c.isdigit() for c in core)
+            and any(c.isalpha() for c in core))
 
 # Longest sequences first so digraphs win over single letters. These are
 # the practical-transcription rules a Russian form uses for Uzbek Latin:
@@ -213,7 +228,7 @@ def to_cyrillic(text: str, country: str | None = None) -> str:
     # одатдагидек ўгирилаверади.
     if _HAS_DIGIT.search(text):
         return "".join(
-            piece if (_HAS_DIGIT.search(piece) or not piece.strip())
+            piece if (is_identifier(piece) or not piece.strip())
             else _word_to_cyrillic(piece, country)
             for piece in _SPLIT.split(text))
     return _word_to_cyrillic(text, country)
