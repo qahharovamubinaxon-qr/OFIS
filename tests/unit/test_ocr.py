@@ -141,3 +141,26 @@ def test_a_passport_series_keeps_its_latin_letters() -> None:
     assert p.series == "FB"                      # «ФБ» эмас
     assert p.number == "2254876"
     assert p.surname == "РАСУЛОВ"                # фамилия эса русча
+
+
+def test_a_birth_place_is_read_in_russian_words() -> None:
+    """«SURXONDARYO VILOYATI, DENOV TUMANI» — бланкага русча тушади."""
+    canned = {DocType.PASSPORT: {
+        "surname": "RASULOV", "name": "MUSTAFO", "nationality": "UZBEKISTAN",
+        "birth_place": "SURXONDARYO VILOYATI, DENOV TUMANI"}}
+    p = OcrService(AiManager([FakeProvider(canned)])).read_passport(b"img")
+    assert p.birth_place == "ОБЛАСТЬ СУРХОНДАРЁ, РАЙОН ДЕНОВ"
+
+
+def test_an_owner_address_is_read_in_russian_words() -> None:
+    canned = {DocType.STS: {"plate": "Т566ВЕ40",
+                            "owner_address": "TOSHKENT SHAHRI, 19-MAVZE, 4-UY"}}
+    sts = OcrService(AiManager([FakeProvider(canned)])).read_sts(b"img")
+    assert sts.owner_address == "ГОРОД ТОШКЕНТ, МАССИВ 19, ДОМ 4"
+
+
+def test_a_russian_address_is_not_touched_by_the_word_table() -> None:
+    canned = {DocType.STS: {"plate": "Т566ВЕ40", "vin": "X7LBSRB2HBH123456",
+                            "owner_address": "Г. МОСКВА, УЛ. ЛЕНИНА, Д. 5"}}
+    sts = OcrService(AiManager([FakeProvider(canned)])).read_sts(b"img")
+    assert sts.owner_address == "Г. МОСКВА, УЛ. ЛЕНИНА, Д. 5"

@@ -22,7 +22,7 @@ from src.common.logging import get_logger
 from src.domain.document_number import strip_document_check_digit
 from src.domain.documents import Passport, Patent
 from src.domain.enums import DocType, Gender
-from src.domain.passport_rules import same_name, series_in_latin
+from src.domain.passport_rules import address_in_russian, same_name, series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
 from src.ocr.preprocess import prepare_image
 from src.ocr.translit import as_printed, to_cyrillic, translate_issuer
@@ -189,7 +189,10 @@ def _passport_from(f: dict[str, str]) -> Passport:
         series=series or None,  # series/number stay as printed otherwise
         number=number,
         birth_date=_parse_date(f.get("birth_date", "")),
-        birth_place=to_cyrillic(f.get("birth_place", ""), country) or None,
+        # манзил сўзлари ТАРЖИМА қилинади: «туман» — район, «кўча» —
+        # улица. Ҳарфма-ҳарф ўгириш бу ерда етарли эмас.
+        birth_place=address_in_russian(
+            to_cyrillic(f.get("birth_place", ""), country)) or None,
         issue_date=_parse_date(f.get("issue_date", "")),
         expiry_date=_parse_date(f.get("expiry_date", "")),
         issued_by=to_cyrillic(translate_issuer(f.get("issued_by", ""))) or None,
@@ -409,7 +412,8 @@ class OcrService:
             "citizenship": to_cyrillic(str(f.get("citizenship", ""))).strip(),
             # the passport is an identifier: Latin as printed, never translated
             "document": " ".join(p for p in (series, number) if p),
-            "address": str(f.get("address", "")).strip(),
+            "address": address_in_russian(
+                to_cyrillic(str(f.get("address", "")))).strip(),
             "stay_from": str(f.get("stay_from", "")).strip(),
             "stay_to": str(f.get("stay_to", "")).strip(),
         }
@@ -437,7 +441,8 @@ class OcrService:
             mark=f.get("mark", ""), model=f.get("model", ""),
             year=f.get("year", ""), category=f.get("category", ""),
             owner_fio=to_cyrillic(f.get("owner_fio", "")),
-            owner_address=f.get("owner_address", ""),
+            owner_address=address_in_russian(
+                to_cyrillic(f.get("owner_address", ""))),
             issue_date=_parse_date(f.get("issue_date", "")),
         )
 

@@ -297,6 +297,9 @@ def test_as_printed_only_tidies_the_spaces() -> None:
 # Қоида ТОР бўлиши шарт: манзилдаги «D.33», «19-MAVZE» белги эмас — улар
 # нуқта/тире билан ёзилади ва русчага ўгирилиши керак. Акс ҳолда манзил ярим
 # лотин бўлиб қолади.
+#
+# Эслатма: бу ерда фақат ҲАРФ қатлами синалади. Сўзнинг ўзини таржима қилиш
+# (УЙ → ДОМ) — :func:`address_in_russian` нинг иши, у қуйида синалади.
 @pytest.mark.parametrize("latin, russian", [
     ("UL. LENINA, D. 5, KV. 12", "УЛ. ЛЕНИНА, Д. 5, КВ. 12"),
     ("D.33 KORP.2 KV.15", "Д.33 КОРП.2 КВ.15"),
@@ -323,3 +326,64 @@ def test_what_counts_as_an_identifier(token, identifier) -> None:
 def test_an_identifier_in_brackets_is_still_left_alone() -> None:
     assert to_cyrillic("(FB2254876)") == "(FB2254876)"
     assert to_cyrillic("VIN: XW8ZZZ61ZJG011111") == "ВИН: XW8ZZZ61ZJG011111"
+
+
+# ------------------------------------------------- манзил сўзлари таржимаси
+# Офис: «уй бу дом, хонадон квартира, куча улица» — ҳарфма-ҳарф ўгириш эмас,
+# ТАРЖИМА, ва рус тартибида (от номдан олдин).
+def _address(text: str) -> str:
+    from src.domain.passport_rules import address_in_russian
+
+    return address_in_russian(to_cyrillic(text))
+
+
+@pytest.mark.parametrize("uzbek, russian", [
+    ("4-UY", "ДОМ 4"),
+    ("19-MAVZE", "МАССИВ 19"),
+    ("12-XONADON", "КВАРТИРА 12"),
+    ("TOSHKENT SHAHRI", "ГОРОД ТОШКЕНТ"),
+    ("YUNUSOBOD TUMANI", "РАЙОН ЮНУСОБОД"),
+    ("SURXONDARYO VILOYATI", "ОБЛАСТЬ СУРХОНДАРЁ"),
+    ("GULISTON QISHLOG'I", "СЕЛО ГУЛИСТОН"),
+    ("NAVOIY KO'CHASI", "УЛИЦА НАВОИЙ"),
+    ("CHILONZOR MAHALLASI", "МАХАЛЛЯ ЧИЛОНЗОР"),
+    # кўп сўзли ном бутунлигича кўчади
+    ("AMIR TEMUR XIYOBONI", "ПРОСПЕКТ АМИР ТЕМУР"),
+])
+def test_an_address_word_is_translated_not_transliterated(uzbek, russian):
+    assert _address(uzbek) == russian
+
+
+def test_a_number_never_becomes_the_name() -> None:
+    """«19-массив 4-уй» — вергулсиз ёзилса ҳам «дом 19-массив» чиқмайди."""
+    assert _address("19-MAVZE 4-UY") == "МАССИВ 19 ДОМ 4"
+
+
+def test_a_whole_uzbek_address_reads_as_a_russian_one() -> None:
+    assert _address("TOSHKENT SHAHRI, YUNUSOBOD TUMANI, 19-MAVZE, 4-UY, "
+                    "12-XONADON") == (
+        "ГОРОД ТОШКЕНТ, РАЙОН ЮНУСОБОД, МАССИВ 19, ДОМ 4, КВАРТИРА 12")
+
+
+@pytest.mark.parametrize("tajik, russian", [
+    ("NOHIYAI RUDAKI", "РАЙОН РУДАКИ"),
+    ("DEHAI CHORTEPPA", "СЕЛО ЧОРТЕППА"),
+    ("KUCHAI LENIN", "УЛИЦА ЛЕНИН"),
+])
+def test_a_tajik_address_keeps_its_order(tajik, russian) -> None:
+    """Тожикчада от аллақачон олдинда — ўрин алмаштирилмайди."""
+    assert _address(tajik) == russian
+
+
+@pytest.mark.parametrize("russian", [
+    "Г. МОСКВА, УЛ. ЛЕНИНА, Д. 5, КВ. 12",
+    "МОСКОВСКАЯ ОБЛАСТЬ, Г. БАЛАШИХА, УЛ. МИРА, Д. 33, КОРП. 2",
+])
+def test_a_russian_address_is_left_exactly_as_it_is(russian) -> None:
+    assert _address(russian) == russian
+
+
+def test_a_place_name_is_never_translated() -> None:
+    """Фақат турдош от таржима қилинади — ном эмас."""
+    assert "ЮНУСОБОД" in _address("YUNUSOBOD TUMANI")
+    assert "НАВОИЙ" in _address("NAVOIY KO'CHASI")
