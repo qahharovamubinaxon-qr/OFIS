@@ -99,3 +99,45 @@ def test_a_patent_that_reads_still_supplies_the_russian_name() -> None:
     passport, patent = _service().read_documents(b"passport", b"patent")
     assert patent is not None
     assert patent.series == "77"
+
+
+# ------------------------------------------- серия/рақам ўгирилмайди
+# «ХУЖАТЛАРНИ ОҚИГАНДА СЕРИЯ РАҚАМЛАРИДА ЛОТИН ҲАРФЛАРИНИ РУСЧАГА ТАРЖИМА
+# ҚИЛЯПТИ» — белгилар ҳужжатдан қандай ўқилса, шундайлигича қолиши керак.
+def test_a_plate_and_a_vin_are_not_transliterated() -> None:
+    canned = {DocType.STS: {
+        "series": "50 ОЕ", "number": "202246",
+        "plate": "T566BE40",                     # лотинча терилган
+        "vin": "XW8ZZZ61ZJG011111",
+        "mark": "Hyundai", "model": "Elantra",
+        "owner_fio": "RASULOV MUSTAFO",
+    }}
+    sts = OcrService(AiManager([FakeProvider(canned)])).read_sts(b"img")
+    assert sts.plate == "T566BE40"               # «Т566ВЕ40» бўлиб кетмайди
+    assert sts.vin == "XW8ZZZ61ZJG011111"
+    assert sts.mark == "Hyundai"
+    assert sts.owner_fio == "РАСУЛОВ МУСТАФО"    # исм эса ўгирилади
+
+
+def test_a_cyrillic_plate_is_left_alone_too() -> None:
+    canned = {DocType.STS: {"plate": "Т566ВЕ40", "vin": "X7LBSRB2HBH123456"}}
+    sts = OcrService(AiManager([FakeProvider(canned)])).read_sts(b"img")
+    assert sts.plate == "Т566ВЕ40"
+
+
+def test_a_patent_blank_series_is_copied_as_printed() -> None:
+    canned = {DocType.PATENT: {"number": "2612345678", "blank_series": "ПР",
+                               "blank_number": "8074980"}}
+    pat = OcrService(AiManager([FakeProvider(canned)])).read_patent(b"img")
+    assert pat.blank_series == "ПР"
+    assert pat.blank_number == "8074980"
+
+
+def test_a_passport_series_keeps_its_latin_letters() -> None:
+    canned = {DocType.PASSPORT: {"surname": "RASULOV", "name": "MUSTAFO",
+                                 "series": "FB", "number": "2254876",
+                                 "nationality": "UZBEKISTAN"}}
+    p = OcrService(AiManager([FakeProvider(canned)])).read_passport(b"img")
+    assert p.series == "FB"                      # «ФБ» эмас
+    assert p.number == "2254876"
+    assert p.surname == "РАСУЛОВ"                # фамилия эса русча

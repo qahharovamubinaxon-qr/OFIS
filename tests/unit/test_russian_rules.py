@@ -113,3 +113,30 @@ def test_the_program_transcribes_the_same_way_it_tells_the_model_to(
     """What the rules ask of the model, the program does deterministically —
     so a careless reading is corrected rather than carried onto a form."""
     assert to_cyrillic(latin) == russian
+
+
+# ------------------------------------------------ серия/рақам — таржима эмас
+# Офис: «серия рақамларда лотин ҳарфларини русчага таржима қиляпти — қоидага
+# қўш: серия-рақам переводь бўлмайди». Қоида иккала матнда ҳам, демак ҳар
+# сўровда бор.
+@pytest.mark.parametrize("rules", [RUSSIAN_RULES, RUSSIAN_SHORT])
+def test_every_ask_says_numbers_are_never_translated(rules) -> None:
+    assert "FB2254876" in rules
+    assert "VIN" in rules
+
+
+def test_the_long_rule_names_the_identifiers_one_by_one() -> None:
+    for must in ("Серия и номер паспорта", "регистрационный знак",
+                 "VIN", "ЗНАК В ЗНАК"):
+        assert must in RUSSIAN_RULES, must
+
+
+def test_the_rule_reaches_the_prompts_themselves() -> None:
+    """Ҳар бўлимнинг сўрови шу қоидани кўтариб юради."""
+    from src.ai.prompts import named_fields_prompt, prompt_for
+    from src.domain.enums import DocType
+
+    for kind in (DocType.PASSPORT, DocType.PATENT, DocType.STS,
+                 DocType.DRIVER_LICENCE):
+        assert "FB2254876" in prompt_for(kind), kind
+    assert "FB2254876" in named_fields_prompt(["Серия паспорта"])

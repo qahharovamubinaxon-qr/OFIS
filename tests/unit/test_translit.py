@@ -257,3 +257,38 @@ def test_india_english(latin, russian) -> None:
 ])
 def test_the_republics_are_untouched(latin, country, russian) -> None:
     assert to_cyrillic(latin, country) == russian
+
+
+# --------------------------------------------------- серия/рақам таржима эмас
+# «СЕРИЯ РАКАМЛАР ПЕРЕВОД БОЛМАЙДИ, КАНДАЙ БОЛСА ШУНДАЙ ЙОЗИЛАДИ» — ичида
+# рақами бор ҳар сўз белги: уни ўгириш ҳужжатни яроқсиз қилади.
+@pytest.mark.parametrize("printed", [
+    "FB2254876",                 # паспорт серияси + рақами
+    "AA1234567",
+    "XW8ZZZ61ZJG011111",         # ВИН
+    "T566BE40",                  # лотинча терилган давлат рақами
+    "Т566ВЕ40",                  # кириллча терилгани — у ҳам ўзгармайди
+    "50 ОЕ 202246",
+    "77AB123456",
+])
+def test_an_identifier_is_copied_as_printed(printed) -> None:
+    assert to_cyrillic(printed) == printed
+
+
+def test_a_name_beside_a_number_still_becomes_russian() -> None:
+    """Рақам тегилмайди, ёнидаги сўз эса одатдагидек ўгирилади."""
+    assert to_cyrillic("JASUR FB2254876") == "ЖАСУР FB2254876"
+    assert to_cyrillic("MVD 22220") == "МВД 22220"
+
+
+def test_a_plain_name_is_not_affected_by_the_rule() -> None:
+    assert to_cyrillic("KHUDAYBERDIEV") == "ХУДАЙБЕРДИЕВ"
+    assert to_cyrillic("JASUR UGLI") == "ЖАСУР УГЛИ"
+
+
+def test_as_printed_only_tidies_the_spaces() -> None:
+    from src.ocr.translit import as_printed
+
+    assert as_printed("  T566BE40 ") == "T566BE40"
+    assert as_printed("50  ОЕ   202246") == "50 ОЕ 202246"
+    assert as_printed(None) == ""

@@ -321,6 +321,10 @@ _NAMED_FIELDS = (
     "a number only when the heading beside it says it is the one asked for.\n"
     "* Dates as printed on the page (DD.MM.YYYY if that is how it is set).\n"
     "* Names in the alphabet they are printed in.\n"
+    "* NUMBERS ARE NEVER TRANSLATED. A series, a document number, a state "
+    "plate, a VIN, an ИНН — copy the characters exactly as "
+    "printed: Latin letters STAY Latin (FB2254876 is FB2254876, never "
+    "ФБ2254876) and Cyrillic ones stay Cyrillic.\n"
     'Answer shape: {{"Виза №":"12345","Курс":"2"}}\n'
 )
 

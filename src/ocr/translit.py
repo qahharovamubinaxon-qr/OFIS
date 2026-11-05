@@ -14,7 +14,15 @@ everywhere in the program.
 
 from __future__ import annotations
 
+import re
+
 from src.domain.passport_rules import in_russian_letters, issuer_in_russian
+
+#: Ичида рақами бор сўз — бу СЎЗ эмас, БЕЛГИ: паспорт серияси, машина давлат
+#: рақами, ВИН, бланка рақами. Улар ҳужжатга қандай босилган бўлса, шундайлигича
+#: кўчирилади.
+_HAS_DIGIT = re.compile(r"\d")
+_SPLIT = re.compile(r"(\s+)")
 
 # Longest sequences first so digraphs win over single letters. These are
 # the practical-transcription rules a Russian form uses for Uzbek Latin:
@@ -196,6 +204,32 @@ def to_cyrillic(text: str, country: str | None = None) -> str:
     With no country the plain Central-Asian table is used. Empty text is
     unchanged.
     """
+    if not text:
+        return text
+    # СЕРИЯ ВА РАҚАМЛАР ТАРЖИМА ҚИЛИНМАЙДИ. Ичида рақами бор ҳар бир сўз —
+    # белги: FB2254876, Т566ВЕ40, XW8ZZZ61ZJG011111, ПР 8074980. Улар
+    # ҳужжатдан кўчирилади, ўгирилмайди — акс ҳолда «FB» «ФБ» бўлиб,
+    # рўйхатдан ўтказишда ҳужжат топилмай қолади. Атрофидаги сўзлар эса
+    # одатдагидек ўгирилаверади.
+    if _HAS_DIGIT.search(text):
+        return "".join(
+            piece if (_HAS_DIGIT.search(piece) or not piece.strip())
+            else _word_to_cyrillic(piece, country)
+            for piece in _SPLIT.split(text))
+    return _word_to_cyrillic(text, country)
+
+
+def as_printed(value: str) -> str:
+    """Белги — ҳужжатдагидек. Фақат ортиқча бўшлиқ олиб ташланади.
+
+    Серия, давлат рақами, ВИН ва бланка рақами шу ердан ўтади: ҳарфлари
+    лотинми, кириллми — ўзгартирилмайди.
+    """
+    return " ".join(str(value or "").split())
+
+
+def _word_to_cyrillic(text: str, country: str | None = None) -> str:
+    """Битта сўзни ўгириш — :func:`to_cyrillic` нинг ўз иши."""
     if not text:
         return text
     if _has_cyrillic(text):

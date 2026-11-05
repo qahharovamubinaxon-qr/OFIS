@@ -25,7 +25,7 @@ from src.domain.enums import DocType, Gender
 from src.domain.passport_rules import same_name, series_in_latin
 from src.domain.vehicle import DriverLicence, Sts
 from src.ocr.preprocess import prepare_image
-from src.ocr.translit import to_cyrillic, translate_issuer
+from src.ocr.translit import as_printed, to_cyrillic, translate_issuer
 
 log = get_logger(__name__)
 
@@ -255,7 +255,8 @@ class OcrService:
         return Patent(
             series=f.get("series") or None,
             number=f.get("number", ""),
-            blank_series=to_cyrillic(blank_series or "") or None,
+            # бланка серияси — белги, ўгирилмайди
+            blank_series=as_printed(blank_series or "") or None,
             blank_number=blank_number,
             issue_date=issue_date,
             issued_by=to_cyrillic(issued_by or "") or None,
@@ -428,8 +429,10 @@ class OcrService:
             f = {**f, **{k: v for k, v in b.items() if (v or "").strip()}}
         return Sts(
             series=f.get("series", ""), number=f.get("number", ""),
-            # a plate is Cyrillic; a VIN and a make stay in Latin as printed
-            plate=to_cyrillic(f.get("plate", "")),
+            # Давлат рақами ҳам, ВИН ҳам — БЕЛГИ: қандай босилган бўлса,
+            # шундайлигича. Аввал рақам кириллчага ўгириларди ва лотин
+            # ҳарфли рақам «таржима» бўлиб кетарди.
+            plate=as_printed(f.get("plate", "")),
             vin=(f.get("vin", "") or "").upper().replace(" ", ""),
             mark=f.get("mark", ""), model=f.get("model", ""),
             year=f.get("year", ""), category=f.get("category", ""),
