@@ -185,8 +185,33 @@ class ProcessView(QWidget):
         self._progress.finish()
         passport, patent = pair
         self._review.fill(passport, patent)
-        self._status.setText("✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, "
-                             "кейин RUN.")
+        self._status.setText(self._read_report(patent))
+
+    def _read_report(self, patent) -> str:
+        """Нима ўқилганини АЙТИШ — патент ҳақида ҳам.
+
+        Паспортнинг ўқилгани майдонларда кўриниб турибди, патентники эса
+        йўқ: экранда унинг серияси ҳам, санаси ҳам чиқмайди. Шунинг учун
+        патент ўқилмай қолса оператор буни билмай RUN босарди ва бланканинг
+        учинчи бўлими («Сведения о патенте») бўм-бўш чиқарди. Энди ҳар
+        ўқишдан кейин патентнинг аҳволи шу ерда ёзилади.
+        """
+        ok = "✅ Ўқилди — текширинг, хатоси бўлса тўғриланг, кейин RUN."
+        if self._dz_patent.path is None:
+            return ok
+        if patent is None:
+            return ("⚠️ Паспорт ўқилди, ПАТЕНТ ўқилмади — бланканинг патент "
+                    "бўлими бўш чиқади. Патент расмини қайта ташланг.")
+        said = (f"{patent.series} №{patent.number}"
+                if patent.series else patent.number)
+        if patent.issue_date is None:
+            return (f"⚠️ Патент ўқилди ({said}), лекин ОЛИНГАН САНАСИ йўқ — "
+                    "у патентнинг ОРҚА томонида ёзилган. Орқа расмини ҳам "
+                    "ташланг, акс ҳолда «дата выдачи» ва «срок действия» "
+                    "бўш қолади.")
+        return (f"✅ Ўқилди — патент {said}, "
+                f"{patent.issue_date.strftime('%d.%m.%Y')}. "
+                "Текширинг, кейин RUN.")
 
     def _read_failed(self, error: Exception) -> None:
         self._progress.finish()
@@ -213,8 +238,14 @@ class ProcessView(QWidget):
         profession = self._profession.text().strip() or None
         form_date = self._form_date()
         self._busy("PDF яратиляпти…")
+        # Патент ҲАМ юборилади. Бланканинг 3-бўлими — «Сведения о патенте» —
+        # фақат шундан тўлади: серия, номер, дата выдачи, кем выдан, срок
+        # действия. Аввал бу ерда `None` турган эди (ўқиш-кўрсатиш-чоп этиш
+        # оқимига ўтилганда тушиб қолган), шунинг учун паспорт тўлиқ тушиб,
+        # патент бўлими бўм-бўш чиқарди.
         run_async(
-            self._c.generate, company, self._review.edited(), None,
+            self._c.generate, company,
+            self._review.edited(), self._review.edited_patent(),
             form_date=form_date, profession=profession,
             on_success=self._done, on_error=self._failed,
         )

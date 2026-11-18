@@ -90,7 +90,9 @@ def _worker():
         nationality="ТУРКМЕНИСТАН", gender=Gender.MALE,
         birth_date=date(1990, 5, 15), issue_date=date(2023, 3, 13),
         expiry_date=date(2028, 3, 12))
-    patent = Patent(number="240", profession="рабочий",
+    patent = Patent(series="50", number="2600240880", profession="рабочий",
+                    issue_date=date(2026, 8, 9),
+                    issued_by="ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ",
                     holder_surname="ПАЛВАНОВ", holder_name="ДОВЛЕТГЕЛДИ",
                     holder_patronymic="БАЙРАМОВИЧ",
                     holder_citizenship="ТУРКМЕНИСТАН")
@@ -124,7 +126,78 @@ def test_run_prints_the_boxes_not_the_raw_read(view) -> None:
     screen._review._boxes["surname"].setText("ПАЛВАНОВА")
     screen._run_ai()
     assert controller.printed["passport"].surname == "ПАЛВАНОВА"
-    assert controller.printed["patent"] is None      # folded into the passport
+    # ва патентнинг ФИО си ҳам тўғриланганига эргашади
+    assert controller.printed["patent"].holder_surname == "ПАЛВАНОВА"
+
+
+# ---------------------------------------------------------------- патент
+# Офис: «патентни ўқимаяпти, ёзмаяпти». Ўқиётган эди — лекин чоп этишга
+# `None` кетарди, шунинг учун бланканинг 3-бўлими («Сведения о патенте»)
+# бўм-бўш чиқарди: серия, номер, дата выдачи, кем выдан, срок действия.
+def test_the_patent_rides_along_to_the_print(view) -> None:
+    screen, controller = _make(view, *_worker())
+    screen._dz_passport = _Drop("p.jpg")
+    screen._dz_patent = _Drop("pat.jpg")
+    screen._read_now()
+    screen._run_ai()
+    patent = controller.printed["patent"]
+    assert patent is not None, "патент чоп этишга етиб бормади"
+    assert (patent.series, patent.number) == ("50", "2600240880")
+    assert patent.issue_date == date(2026, 8, 9)
+    assert patent.issued_by == "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ"
+
+
+def test_the_patent_boxes_of_the_form_are_filled(view) -> None:
+    """Бланкада чиндан ҳам ўша қаторлар тўлишини текширади."""
+    from src.services.field_extractor import build_values
+
+    screen, controller = _make(view, *_worker())
+    screen._dz_passport = _Drop("p.jpg")
+    screen._dz_patent = _Drop("pat.jpg")
+    screen._read_now()
+    screen._run_ai()
+
+    employee = SimpleNamespace(
+        passport=controller.printed["passport"],
+        patent=controller.printed["patent"],
+        profession="РАЗНОРАБОЧИЙ")
+    values = build_values(employee, _company(), form_date=date(2026, 11, 16),
+                          reg_number=345, profession="РАЗНОРАБОЧИЙ")
+    assert values["patent.series"] == "50"
+    assert values["patent.number"] == "2600240880"
+    assert values["patent.issue.d"] == "2026-08-09"
+    assert values["patent.issued_by"] == "ГУ МВД РОССИИ ПО МОСКОВСКОЙ ОБЛАСТИ"
+    # срок действия: олинган кундан бир йил
+    assert values["patent.to.y"] == "2027-08-09"
+
+
+def test_the_screen_says_the_patent_was_read(view) -> None:
+    screen, _ = _make(view, *_worker())
+    screen._dz_passport = _Drop("p.jpg")
+    screen._dz_patent = _Drop("pat.jpg")
+    screen._read_now()
+    said = screen._status.text()
+    assert "2600240880" in said and "09.08.2026" in said
+
+
+def test_an_unread_patent_is_not_passed_over_in_silence(view) -> None:
+    passport, _ = _worker()
+    screen, _ = _make(view, passport, None)      # патент ўқилмади
+    screen._dz_passport = _Drop("p.jpg")
+    screen._dz_patent = _Drop("pat.jpg")
+    screen._read_now()
+    said = screen._status.text()
+    assert "ПАТЕНТ ўқилмади" in said, said
+
+
+def test_a_patent_without_its_date_asks_for_the_back_side(view) -> None:
+    passport, patent = _worker()
+    screen, _ = _make(view, passport,
+                      patent.model_copy(update={"issue_date": None}))
+    screen._dz_passport = _Drop("p.jpg")
+    screen._dz_patent = _Drop("pat.jpg")
+    screen._read_now()
+    assert "ОРҚА" in screen._status.text()
 
 
 def test_run_refuses_before_read(view) -> None:
