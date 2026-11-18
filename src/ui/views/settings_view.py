@@ -606,8 +606,7 @@ class SettingsView(QWidget):
             else "⚠️  Birorta kalit yo'q — AI bo'limlari ishlamaydi.")
 
         has_token = bool(str(self._settings.get(KEY_TOKEN, "") or "").strip())
-        self._tg_state.setText("✅  Token kiritilgan — bot ishga tushadi." if has_token
-                               else "⚠️  Token yo'q — bot o'chirilgan.")
+        self._tg_state.setText(self._telegram_state(has_token))
 
         from src.controllers.telegram_bot import KEY_PASSWORD
         from src.controllers.telegram_webapp import DEFAULT_PORT, KEY_ENABLED, KEY_PORT, lan_ip
@@ -832,11 +831,56 @@ class SettingsView(QWidget):
         self._settings.set(KEY_TARIF, self._dv_tarif.text().strip() or "1500")
         QMessageBox.information(self, "OK", "Доверенность рақамлари сақланди.")
 
-    def _save_telegram(self) -> None:
-        from src.controllers.telegram_bot import KEY_PASSWORD, KEY_TOKEN
+    def _telegram_state(self, has_token: bool) -> str:
+        """Ботнинг ҲАҚИҚИЙ аҳволи — токен борлиги эмас.
 
-        self._settings.set(KEY_TOKEN, self._tg_token.text().strip())
+        Аввал бу ер фақат «токен ёзилганми» деб қарарди ва «бот ишга
+        тушади» деб турарди — Telegram ўша токенни рад этган бўлса ҳам.
+        Офис ботни ишлаяпти деб ўйлаб юраверди, логда эса ўн минглаб
+        «401» ётарди. Энди бот ўз ҳолини ёзиб қўяди (``tg.status``) —
+        Созламалар ўшани айтади.
+        """
+        from src.controllers.telegram_bot import (
+            KEY_STATUS,
+            STATUS_BAD_TOKEN,
+            STATUS_OFFLINE,
+            STATUS_RUNNING,
+            STATUS_TAKEN,
+        )
+
+        if not has_token:
+            return "⚠️  Token yo'q — bot o'chirilgan."
+        status = str(self._settings.get(KEY_STATUS, "") or "")
+        if status == STATUS_RUNNING:
+            return "✅  Bot ishlayapti."
+        if status == STATUS_BAD_TOKEN:
+            return ("❌  Tokenni Telegram rad etdi (401) — bot ishlamaydi.\n"
+                    "@BotFather → /mybots → botingiz → API Token: yangi "
+                    "tokenni oling va shu yerga kiriting.")
+        if status == STATUS_TAKEN:
+            return ("⚠️  Shu token bilan boshqa nusxa ham so'rayapti (409).\n"
+                    "Bittasini yoping — ikkovi bir-birini uzadi.")
+        if status == STATUS_OFFLINE:
+            return ("⚠️  Telegram'ga ulanib bo'lmadi — internetni tekshiring.\n"
+                    "Aloqa tiklanganda bot o'zi ishlay boshlaydi.")
+        return "✅  Token kiritilgan — dasturni qayta oching, bot ishga tushadi."
+
+    def _save_telegram(self) -> None:
+        from src.controllers.telegram_bot import (
+            KEY_PASSWORD,
+            KEY_STATUS,
+            KEY_TOKEN,
+            STATUS_OFF,
+        )
+
+        was = str(self._settings.get(KEY_TOKEN, "") or "").strip()
+        now = self._tg_token.text().strip()
+        self._settings.set(KEY_TOKEN, now)
         self._settings.set(KEY_PASSWORD, self._tg_parol.text().strip())
+        # Янги токен ёзилди — эски ҳукм билан турмасин. Акс ҳолда яроқсиз
+        # токен алмаштирилгач ҳам Созламалар «рад этилди» деб турарди.
+        if now != was:
+            self._settings.set(KEY_STATUS, STATUS_OFF)
         self._refresh_states()
         QMessageBox.information(
             self, "OK",

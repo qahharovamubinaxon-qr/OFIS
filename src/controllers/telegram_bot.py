@@ -15,9 +15,9 @@ No third-party dependency — raw Bot API over urllib.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
-import time
 import urllib.request
 import uuid
 from datetime import date, timedelta
@@ -51,7 +51,26 @@ from src.controllers.ofis_modules import (
 
 log = get_logger(__name__)
 
+#: Токен рад этилганда айтиладиган ягона гап — логда ҳам, Созламаларда ҳам.
+BAD_TOKEN_HELP = (
+    "Telegram боти ишламади: токен яроқсиз (401). Telegram'да @BotFather га "
+    "кириб /mybots -> ботингиз -> API Token дан янги токенни олинг ва "
+    "Sozlamalar -> Telegram бўлимига киритинг, кейин дастурни қайта очинг.")
+
 KEY_TOKEN = "tg.bot_token"
+#: Ботнинг ҳозирги ҳоли — Созламалар шу ердан ўқиб кўрсатади. Ойнадаги бот
+#: ҳам, bot.bat даги бош-кўзсиз бот ҳам шу битта калитга ёзади.
+KEY_STATUS = "tg.status"
+STATUS_OFF = "off"                 # токен киритилмаган
+STATUS_RUNNING = "running"         # ишлаяпти
+STATUS_BAD_TOKEN = "bad_token"     # 401 — токен яроқсиз ёки бекор қилинган
+STATUS_TAKEN = "taken"             # 409 — шу токен билан бошқаси ҳам сўраяпти
+STATUS_OFFLINE = "offline"         # интернет йўқ ёки Telegram жавоб бермаяпти
+
+#: Қайта уриниш оралиғи: аввал 5 сония, кейин секинлашади. Тўхтовсиз 5 сония
+#: интернет узилганда логни минглаб қатор билан тўлдириб юборарди.
+RETRY_FIRST = 5
+RETRY_MAX = 60
 KEY_PASSWORD = "tg.password"
 KEY_ALLOWED = "tg.allowed_chats"
 KEY_WEBAPP = "tg.webapp_url"
@@ -175,6 +194,15 @@ def send_document(token: str, chat_id: int, path: Path, caption: str = "") -> bo
 # ---------------------------------------------------------------- the bot
 
 
+def _http_code(exc: Exception) -> int | None:
+    """Хатонинг HTTP коди — бор бўлса. 401 ва 409 ни ажратиш учун керак."""
+    import urllib.error
+
+    if isinstance(exc, urllib.error.HTTPError):
+        return int(exc.code)
+    return None
+
+
 class TelegramBot:
     """One instance per app. ``start()`` is a no-op without a token."""
 
@@ -191,6 +219,9 @@ class TelegramBot:
         self.webapp = None
         #: chat → the documents that chat last made, for that button.
         self._last_files: dict[int, list[Path]] = {}
+        #: Ботнинг ҳоли ва бот номи — Созламалар шуни кўрсатади.
+        self.status = STATUS_OFF
+        self.bot_name = ""
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> bool:
@@ -198,16 +229,53 @@ class TelegramBot:
 
         self._settings = self._container.resolve(SettingsService)
         if not self._token():
+            self._set_status(STATUS_OFF)
             log.info("Telegram bot: no token — not started")
+            return False
+        # Токенни ДАРҲОЛ текшириб кўрамиз. Акс ҳолда яроқсиз токен билан
+        # оқим жим ишга тушиб, фақат логга «401» ёзиб ётарди — оператор эса
+        # бот ишлаяпти деб ўйларди.
+        if self._token_is_refused():
             return False
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name="ofis-telegram")
         self._thread.start()
-        log.info("Telegram bot started")
+        log.info("Telegram bot started%s",
+                 f" (@{self.bot_name})" if self.bot_name else "")
         return True
+
+    def _token_is_refused(self) -> bool:
+        """True — Telegram токенни ОЧИҚ рад этди (401).
+
+        Интернет йўқлиги рад этиш эмас: ундай ҳолда бот ишга тушаверади ва
+        алоқа тикланганда ўзи ишлай бошлайди.
+        """
+        try:
+            me = self._api("getMe", {})
+        except Exception as exc:  # noqa: BLE001 - тармоқ ҳам шу ерга тушади
+            if _http_code(exc) == 401:
+                self._set_status(STATUS_BAD_TOKEN)
+                log.error(BAD_TOKEN_HELP)
+                return True
+            log.warning("Telegram: токен текширилмади (%s) — бот барибир "
+                        "ишга туширилди", exc)
+            return False
+        self.bot_name = str((me.get("result") or {}).get("username", "") or "")
+        return False
 
     def stop(self) -> None:
         self._stop.set()
+
+    def _set_status(self, status: str) -> None:
+        """Ҳолатни эслаб қолиш — Созламалар ойнаси шуни ўқийди."""
+        if status == self.status:
+            return
+        self.status = status
+        try:
+            if self._settings is not None:
+                self._settings.set(KEY_STATUS, status)
+        except Exception as exc:  # noqa: BLE001 - ҳолат ёзилмаса ҳам бот ишлайди
+            log.debug("tg: ҳолат сақланмади: %s", exc)
 
     def _token(self) -> str:
         return str(self._settings.get(KEY_TOKEN, "") or "").strip()
@@ -274,15 +342,49 @@ class TelegramBot:
 
     # -- main loop -----------------------------------------------------
     def _loop(self) -> None:
+        """Telegram'дан янгиликларни сўраб туриш.
+
+        Хатонинг ҲАММАСИ бир хил эмас, ва аввал шундай қаралгани учун
+        яроқсиз токен билан бот ҳар 5 сонияда қайта уриниб, логга ўн минглаб
+        «401» ёзиб ётган эди. Энди:
+
+        * **401** — токен яроқсиз. Бу ўзи тузалмайди, шунинг учун бот
+          тўхтайди ва нима қилиш кераклигини БИР марта айтади;
+        * **409** — шу токен билан бошқа нусха ҳам сўраяпти (масалан bot.bat).
+          Иккови бир-бирини узади, шунинг учун секинлашиб кутилади;
+        * қолгани (интернет узилиши) — оралиқ 5 сониядан 60 гача ўсади ва
+          такрори логга ёзилмайди.
+        """
         offset = 0
+        delay = RETRY_FIRST
+        failures = 0
         while not self._stop.is_set():
             try:
                 updates = self._api("getUpdates",
                                     {"timeout": 50, "offset": offset})
             except Exception as exc:  # noqa: BLE001
-                log.warning("tg poll failed: %s", exc)
-                time.sleep(5)
+                code = _http_code(exc)
+                if code == 401:
+                    self._set_status(STATUS_BAD_TOKEN)
+                    log.error(BAD_TOKEN_HELP)
+                    return
+                failures += 1
+                if code == 409:
+                    self._set_status(STATUS_TAKEN)
+                    if failures == 1:
+                        log.warning(
+                            "Telegram: шу токен билан бошқа нусха ҳам "
+                            "ишлаяпти (409). Биттасини ёпинг — иккови "
+                            "бир-бирини узади.")
+                else:
+                    self._set_status(STATUS_OFFLINE)
+                    if failures == 1:
+                        log.warning("tg poll failed: %s — қайта уринилади", exc)
+                self._stop.wait(delay)
+                delay = min(delay * 2, RETRY_MAX)
                 continue
+            self._set_status(STATUS_RUNNING)
+            delay, failures = RETRY_FIRST, 0
             for upd in updates.get("result", []):
                 offset = max(offset, upd["update_id"] + 1)
                 try:
@@ -297,10 +399,8 @@ class TelegramBot:
             chat_id = cq["message"]["chat"]["id"]
             if chat_id in self._allowed():
                 self._on_pick(chat_id, cq.get("data", ""))
-            try:
+            with contextlib.suppress(Exception):
                 self._api("answerCallbackQuery", {"callback_query_id": cq["id"]})
-            except Exception:  # noqa: BLE001
-                pass
             return
 
         msg = upd.get("message") or {}

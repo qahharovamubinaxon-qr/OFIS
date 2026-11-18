@@ -46,10 +46,18 @@ def run() -> int:
 
     bot = TelegramBot(container)
     if not bot.start():
-        # start() logs the reason (no token). Without one there is nothing to
-        # run, and a process that stays up doing nothing only misleads.
-        log.error("Telegram токени йўқ — Sozlamalar → Telegram бўлимига "
-                  "киритинг. Бот ишга тушмади.")
+        # start() has already said WHY — either no token at all, or one
+        # Telegram itself refused (401). Those are different errands: saying
+        # «токен йўқ» over a refused token sent the office hunting for a
+        # setting that was already filled in. Without a working token there
+        # is nothing to run, and a process that stays up doing nothing only
+        # misleads.
+        from src.controllers.telegram_bot import STATUS_BAD_TOKEN
+
+        if bot.status != STATUS_BAD_TOKEN:
+            log.error("Telegram токени йўқ — Sozlamalar → Telegram бўлимига "
+                      "киритинг.")
+        log.error("Бот ишга тушмади.")
         return 1
 
     # The Mini App and its public address — what «WhatsApp'га юбор» needs.

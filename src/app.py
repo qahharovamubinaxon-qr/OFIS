@@ -9,6 +9,7 @@ isolation (ARCHITECTURE.md §9).
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 from src.common.di import Container
@@ -309,10 +310,18 @@ def main() -> int:
         log.info("Telegram бот фонда (bot.bat) ишлаяпти — ойнада иккинчиси "
                  "ишга туширилмади")
     else:
-        try:
-            bot.start()
-        except Exception as exc:  # noqa: BLE001 - bot must never block the UI
-            log.error("Telegram bot failed to start: %s", exc)
+        # Ишга тушириш АЛОҲИДА оқимда. start() токенни Telegram'дан
+        # сўраб кўради, ва интернет узилган бўлса ўша сўров жавобни бир
+        # дақиқагача кутади — бу ерда кутилса, ойна ўшанча муз бўлиб
+        # турарди. Бот кечроқ уйғонгани ҳеч кимга халал бермайди.
+        def _start_bot() -> None:
+            try:
+                bot.start()
+            except Exception as exc:  # noqa: BLE001 - bot must never block the UI
+                log.error("Telegram bot failed to start: %s", exc)
+
+        threading.Thread(target=_start_bot, daemon=True,
+                         name="ofis-telegram-start").start()
     window._telegram_bot = bot  # keep alive for the app's lifetime
 
     # Mini App — the same modules as a phone page; off unless switched on.
