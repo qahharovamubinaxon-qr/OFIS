@@ -28,7 +28,8 @@
    =========================================================================== */
 
 QWidget { background: #101119; color: #ECEAE7;
-          font-family: "Arial", "Segoe UI", sans-serif; font-size: 14px; }
+          font-family: "Segoe UI Variable Text", "Segoe UI", "Inter",
+                       "Arial", sans-serif; font-size: 14px; }
 QMainWindow { background: #101119; }
 QLabel { background: transparent; }
 QToolTip { background: #22242F; color: #ECEAE7; border: 1px solid #33374a;
