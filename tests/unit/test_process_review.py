@@ -51,10 +51,15 @@ class _Controller:
     def read_documents(self, passport, patent, patent_back):
         return self._passport, self._patent
 
-    def generate(self, company, passport, patent, *, form_date, profession):
+    def generate(self, company, passport, patent, *, form_date, profession,
+                 on_step=None):
         self.printed = {"company": company, "passport": passport,
                         "patent": patent, "form_date": form_date,
-                        "profession": profession}
+                        "profession": profession, "on_step": on_step}
+        # ҳақиқий хизмат ҳар қадамини тугатганда шундай хабар беради
+        for step in ("Маълумот тайёрланди", "ПДФ ёзилди", "Архивга ёзилди"):
+            if on_step is not None:
+                on_step(step)
         return SimpleNamespace(pdf_path=Path("OUT.pdf"), reg_number=42)
 
 
@@ -216,3 +221,13 @@ def test_the_bot_one_shot_path_stays() -> None:
     assert hasattr(ProcessController, "generate_from_images")
     assert hasattr(ProcessController, "read_documents")
     assert hasattr(ProcessController, "generate")
+
+
+def test_the_screen_asks_for_the_real_steps(view) -> None:
+    """Ҳалқа тахмин қилмайди: экран хизматдан қадам хабарини сўрайди."""
+    screen, controller = _make(view, *_worker())
+    screen._dz_passport = _Drop("p.jpg")
+    screen._read_now()
+    screen._run_ai()
+    assert controller.printed["on_step"] is not None, "қадам сўралмади"
+    assert screen._progress.percent() == 100
