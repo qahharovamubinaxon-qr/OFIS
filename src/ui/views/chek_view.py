@@ -34,6 +34,7 @@ from src.common.threading import run_async
 from src.controllers.chek_controller import ChekController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -68,7 +69,7 @@ class ChekView(QWidget):
         self._otch = self._line(grid, 1, 0, "Отчество:")
         self._inn = self._line(grid, 1, 2, "ИНН (патентдан):")
         self._inn.setMaxLength(12)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Число:"))
@@ -93,7 +94,7 @@ class ChekView(QWidget):
         self._card4.setFixedWidth(70)
         row.addWidget(self._card4)
         row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         # Neither of these two is ever generated: the authorisation code is
         # copied off the bank's confirmation, the company id is the office's.
@@ -113,7 +114,7 @@ class ChekView(QWidget):
             lambda: self._c.set_company_id(self._company.text()))
         bank.addWidget(self._company)
         bank.addStretch(1)
-        root.addLayout(bank)
+        root.addWidget(panelled("Банк маълумотлари", bank))
 
         trow = QHBoxLayout()
         trow.addWidget(QLabel("Шаблон:"))
@@ -135,7 +136,7 @@ class ChekView(QWidget):
         arrange.clicked.connect(self._arrange)
         trow.addWidget(arrange)
         trow.addStretch(1)
-        root.addLayout(trow)
+        root.addWidget(panelled("", trow))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ЧЕК PDF)")

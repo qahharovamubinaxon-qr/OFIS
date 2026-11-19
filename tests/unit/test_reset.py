@@ -31,16 +31,22 @@ def window(monkeypatch):
 
 
 def _view(window, class_name: str):
+    # Ҳар бўлим ўрам ичида осилиб туради (src/ui/widgets/screen_scroll.py),
+    # шунинг учун стекдан бўлимнинг ўзига ўтиб олинади.
+    from src.ui.widgets.screen_scroll import screen_of
+
     for page in range(window._stack.count()):
-        widget = window._stack.widget(page)
+        widget = screen_of(window._stack.widget(page))
         if widget.__class__.__name__ == class_name:
             return widget
     raise AssertionError(f"{class_name} not found")
 
 
 def _show(window, view) -> None:
+    from src.ui.widgets.screen_scroll import screen_of
+
     for row, page in window._row_to_page.items():
-        if window._stack.widget(page) is view:
+        if screen_of(window._stack.widget(page)) is view:
             window._nav_list.setCurrentRow(row)
             return
 

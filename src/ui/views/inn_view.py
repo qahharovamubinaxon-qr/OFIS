@@ -31,6 +31,7 @@ from src.controllers.inn_controller import InnController
 from src.services.inn_service import INN_DIGITS, InnResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: Everything the ИНН sheet prints off the passport, so any of it can be
 #: corrected before it goes onto the worker's filed record.
@@ -90,7 +91,7 @@ class InnView(QWidget):
         self._count.setStyleSheet("color:#8a94a3;")
         row.addWidget(self._count)
         row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         self._dz = DropZone("🛂", "Ишчининг паспорти ёки патенти")
         # dropped and read at once — the worker's ФИО and the ИНН both come

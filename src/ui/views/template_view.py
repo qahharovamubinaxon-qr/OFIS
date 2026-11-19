@@ -37,6 +37,7 @@ from src.common.threading import run_async
 from src.controllers.template_controller import TemplateController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -69,7 +70,7 @@ class TemplateView(QWidget):
         row.addWidget(self._file, stretch=1)
         row.addWidget(pick)
         row.addWidget(self._analyse)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         self._table = QTableWidget(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
@@ -87,14 +88,14 @@ class TemplateView(QWidget):
         confirm_row.addWidget(QLabel("Номи:"))
         confirm_row.addWidget(self._name, stretch=1)
         confirm_row.addWidget(self._save)
-        root.addLayout(confirm_row)
+        root.addWidget(panelled("", confirm_row))
 
         fill_row = QHBoxLayout()
         self._dz_passport = DropZone("🛂", "Паспорт")
         self._dz_patent = DropZone("📄", "Патент")
         fill_row.addWidget(self._dz_passport)
         fill_row.addWidget(self._dz_patent)
-        root.addLayout(fill_row)
+        root.addWidget(panelled("", fill_row))
 
         run_row = QHBoxLayout()
         self._date = QDateEdit()

@@ -33,6 +33,7 @@ from src.controllers.dms_controller import DmsController
 from src.services.dms_service import DmsResult, policy_end_date
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: Everything the policy prints off the passport, so any of it can be
 #: corrected before it goes onto a document.
@@ -96,7 +97,7 @@ class DmsView(QWidget):
         self._end.setStyleSheet("font-weight:600;")
         row.addWidget(self._end)
         row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         # -- typed fields ------------------------------------------------
         fields = QHBoxLayout()
@@ -112,7 +113,7 @@ class DmsView(QWidget):
                                        ("Патент ҳудуди:", self._region, 0)):
             fields.addWidget(QLabel(label))
             fields.addWidget(widget, stretch=stretch)
-        root.addLayout(fields)
+        root.addWidget(panelled("Маълумотлар", fields))
 
         # -- passport ----------------------------------------------------
         self._dz = DropZone("🛂", "Ишчининг паспортини юкланг")

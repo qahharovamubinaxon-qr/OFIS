@@ -42,6 +42,7 @@ from src.domain.firm_details import FirmDetails
 from src.services.trud_service import DEFAULT_TRUD_PROFESSION, TrudResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -285,13 +286,13 @@ class TrudView(QWidget):
         self._date.setCalendarPopup(True)
         row.addWidget(QLabel("Дата:"))
         row.addWidget(self._date)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         row2 = QHBoxLayout()
         self._profession = QLineEdit(DEFAULT_TRUD_PROFESSION)
         row2.addWidget(QLabel("Должность:"))
         row2.addWidget(self._profession, stretch=1)
-        root.addLayout(row2)
+        root.addWidget(panelled("", row2))
 
         up = QHBoxLayout()
         up.setSpacing(12)

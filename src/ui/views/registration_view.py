@@ -40,6 +40,7 @@ from src.services.registration_address_service import RegistrationAddressService
 from src.services.registration_service import RegistrationResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -220,7 +221,7 @@ class RegistrationView(QWidget):
         self._expiry.setCalendarPopup(True)
         row.addWidget(QLabel("Ro'yxat tugashi:"))
         row.addWidget(self._expiry)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         # -- uploads ----------------------------------------------------
         up = QHBoxLayout()

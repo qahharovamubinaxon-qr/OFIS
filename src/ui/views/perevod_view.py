@@ -33,6 +33,7 @@ from src.common.threading import run_async
 from src.services.perevod_service import DOC_TYPES, PerevodResult, PerevodService
 from src.ui.widgets.multi_drop import MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: What the office may hand over as a blank, as a file dialog filter.
 _BLANK_FILTER = "Бланка (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
@@ -70,7 +71,7 @@ class PerevodView(QWidget):
         self._blank_labels: list[QLabel] = []
         for index in range(1, 4):
             blanks.addWidget(self._blank_slot(index), stretch=1)
-        root.addLayout(blanks)
+        root.addWidget(panelled("", blanks))
 
         emblem = QHBoxLayout()
         self._emblem_label = QLabel()
@@ -99,7 +100,7 @@ class PerevodView(QWidget):
         self._date.setCalendarPopup(True)
         row.addWidget(QLabel("Сана:"))
         row.addWidget(self._date)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         self._dz = MultiDropZone(
             "Ҳужжат расмлари — олд/орқа томон (10 тагача)")

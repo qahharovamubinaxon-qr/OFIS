@@ -32,6 +32,7 @@ from src.controllers.mvd_trud_controller import MvdTrudController
 from src.pdf.mvd_trud_spec import PROFESSIONS
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class MvdTrudView(QWidget):
@@ -79,7 +80,7 @@ class MvdTrudView(QWidget):
         arrange.setToolTip("Ҳамма саҳифада матнларни суриб жойлаштириш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         # -- the three photographs -------------------------------------
         docs = QHBoxLayout()
@@ -107,7 +108,7 @@ class MvdTrudView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         grid.addWidget(QLabel("Сана (число):"), 0, 0)
         self._date = QDateEdit(QDate.currentDate())

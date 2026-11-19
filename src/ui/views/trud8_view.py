@@ -32,6 +32,7 @@ from src.common.threading import run_async
 from src.controllers.trud8_controller import Trud8Controller
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -74,7 +75,7 @@ class Trud8View(QWidget):
         drop = QPushButton("🗑 Фирма")
         drop.clicked.connect(self._remove_firm)
         firm_row.addWidget(drop)
-        root.addLayout(firm_row)
+        root.addWidget(panelled("", firm_row))
 
         blank_row = QHBoxLayout()
         blank_row.addWidget(QLabel("Бўш бланка (PDF):"))
@@ -85,7 +86,7 @@ class Trud8View(QWidget):
         set_uv.clicked.connect(lambda: self._set_blank("uv"))
         blank_row.addWidget(set_uv)
         blank_row.addStretch(1)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         field_row = QHBoxLayout()
         field_row.addWidget(QLabel("Матнлар:"))
@@ -100,7 +101,7 @@ class Trud8View(QWidget):
         arrange_uv.clicked.connect(lambda: self._arrange("uv"))
         field_row.addWidget(arrange_uv)
         field_row.addStretch(1)
-        root.addLayout(field_row)
+        root.addWidget(panelled("", field_row))
 
         self._state = QLabel("")
         self._state.setWordWrap(True)
@@ -131,7 +132,7 @@ class Trud8View(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         grid.addWidget(QLabel("Шартнома санаси:"), 0, 0)
         self._date = QDateEdit(QDate.currentDate())
         self._date.setCalendarPopup(True)

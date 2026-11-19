@@ -37,16 +37,23 @@ def _tall_screen(rows: int = 20):
     return screen
 
 
-def test_a_screen_taller_than_the_window_keeps_its_own_height(qapp) -> None:
+def test_a_screen_taller_than_the_window_is_not_squeezed(qapp) -> None:
+    """Бўлимнинг тўлиқ бўйи сақланади: кўринадиган қисм + айлантириш оралиғи
+    унинг керакли бўйидан кам бўлмаслиги керак. Қисилса — катакчалар ёрлиқлар
+    устига чиқади, офис суратга олиб юборган нарса шу эди."""
     from src.ui.widgets.screen_scroll import ScrollHost
 
     screen = _tall_screen()
     needed = screen.minimumSizeHint().height()
     host = ScrollHost(screen)
-    host.resize(900, 300)          # ойна бўлимдан анча паст
+    host.resize(900, 300)
+    host.show()
     qapp.processEvents()
     assert needed > 300, "тест экрани етарлича баланд эмас"
-    assert screen.height() >= needed, "бўлим сиқилиб қолди — катакчалар устма-уст тушади"
+    reachable = host.viewport().height() + host.verticalScrollBar().maximum()
+    # бир неча пиксель — ўрам майдонининг чети; сиқилиш эса юзлаб пиксель
+    assert reachable >= needed - 8, f"бўлим сиқилиб қолди: {reachable} < {needed}"
+    host.hide()
 
 
 def test_what_does_not_fit_can_be_scrolled_to(qapp) -> None:
@@ -54,8 +61,10 @@ def test_what_does_not_fit_can_be_scrolled_to(qapp) -> None:
 
     host = ScrollHost(_tall_screen())
     host.resize(900, 300)
+    host.show()
     qapp.processEvents()
     assert host.verticalScrollBar().maximum() > 0, "пастга айлантириб бўлмайди"
+    host.hide()
 
 
 def test_a_screen_that_fits_is_left_alone(qapp) -> None:
@@ -63,8 +72,10 @@ def test_a_screen_that_fits_is_left_alone(qapp) -> None:
 
     host = ScrollHost(_tall_screen(rows=2))
     host.resize(900, 800)
+    host.show()
     qapp.processEvents()
     assert host.verticalScrollBar().maximum() == 0, "керак бўлмаган ўрам чиқди"
+    host.hide()
 
 
 def test_a_tall_window_is_still_filled_by_the_screen(qapp) -> None:

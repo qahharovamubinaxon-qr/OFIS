@@ -26,6 +26,7 @@ from src.common.threading import run_async
 from src.controllers.karta_controller import KartaController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: Everything the card prints off the passport, so any of it can be corrected
 #: before it is laminated onto a card that is hard to remake.
@@ -79,7 +80,7 @@ class KartaView(QWidget):
         style.setToolTip("Ҳар матннинг рангини ва жирний/оддийлигини танлаш")
         style.clicked.connect(self._style)
         blanks.addWidget(style)
-        root.addLayout(blanks)
+        root.addWidget(panelled("", blanks))
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
@@ -125,7 +126,7 @@ class KartaView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         grid.addWidget(QLabel("Берилган сана:"), 0, 0)
         self._from = QDateEdit(QDate.currentDate())
         self._from.setCalendarPopup(True)
@@ -151,7 +152,7 @@ class KartaView(QWidget):
         self._sign_state = QLabel("Имзо: ҳали қўйилмаган (ихтиёрий)")
         sign_row.addWidget(self._sign_state)
         sign_row.addStretch(1)
-        root.addLayout(sign_row)
+        root.addWidget(panelled("", sign_row))
 
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")

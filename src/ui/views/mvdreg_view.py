@@ -37,6 +37,7 @@ from src.domain.registration_address import RegistrationAddress
 from src.services import mvdreg_service
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: what the add-address dialog asks — the same things the РЕГИСТРАЦИЯ
 #: section's addresses carry
@@ -205,7 +206,7 @@ class MvdRegView(QWidget):
         drop = QPushButton("🗑")
         drop.clicked.connect(self._remove)
         addr_row.addWidget(drop)
-        root.addLayout(addr_row)
+        root.addWidget(panelled("", addr_row))
 
         tool_row = QHBoxLayout()
         blank = QPushButton("📄 Бланка юклаш")
@@ -229,7 +230,7 @@ class MvdRegView(QWidget):
         arrange.clicked.connect(self._arrange)
         tool_row.addWidget(arrange)
         tool_row.addStretch(1)
-        root.addLayout(tool_row)
+        root.addWidget(panelled("", tool_row))
 
         self._state = QLabel("")
         self._state.setWordWrap(True)
@@ -257,7 +258,7 @@ class MvdRegView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         grid.addWidget(QLabel("Бошланиш санаси (кўк штамп):"), 0, 0)
         self._start = QDateEdit(QDate.currentDate())
         self._start.setCalendarPopup(True)

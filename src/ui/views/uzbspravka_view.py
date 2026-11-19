@@ -43,6 +43,7 @@ from src.pdf.uzbspravka_spec import SEAL_KEY, SEAL_LABEL
 from src.services.uzbspravka_service import SheetNumbers
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 _QR_LABEL = "▦ QR (код ортидаги ҳавола)"
 
@@ -89,7 +90,7 @@ class UzbSpravkaView(QWidget):
         form = QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
-        root.addLayout(form)
+        root.addWidget(panelled("Маълумотлар", form))
 
         self._surname = self._box(form, 0, 0, "Фамилия:", "ЭРГАШЕВ")
         self._name = self._box(form, 0, 2, "Исм:", "УМИДЖОН")
@@ -156,7 +157,7 @@ class UzbSpravkaView(QWidget):
         sheets_row.addSpacing(16)
         sheets_row.addWidget(self._qr)
         sheets_row.addStretch(1)
-        root.addLayout(sheets_row)
+        root.addWidget(panelled("", sheets_row))
 
         tools = QHBoxLayout()
         for label, tip, slot in (
@@ -174,7 +175,7 @@ class UzbSpravkaView(QWidget):
             button.clicked.connect(slot)
             tools.addWidget(button)
         tools.addStretch(1)
-        root.addLayout(tools)
+        root.addWidget(panelled("", tools))
 
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")

@@ -32,6 +32,7 @@ from src.controllers.beydjik_controller import BeydjikController
 from src.services.beydjik_service import REGIONS, BeydjikResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class BeydjikView(QWidget):
@@ -72,7 +73,7 @@ class BeydjikView(QWidget):
         self._pr.setFixedWidth(110)
         self._pr.setToolTip("Ҳар бейджикда автомат биттага ошади.")
         top.addWidget(self._pr)
-        root.addLayout(top)
+        root.addWidget(panelled("", top))
 
         form = QGridLayout()
         form.setHorizontalSpacing(14)
@@ -126,7 +127,7 @@ class BeydjikView(QWidget):
         self._dolzhnost.setPlaceholderText("Водитель")
         form.addWidget(self._dolzhnost, 3, 1, 1, 3)
         form.setColumnStretch(3, 1)
-        root.addLayout(form)
+        root.addWidget(panelled("Маълумотлар", form))
 
         zones = QHBoxLayout()
         self._photo = DropZone("📷", "Ишчининг расми")

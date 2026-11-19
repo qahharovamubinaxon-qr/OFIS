@@ -39,6 +39,7 @@ from src.pdf.ndfl2_renderer import money
 from src.pdf.ndfl2_spec import ALL_SLOTS, BOLD, FAMILY, TAX_RATE
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 _MONTHS = ("Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль",
            "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь")
@@ -95,7 +96,7 @@ class Ndfl2View(QWidget):
                            "шрифт танлаш, матн қўшиш")
         arrange.clicked.connect(self._arrange)
         firm_row.addWidget(arrange)
-        root.addLayout(firm_row)
+        root.addWidget(panelled("", firm_row))
 
         docs = QHBoxLayout()
         self._passport = DropZone("🛂", "Паспорт")
@@ -135,7 +136,7 @@ class Ndfl2View(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         self._months: list[QLineEdit] = []
         for index, name in enumerate(_MONTHS):
             row, column = index % 6, index // 6

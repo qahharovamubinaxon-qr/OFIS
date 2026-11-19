@@ -37,6 +37,7 @@ from src.pdf.kukpatent_renderer import KukPatentData
 from src.pdf.kukpatent_spec import FRONT, PHOTO_KEY, PHOTO_LABEL
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class KukPatentView(QWidget):
@@ -84,7 +85,7 @@ class KukPatentView(QWidget):
         form = QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
-        root.addLayout(form)
+        root.addWidget(panelled("Маълумотлар", form))
 
         self._surname = self._box(form, 0, 0, "Фамилия:", "Эргешов")
         self._name = self._box(form, 0, 2, "Имя:", "Омурбек")
@@ -167,7 +168,7 @@ class KukPatentView(QWidget):
             button.clicked.connect(slot)
             tools.addWidget(button)
         tools.addStretch(1)
-        root.addLayout(tools)
+        root.addWidget(panelled("", tools))
 
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")

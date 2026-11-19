@@ -35,6 +35,7 @@ from src.controllers.mig_controller import MigController
 from src.pdf.mig_spec import JOBS
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 _BLANK_FILTER = "Бланка (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
 _STAMP_FILTER = "Печат расми (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
@@ -97,7 +98,7 @@ class MigView(QWidget):
         drop_stamp.setFixedWidth(28)
         drop_stamp.clicked.connect(self._remove_stamp)
         firm.addWidget(drop_stamp)
-        root.addLayout(firm)
+        root.addWidget(panelled("Фирманинг бланкаси ва печати", firm))
 
         # -- the passport ----------------------------------------------
         zones = QHBoxLayout()
@@ -125,7 +126,7 @@ class MigView(QWidget):
         self._gender.setMinimumHeight(32)
         grid.addWidget(QLabel("Жинси:"), 3, 2)
         grid.addWidget(self._gender, 3, 3)
-        root.addLayout(grid)
+        root.addWidget(panelled("Паспортдан ўқилгани", grid))
 
         # -- what the office types itself -------------------------------
         own = QGridLayout()
@@ -151,7 +152,7 @@ class MigView(QWidget):
             self._jobs[key] = box
         jobs.addStretch(1)
         own.addLayout(jobs, 2, 1, 1, 3)
-        root.addLayout(own)
+        root.addWidget(panelled("Офис ўзи ёзадигани", own))
 
         dates = QHBoxLayout()
         dates.addWidget(QLabel("КАРТА АМАЛ КИЛИШ МУДАТИ — С:"))
@@ -173,7 +174,7 @@ class MigView(QWidget):
             "шунча тушади.")
         dates.addWidget(self._issued)
         dates.addStretch(1)
-        root.addLayout(dates)
+        root.addWidget(panelled("Картанинг муддати ва берилган санаси", dates))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ИШЧИ КАРТАСИ)")

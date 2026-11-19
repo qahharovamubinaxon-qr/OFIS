@@ -35,6 +35,7 @@ from src.pdf.razreshenie_renderer import cover_until
 from src.services.razreshenie_service import desktop_target
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -80,7 +81,7 @@ class RazreshenieView(QWidget):
         self._inn.setPlaceholderText("бўш қолса — фақат паспорт ёзилади")
         self._activity = self._line(grid, 3, 2, "Должность:")
         self._activity.setPlaceholderText("Разнорабочий")
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         dates = QHBoxLayout()
         dates.addWidget(QLabel("Действительно с:"))
@@ -94,7 +95,7 @@ class RazreshenieView(QWidget):
         self._until.setStyleSheet("font-weight:600;")
         dates.addWidget(self._until)
         dates.addStretch(1)
-        root.addLayout(dates)
+        root.addWidget(panelled("Саналар", dates))
         self._show_until()
 
         firm = QHBoxLayout()
@@ -109,7 +110,7 @@ class RazreshenieView(QWidget):
         self._firms.setMinimumWidth(150)
         self._firms.currentIndexChanged.connect(self._pick_firm)
         firm.addWidget(self._firms)
-        root.addLayout(firm)
+        root.addWidget(panelled("Фирма", firm))
 
         numbers = QHBoxLayout()
         numbers.addWidget(QLabel("Серия:"))
@@ -130,7 +131,7 @@ class RazreshenieView(QWidget):
         add = QPushButton("➕ Шаблон қўшиш")
         add.clicked.connect(self._add_template)
         numbers.addWidget(add)
-        root.addLayout(numbers)
+        root.addWidget(panelled("Рақамлар", numbers))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (РАЗРЕШЕНИЕ PDF)")

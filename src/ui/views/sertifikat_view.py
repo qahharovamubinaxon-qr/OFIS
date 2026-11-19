@@ -35,6 +35,7 @@ from src.pdf.sertifikat_renderer import cyrillic_line, latin_line, valid_until
 from src.services.sertifikat_service import CITIES, desktop_target
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -74,7 +75,7 @@ class SertifikatView(QWidget):
         self._city.setEditable(True)
         self._city.addItems(CITIES)
         grid.addWidget(self._city, 1, 3)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         # what the certificate will actually carry, on its two lines
         self._lines = QLabel()
@@ -94,7 +95,7 @@ class SertifikatView(QWidget):
         self._until.setStyleSheet("font-weight:600;")
         dates.addWidget(self._until)
         dates.addStretch(1)
-        root.addLayout(dates)
+        root.addWidget(panelled("Саналар", dates))
 
         numbers = QHBoxLayout()
         numbers.addWidget(QLabel("Регистрационный №:"))
@@ -111,7 +112,7 @@ class SertifikatView(QWidget):
         add = QPushButton("➕ Шаблон қўшиш")
         add.clicked.connect(self._add_template)
         numbers.addWidget(add)
-        root.addLayout(numbers)
+        root.addWidget(panelled("Рақамлар", numbers))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (СЕРТИФИКАТ PDF)")

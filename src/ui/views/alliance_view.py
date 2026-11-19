@@ -33,6 +33,7 @@ from src.controllers.alliance_controller import AllianceController
 from src.services.alliance_service import SLOT_LABELS, SLOTS
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -95,7 +96,7 @@ class AllianceView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         grid.addWidget(QLabel("Удостоверение №:"), 0, 0)
         self._ud_number = QLineEdit()
         self._ud_number.setPlaceholderText("масалан 2400-0145")
@@ -123,7 +124,7 @@ class AllianceView(QWidget):
         self._sign_state = QLabel("Имзо: ҳали қўйилмаган ⚠️")
         sign_row.addWidget(self._sign_state)
         sign_row.addStretch(1)
-        root.addLayout(sign_row)
+        root.addWidget(panelled("", sign_row))
 
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")
@@ -160,7 +161,7 @@ class AllianceView(QWidget):
         state.setStyleSheet("color:#8a94a3;")
         row.addWidget(state, stretch=1)
         self._slot_state[slot] = state
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
     def _reload(self) -> None:
         for slot in SLOTS:

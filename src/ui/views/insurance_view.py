@@ -41,6 +41,7 @@ from src.controllers.insurance_controller import InsuranceController
 from src.services.insurance_service import MAX_DRIVERS, InsuranceResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -139,7 +140,7 @@ class InsuranceView(QWidget):
         rm.setToolTip("Танланган шаблонни рўйхатдан олиш")
         rm.clicked.connect(self._remove_template)
         row.addWidget(rm)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         dates = QHBoxLayout()
         self._start = QDateEdit()
@@ -159,7 +160,7 @@ class InsuranceView(QWidget):
         self._holder.setPlaceholderText("бўш қолса — СТСдаги эгаси")
         self._holder.setMinimumWidth(220)
         dates.addWidget(self._holder)
-        root.addLayout(dates)
+        root.addWidget(panelled("Саналар", dates))
 
         # «Договор заключен в отношении» is not a question the operator has to
         # answer: it follows from what they uploaded. No licences means the
@@ -184,7 +185,7 @@ class InsuranceView(QWidget):
         for i, zone in enumerate(self._licences):
             grid.addWidget(zone, 1 + i // 2, i % 2)
             zone.changed.connect(self._coverage_changed)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         self._run = QPushButton("RUN — полисни тўлдириш")
         self._run.setObjectName("primaryButton")

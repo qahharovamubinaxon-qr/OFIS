@@ -37,6 +37,7 @@ from src.controllers.amina_controller import AminaController
 from src.services.amina_service import AminaData, AminaResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class AminaView(QWidget):
@@ -78,13 +79,13 @@ class AminaView(QWidget):
         read.clicked.connect(self._read)
         top.addWidget(read)
         top.addStretch(1)
-        root.addLayout(top)
+        root.addWidget(panelled("", top))
 
         # ------------------------------------------------------ the worker
         form = QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
-        root.addLayout(form)
+        root.addWidget(panelled("Маълумотлар", form))
 
         self._full_name = self._box(form, 0, 0, "ФИО:",
                                     "Шарипов Эхромиддин Талбишоевич", span=3)

@@ -46,6 +46,7 @@ from src.pdf.universal_fields import (
 from src.services.universal_service import UniversalResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: Which catalogue keys a plain text box fills.
 _BOXES: tuple[tuple[str, str, str], ...] = (
@@ -170,7 +171,7 @@ class UniversalView(QWidget):
                 button.setToolTip(tip)
             button.clicked.connect(slot)
             blank_row.addWidget(button)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         marks = QHBoxLayout()
         for which, label in ((STAMP, "🔴 Печать"), (SIGNATURE, "✒️ Имзо")):
@@ -182,7 +183,7 @@ class UniversalView(QWidget):
         self._marks = QLabel("")
         self._marks.setStyleSheet("color:#8a94a3;")
         marks.addWidget(self._marks, stretch=1)
-        root.addLayout(marks)
+        root.addWidget(panelled("", marks))
 
         # -------------------------------------------------- the documents
         drops = QHBoxLayout()
@@ -204,7 +205,7 @@ class UniversalView(QWidget):
             "Ўзингиз қўшган майдонлар шу ҳужжатлардан ҳам изланади — "
             "масалан «Виза №» ёки «Номер зачисления»")
         drops.addWidget(self._others)
-        root.addLayout(drops)
+        root.addWidget(panelled("", drops))
 
         # Reading starts the moment something is dropped: the office asked
         # for it — «расмларни юкладим, программа автоматик ўқишни бошласин,
@@ -225,7 +226,7 @@ class UniversalView(QWidget):
         self._only_used.stateChanged.connect(self._show_rows)
         read_row.addWidget(self._only_used)
         read_row.addStretch(1)
-        root.addLayout(read_row)
+        root.addWidget(panelled("", read_row))
 
         # ------------------------------------------------------ the boxes
         self._form = QGroupBox("Маълумотлар")

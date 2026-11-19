@@ -42,6 +42,7 @@ from src.services.hostel_service import HostelResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
 from src.ui.widgets.spot_picker import SpotPickerDialog
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -267,7 +268,7 @@ class HostelView(QWidget):
         spot.setFixedWidth(40)
         spot.clicked.connect(self._pick_spot)
         row.addWidget(spot)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         dates = QHBoxLayout()
         self._start = QDateEdit()
@@ -283,7 +284,7 @@ class HostelView(QWidget):
         dates.addWidget(QLabel("Tugashi:"))
         dates.addWidget(self._expiry)
         dates.addStretch(1)
-        root.addLayout(dates)
+        root.addWidget(panelled("Саналар", dates))
 
         up = QHBoxLayout()
         up.setSpacing(12)

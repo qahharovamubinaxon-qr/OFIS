@@ -39,6 +39,7 @@ from src.services.umumiy_service import UmumiyResult, UmumiyService
 from src.services.umumiy_templates import UmumiyTemplateService
 from src.ui.widgets.multi_drop import PDF_EXTS, MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class UmumiyView(QWidget):
@@ -77,7 +78,7 @@ class UmumiyView(QWidget):
             self._del.clicked.connect(self._remove_template)
             tpl_row.addWidget(self._del)
             tpl_row.addStretch(1)
-            root.addLayout(tpl_row)
+            root.addWidget(panelled("", tpl_row))
 
         # -- date --------------------------------------------------------
         row = QHBoxLayout()
@@ -88,7 +89,7 @@ class UmumiyView(QWidget):
         self._date.setCalendarPopup(True)
         row.addWidget(self._date)
         row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         # -- two drop areas side by side ---------------------------------
         up = QHBoxLayout()

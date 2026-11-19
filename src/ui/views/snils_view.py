@@ -32,6 +32,7 @@ from src.controllers.snils_controller import SnilsController
 from src.services.snils_service import desktop_target
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -70,7 +71,7 @@ class SnilsView(QWidget):
         self._place.setPlaceholderText("КИРГИЗИЯ")
         self._gender = self._line(grid, 2, 2, "Пол:")
         self._gender.setPlaceholderText("ЖЕНСКИЙ")
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         row = QHBoxLayout()
         row.addWidget(QLabel("СНИЛС №:"))
@@ -87,7 +88,7 @@ class SnilsView(QWidget):
         self._reg.setCalendarPopup(True)
         row.addWidget(self._reg)
         row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         blanks = QHBoxLayout()
         blanks.addWidget(QLabel("Бланка:"))
@@ -99,7 +100,7 @@ class SnilsView(QWidget):
         self._drop = QPushButton("🗑 Бланкани ўчириш")
         self._drop.clicked.connect(self._remove_template)
         blanks.addWidget(self._drop)
-        root.addLayout(blanks)
+        root.addWidget(panelled("", blanks))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (СНИЛС PDF)")

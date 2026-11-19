@@ -31,6 +31,7 @@ from src.common.threading import run_async
 from src.controllers.alpinist_controller import AlpinistController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class AlpinistView(QWidget):
@@ -71,7 +72,7 @@ class AlpinistView(QWidget):
         arrange.setToolTip("Текстлар, расм, имзо ва печатни суриш/размерлаш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         stamp_row = QHBoxLayout()
         self._stamp_state = QLabel("")
@@ -83,7 +84,7 @@ class AlpinistView(QWidget):
         drop_stamp = QPushButton("🗑 Печать")
         drop_stamp.clicked.connect(self._remove_stamp)
         stamp_row.addWidget(drop_stamp)
-        root.addLayout(stamp_row)
+        root.addWidget(panelled("", stamp_row))
 
         # -- the three pictures ----------------------------------------
         docs = QHBoxLayout()
@@ -110,7 +111,7 @@ class AlpinistView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         grid.addWidget(QLabel("Берилган сана:"), 0, 0)
         self._from = QDateEdit(QDate.currentDate())
@@ -138,7 +139,7 @@ class AlpinistView(QWidget):
         self._sign_state = QLabel("Имзо: ҳали қўйилмаган ⚠️")
         sign_row.addWidget(self._sign_state)
         sign_row.addStretch(1)
-        root.addLayout(sign_row)
+        root.addWidget(panelled("", sign_row))
 
         # -- run --------------------------------------------------------
         run_row = QHBoxLayout()

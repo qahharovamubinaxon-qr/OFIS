@@ -33,6 +33,7 @@ from src.common.threading import run_async
 from src.controllers.rusreg_controller import RusRegController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class RusRegView(QWidget):
@@ -75,7 +76,7 @@ class RusRegView(QWidget):
         arrange.setToolTip("Бланкада матнларни сичқонча билан суриб жойлаштириш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         # -- the two documents ----------------------------------------
         docs = QHBoxLayout()
@@ -91,7 +92,7 @@ class RusRegView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         self._reg_number = self._line(grid, 0, 0, "Регистрация №:")
         self._firm = self._line(grid, 0, 2, "Фирма (ОТДЕЛ КАДРОВ …):")

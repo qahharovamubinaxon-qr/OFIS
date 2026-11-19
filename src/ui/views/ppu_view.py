@@ -32,6 +32,7 @@ from src.common.threading import run_async
 from src.controllers.ppu_controller import PpuController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -79,7 +80,7 @@ class PpuView(QWidget):
             "тепасидаги тўртта жойга, беш марта ёзилади.")
         self._address = self._line(grid, 4, 0, "Адрес:")
         grid.addWidget(self._address, 4, 1, 1, 3)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         dates = QHBoxLayout()
         dates.addWidget(QLabel("Срок с:"))
@@ -101,7 +102,7 @@ class PpuView(QWidget):
         add = QPushButton("➕ Шаблон қўшиш")
         add.clicked.connect(self._add_template)
         dates.addWidget(add)
-        root.addLayout(dates)
+        root.addWidget(panelled("Саналар", dates))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ППУ)")

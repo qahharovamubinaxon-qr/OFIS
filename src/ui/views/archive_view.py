@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.database.repositories.generated_repo import GeneratedRepository
+from src.ui.widgets.panel import panelled
 
 
 class ArchiveView(QWidget):
@@ -43,7 +44,7 @@ class ArchiveView(QWidget):
         refresh.clicked.connect(self.refresh)
         search_row.addWidget(self._query, stretch=1)
         search_row.addWidget(refresh)
-        root.addLayout(search_row)
+        root.addWidget(panelled("", search_row))
 
         self._list = QListWidget()
         self._list.itemDoubleClicked.connect(self._open)

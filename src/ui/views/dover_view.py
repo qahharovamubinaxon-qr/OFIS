@@ -23,6 +23,7 @@ from src.ocr.service import OcrService
 from src.services.dover_service import DOVER_TYPES, DoverResult, DoverService
 from src.ui.widgets.multi_drop import MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class DoverView(QWidget):
@@ -50,7 +51,7 @@ class DoverView(QWidget):
         self._date.setCalendarPopup(True)
         row.addWidget(QLabel("Сана:"))
         row.addWidget(self._date)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         self._dz = MultiDropZone("Hujjat rasmlari — pasport(lar), СТС va h.k. (15 tagacha)")
         root.addWidget(self._dz, stretch=1)

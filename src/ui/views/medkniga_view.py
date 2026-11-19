@@ -37,6 +37,7 @@ from src.pdf.medkniga_renderer import stamp_date
 from src.pdf.medkniga_spec import ALL_SLOTS, PAGES
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 #: The towns the office writes on the holder's page, and «boshqa» for the rest.
 _CITIES = ("Москва", "Московская область")
@@ -86,7 +87,7 @@ class MedKnigaView(QWidget):
         self._kit.currentIndexChanged.connect(self._kit_chosen)
         kit_row.addWidget(self._kit, stretch=1)
         kit_row.addStretch(2)
-        root.addLayout(kit_row)
+        root.addWidget(panelled("", kit_row))
 
         docs = QHBoxLayout()
         self._photo = DropZone("🖼", "Ишчи расми")
@@ -108,7 +109,7 @@ class MedKnigaView(QWidget):
         form = QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
-        root.addLayout(form)
+        root.addWidget(panelled("Маълумотлар", form))
 
         form.addWidget(QLabel("Кўрик санаси:"), 0, 0)
         self._date = QDateEdit(QDate.currentDate())
@@ -163,7 +164,7 @@ class MedKnigaView(QWidget):
         arrange.clicked.connect(self._arrange)
         tools.addWidget(arrange)
         tools.addStretch(1)
-        root.addLayout(tools)
+        root.addWidget(panelled("", tools))
 
         run_row = QHBoxLayout()
         self._run = QPushButton("🖨 Тайёрлаш")

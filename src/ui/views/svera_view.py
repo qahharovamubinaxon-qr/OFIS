@@ -38,6 +38,7 @@ from src.controllers.svera_controller import SveraController
 from src.services.svera_service import SveraResult
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -98,7 +99,7 @@ class SveraView(QWidget):
         self._date.setCalendarPopup(True)
         row.addWidget(QLabel("Sana:"))
         row.addWidget(self._date)
-        root.addLayout(row)
+        root.addWidget(panelled("", row))
 
         # -- the student's name -----------------------------------------
         names = QHBoxLayout()
@@ -111,7 +112,7 @@ class SveraView(QWidget):
         self._patronymic.setPlaceholderText("Отчество")
         for w in (self._surname, self._name, self._patronymic):
             names.addWidget(w, stretch=1)
-        root.addLayout(names)
+        root.addWidget(panelled("", names))
 
         # -- uploads ----------------------------------------------------
         up = QHBoxLayout()

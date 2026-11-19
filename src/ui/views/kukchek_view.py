@@ -26,6 +26,7 @@ from src.common.threading import run_async
 from src.controllers.kukchek_controller import KukChekController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class KukChekView(QWidget):
@@ -66,7 +67,7 @@ class KukChekView(QWidget):
         style.setToolTip("Ҳар матннинг рангини ва қалин/юпқалигини танлаш")
         style.clicked.connect(self._style)
         blank_row.addWidget(style)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         stamp_row = QHBoxLayout()
         self._stamp_state = QLabel("")
@@ -78,7 +79,7 @@ class KukChekView(QWidget):
         drop_stamp = QPushButton("🗑 Печать")
         drop_stamp.clicked.connect(self._remove_stamp)
         stamp_row.addWidget(drop_stamp)
-        root.addLayout(stamp_row)
+        root.addWidget(panelled("", stamp_row))
 
         docs = QHBoxLayout()
         self._patent = DropZone("🩷", "Патент картаси")
@@ -88,7 +89,7 @@ class KukChekView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
         grid.addWidget(QLabel("Число (тўлов санаси):"), 0, 0)
         self._date = QDateEdit(QDate.currentDate())
         self._date.setCalendarPopup(True)

@@ -31,6 +31,7 @@ from src.common.threading import run_async
 from src.controllers.spr3_controller import Spr3Controller
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class Spr3View(QWidget):
@@ -70,7 +71,7 @@ class Spr3View(QWidget):
         arrange.setToolTip("6 саҳифада матнларни суриб жойлаштириш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         # -- the two photographs ---------------------------------------
         docs = QHBoxLayout()
@@ -95,7 +96,7 @@ class Spr3View(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         grid.addWidget(QLabel("Бошланиш санаси:"), 0, 0)
         self._from = QDateEdit(QDate.currentDate())

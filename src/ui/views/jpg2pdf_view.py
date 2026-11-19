@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from src.common.threading import run_async
 from src.ui.widgets.multi_drop import MultiDropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _build_pdf(paths: list[str]) -> bytes:
@@ -58,7 +59,7 @@ class Jpg2PdfView(QWidget):
         btns.addWidget(clear)
         col.addLayout(btns)
         row.addLayout(col, stretch=1)
-        root.addLayout(row, stretch=1)
+        root.addWidget(panelled("", row), 1)
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (PDF yasash)")

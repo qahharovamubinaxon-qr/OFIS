@@ -32,6 +32,7 @@ from src.common.threading import run_async
 from src.controllers.qrreg_controller import QrRegController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class QrRegView(QWidget):
@@ -69,7 +70,7 @@ class QrRegView(QWidget):
         arrange = QPushButton("📐 Матнларни жойлаш")
         arrange.clicked.connect(self._arrange_reg)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         podt_row = QHBoxLayout()
         self._podt_state = QLabel("")
@@ -81,7 +82,7 @@ class QrRegView(QWidget):
         arrange_podt = QPushButton("📐 Подтверждение матнлари")
         arrange_podt.clicked.connect(self._arrange_podt)
         podt_row.addWidget(arrange_podt)
-        root.addLayout(podt_row)
+        root.addWidget(panelled("", podt_row))
 
         # -- the two photographs ---------------------------------------
         docs = QHBoxLayout()
@@ -106,7 +107,7 @@ class QrRegView(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         grid.addWidget(QLabel("Бошланиши:"), 0, 0)
         self._from = QDateEdit(QDate.currentDate())
@@ -136,7 +137,7 @@ class QrRegView(QWidget):
         addr = QGridLayout()
         addr.setHorizontalSpacing(10)
         addr.setVerticalSpacing(8)
-        root.addLayout(addr)
+        root.addWidget(panelled("", addr))
         self._subject = self._line(addr, 0, 0, "Субъект (ГОРОД МОСКВА):")
         self._district = self._line(addr, 0, 2, "Район:")
         self._punkt = self._line(addr, 1, 0, "Насел. пункт (бўлса):")

@@ -44,6 +44,7 @@ from src.services.photo_lab_service import (
 )
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 log = get_logger(__name__)
 
@@ -84,7 +85,7 @@ class PhotoView(QWidget):
         self._mode.currentIndexChanged.connect(self._on_mode)
         mode_row.addWidget(self._mode)
         mode_row.addStretch(1)
-        root.addLayout(mode_row)
+        root.addWidget(panelled("", mode_row))
 
         # -- person settings ------------------------------------------
         self._person_opts = QWidget()
@@ -182,7 +183,7 @@ class PhotoView(QWidget):
             btns.addWidget(b)
         right.addLayout(btns)
         row.addLayout(right, stretch=2)
-        root.addLayout(row, stretch=1)
+        root.addWidget(panelled("", row), 1)
 
         run_row = QHBoxLayout()
         self._run = QPushButton("▶ Tayyorlash")

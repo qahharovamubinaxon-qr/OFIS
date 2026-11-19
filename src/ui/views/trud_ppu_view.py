@@ -39,6 +39,7 @@ from src.controllers.trud_ppu_controller import TrudPpuController
 from src.pdf.trud_ppu_renderer import case_number, plus_one_year
 from src.ui.widgets.drop_zone import PDF_EXTS, DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 def _desktop() -> Path:
@@ -108,7 +109,7 @@ class TrudPpuView(QWidget):
         self._document = self._line(grid, 3, 0, "Паспорт (серия/номер):")
         self._document.setToolTip(
             "1-саҳифанинг пастидаги «Иностранный паспорт» — ППУ дагидек.")
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         patent = QGridLayout()
         patent.setHorizontalSpacing(14)
@@ -140,7 +141,7 @@ class TrudPpuView(QWidget):
         self._uved_fio = self._line(patent, 4, 2, "⑨ Уведомлениядаги Ф.И.О.:")
         self._uved_fio.setToolTip(
             "Бўш қолдирсангиз — юқоридаги Фамилия/Имя/Отчество ёзилади.")
-        root.addLayout(patent)
+        root.addWidget(panelled("", patent))
 
         order = QLabel(
             "🗂 <b>Бланкалар тартиби</b> — «➕ Шаблон қўшиш» иккита файл сўрайди, "
@@ -167,7 +168,7 @@ class TrudPpuView(QWidget):
         add.setToolTip("2- ва 3-саҳифанинг бўш бланкаси (PDF)")
         add.clicked.connect(self._add_template)
         templates.addWidget(add)
-        root.addLayout(templates)
+        root.addWidget(panelled("", templates))
 
         actions = QHBoxLayout()
         self._run = QPushButton("▶  RUN (ТРУД ППУ)")

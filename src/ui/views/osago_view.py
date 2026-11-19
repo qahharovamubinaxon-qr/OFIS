@@ -32,6 +32,7 @@ from src.common.threading import run_async
 from src.controllers.osago_controller import OsagoController
 from src.ui.widgets.drop_zone import DropZone
 from src.ui.widgets.run_progress import RunProgress
+from src.ui.widgets.panel import panelled
 
 
 class OsagoView(QWidget):
@@ -71,7 +72,7 @@ class OsagoView(QWidget):
         arrange.setToolTip("Матнларни суриш ва катта-кичик қилиш")
         arrange.clicked.connect(self._arrange)
         blank_row.addWidget(arrange)
-        root.addLayout(blank_row)
+        root.addWidget(panelled("", blank_row))
 
         # -- the car's papers ------------------------------------------
         sts_row = QHBoxLayout()
@@ -79,7 +80,7 @@ class OsagoView(QWidget):
         sts_row.addWidget(self._sts_front)
         self._sts_back = DropZone("🚙", "СТС орқаси")
         sts_row.addWidget(self._sts_back)
-        root.addLayout(sts_row)
+        root.addWidget(panelled("", sts_row))
 
         hint = QLabel("Права юкланмаса — «без ограничения»; юкланса (4 тагача) "
                       "— «лица, допущенные к управлению» рўйхатига тушади.")
@@ -92,13 +93,13 @@ class OsagoView(QWidget):
             zone = DropZone("🪪", f"Права {i}")
             self._licences.append(zone)
             lic_row.addWidget(zone)
-        root.addLayout(lic_row)
+        root.addWidget(panelled("", lic_row))
 
         # -- inputs -----------------------------------------------------
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        root.addLayout(grid)
+        root.addWidget(panelled("Маълумотлар", grid))
 
         grid.addWidget(QLabel("Бошланиш санаси:"), 0, 0)
         self._from = QDateEdit(QDate.currentDate())
