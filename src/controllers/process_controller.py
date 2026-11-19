@@ -60,8 +60,14 @@ class ProcessController:
         *,
         form_date: date,
         profession: str | None,
+        on_step=None,
     ) -> GenerationResult:
-        """The PDF, from the values IN THE BOXES — not from the raw reading."""
+        """The PDF, from the values IN THE BOXES — not from the raw reading.
+
+        ``on_step`` is called as each step of the generation finishes (see
+        :data:`src.services.generation_service.STEPS`), so the screen can
+        show how far along a document really is instead of guessing.
+        """
         from src.domain.employee import Employee
 
         employee = Employee(
@@ -70,7 +76,8 @@ class ProcessController:
             contract_date=form_date,
         )
         return self._generation.generate(
-            employee, company, form_date=form_date, profession=profession
+            employee, company, form_date=form_date, profession=profession,
+            on_step=on_step,
         )
 
     def generate_from_images(

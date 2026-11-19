@@ -54,7 +54,19 @@ class RingGauge(QWidget):
         self._track = QColor("#1C2733")
         self._ink = QColor("#E8EEF2")
         self._muted = QColor("#60707E")
+        self._start = 0.0
         self.setFixedSize(int(diameter), int(diameter))
+
+    def set_start_angle(self, degrees: float) -> None:
+        """Where the arc begins, in degrees clockwise from twelve o'clock.
+
+        A gauge starts at the top and stays there. A *sweep* — the ring that
+        says «something is happening» while nobody can say how much of it is
+        done — is the same arc walked around the dial, and this is what walks
+        it.
+        """
+        self._start = float(degrees) % 360.0
+        self.update()
 
     # ------------------------------------------------------------- reading
     def set_progress(self, progress: float) -> None:
@@ -124,7 +136,8 @@ class RingGauge(QWidget):
             # clockwise from twelve o'clock: the direction a clock hand and a
             # filling gauge both move, so it reads as time passing
             span = -int(round(self.span_degrees() * _SIXTEENTHS))
-            painter.drawArc(box, _TWELVE_OCLOCK, span)
+            begin = _TWELVE_OCLOCK - int(round(self._start * _SIXTEENTHS))
+            painter.drawArc(box, begin, span)
 
         self._paint_centre(painter)
 

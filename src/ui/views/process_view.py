@@ -237,7 +237,18 @@ class ProcessView(QWidget):
 
         profession = self._profession.text().strip() or None
         form_date = self._form_date()
+        # Ҳалқа ҲАҚИҚИЙ қадамларни санайди: хизмат ҳар қадамни тугатганда
+        # хабар беради (generation_service.STEPS), шунинг учун ўртадаги фоиз
+        # тахмин эмас. Хабар фон оқимидан келади — StepReporter уни ойнанинг
+        # оқимига ўтказади, ва у ўзида сақланади, акс ҳолда йиғиштирилиб
+        # кетиб, қадамлар келмай қоларди.
+        from src.common.threading import StepReporter
+        from src.services.generation_service import STEPS
+
+        self._steps = StepReporter()
+        self._steps.step.connect(self._progress.step_done)
         self._busy("PDF яратиляпти…")
+        self._progress.start_steps(list(STEPS), "PDF яратиляпти…")
         # Патент ҲАМ юборилади. Бланканинг 3-бўлими — «Сведения о патенте» —
         # фақат шундан тўлади: серия, номер, дата выдачи, кем выдан, срок
         # действия. Аввал бу ерда `None` турган эди (ўқиш-кўрсатиш-чоп этиш
@@ -246,7 +257,7 @@ class ProcessView(QWidget):
         run_async(
             self._c.generate, company,
             self._review.edited(), self._review.edited_patent(),
-            form_date=form_date, profession=profession,
+            form_date=form_date, profession=profession, on_step=self._steps,
             on_success=self._done, on_error=self._failed,
         )
 

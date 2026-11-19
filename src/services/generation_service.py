@@ -8,6 +8,7 @@ company needs only its own ``template.pdf`` — never a code or mapping change.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -28,8 +29,30 @@ log = get_logger(__name__)
 _FORM_DIR = paths.templates_dir() / "mvd_prilozhenie_7"
 _MAPPING_PATH = _FORM_DIR / "mapping.v1.json"
 
+#: The steps :meth:`GenerationService.generate` reports, in order.
+#:
+#: The screen shows a ring filled by these and nothing else, so the list and
+#: the reporting below must stay in step with each other — a view that drew a
+#: fourth step nobody reports would hang at 75 % on every document.
+STEPS: tuple[str, ...] = (
+    "Маълумот тайёрланди",
+    "ПДФ ёзилди",
+    "Архивга ёзилди",
+)
+
 _REG_COUNTER_KEY = "doc.reg_counter"
 _REG_START_DEFAULT = 345
+
+
+def _tell(on_step: Callable[[str], None] | None, step: str) -> None:
+    """Report a finished step. A screen that cannot take the news must never
+    be able to stop a document from being made, so this swallows its errors."""
+    if on_step is None:
+        return
+    try:
+        on_step(step)
+    except Exception as exc:  # noqa: BLE001 - reporting is not the work
+        log.debug("қадам хабари етмади (%s): %s", step, exc)
 
 
 @dataclass(frozen=True)
@@ -63,6 +86,7 @@ class GenerationService:
         form_date: date,
         profession: str | None = None,
         output_dir: Path | None = None,
+        on_step: Callable[[str], None] | None = None,
     ) -> GenerationResult:
         reg_number = self._advance_reg_number()
         values = build_values(
@@ -70,7 +94,9 @@ class GenerationService:
         )
         mapping = FieldMapping.load(_MAPPING_PATH)
         out_path = self._unique_output_path(company, employee, output_dir)
+        _tell(on_step, STEPS[0])
         fill(company.template_path, mapping, values, out_path)
+        _tell(on_step, STEPS[1])
 
         if self._repo is not None:
             self._repo.add(
@@ -79,6 +105,7 @@ class GenerationService:
                 citizenship=employee.passport.nationality or "", reg_number=reg_number,
                 pdf_path=str(out_path), form_date=form_date,
             )
+        _tell(on_step, STEPS[2])
         log.info("Generated %s (reg %s) for %s", out_path.name, reg_number, company.name)
         return GenerationResult(pdf_path=out_path, reg_number=reg_number,
                                 surname=employee.passport.surname)

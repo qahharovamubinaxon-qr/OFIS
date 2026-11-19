@@ -78,6 +78,25 @@ class _Worker(QRunnable):
             self.signals.finished.emit(result)
 
 
+class StepReporter(QObject):
+    """Carries «this step is done» from a worker thread to the UI thread.
+
+    A callback handed to background work runs ON that worker thread, and
+    touching a widget from there is how a Qt program crashes a week later on
+    someone else's machine. A signal crosses the thread boundary for free —
+    Qt queues it into the UI thread's event loop — so business code calls a
+    plain callable and the window still only ever repaints on its own thread.
+
+    The view that makes one must keep it (``self._steps = StepReporter()``):
+    an unreferenced QObject is collected mid-run and the steps stop arriving.
+    """
+
+    step = Signal(str)
+
+    def __call__(self, name: str) -> None:
+        self.step.emit(str(name))
+
+
 def run_async(
     fn: Callable[..., Any],
     *args: Any,
