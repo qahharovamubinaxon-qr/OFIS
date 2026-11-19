@@ -52,7 +52,12 @@ for /f %%h in ('%PY% -c "import hashlib;print(hashlib.sha256(open(r'requirements
 set "REQOLD="
 if exist "%REQSTAMP%" set /p REQOLD=<"%REQSTAMP%"
 if "%REQNOW%"=="%REQOLD%" (
-  %PY% -c "import PySide6, fitz, pydantic, PIL, openai, docx, onnxruntime, qrcode, rembg, reportlab, torch, cv2, PyInstaller" >nul 2>&1
+  REM  Kutubxonalar JOYIDAMI deb qaraymiz, lekin ularni YUKLAMAYMIZ:
+  REM  torch/rembg/cv2 ni haqiqatan import qilish bu kompyuterda bir
+  REM  necha DAQIQA oladi (DLL lar, antivirus), va ofis aynan shunda
+  REM  yana "qotib qolgan"ni ko'rdi. find_spec faqat diskka qaraydi -
+  REM  o'lchandi: 0.03 soniya.
+  %PY% -c "import importlib.util as u,sys;m='PySide6 fitz pydantic PIL openai docx onnxruntime qrcode rembg reportlab torch cv2 PyInstaller'.split();sys.exit(0 if all(u.find_spec(x) for x in m) else 1)" >nul 2>&1
   if not errorlevel 1 (
     echo   Kutubxonalar joyida - o'rnatish o'tkazib yuborildi.
     goto :deps_ready
@@ -60,9 +65,9 @@ if "%REQNOW%"=="%REQOLD%" (
 )
 REM  --no-input: pip hech qachon savol bermaydi (javobsiz kutib qolmasin).
 REM  --timeout/--retries: tarmoq yo'q bo'lsa tez aytadi, soatlab turmaydi.
-%PY% -m pip install --no-input --timeout 30 --retries 2 -r requirements.txt
+%PY% -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 -r requirements.txt
 if errorlevel 1 goto :depsfail
-%PY% -m pip install --no-input --timeout 30 --retries 2 pyinstaller
+%PY% -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 pyinstaller
 if defined REQNOW > "%REQSTAMP%" echo %REQNOW%
 :deps_ready
 
@@ -72,14 +77,18 @@ REM Qt si bilan urishadi, va OpenCV 5.0 da Haar (CascadeClassifier) olib
 REM tashlangan - photo_tools yuz topishda uni ishlatadi. Shu sabab to'liq
 REM nusxa o'chirilib, faqat headless 4.x qoldiriladi.
 REM  Bu ham faqat KERAK BO'LSA: to'liq opencv o'rnatilgan bo'lsa yoki
-REM  cv2 4.x bo'lmasa. Aks holda har yig'ishda ~40 MB qayta yuklanardi.
+REM  headless 4.x bo'lmasa. Aks holda har yig'ishda ~40 MB qayta yuklanardi.
+REM
+REM  DIQQAT: bu yerda "pip show" ISHLATILMAYDI. Bu kompyuterda pip ning
+REM  O'ZI sekin - har chaqirilganda PyPI ga qaraydi, va PyPI bir so'rovga
+REM  15 soniya javob beradi. "pip show" bilan tekshirish uch daqiqadan
+REM  oshdi. O'rnatilgan paketlar ro'yxati diskda yotibdi - uni Python
+REM  o'zi o'qiydi, tarmoqqa chiqmasdan.
 set "CVFIX="
-%PY% -m pip show opencv-python >nul 2>&1 && set "CVFIX=1"
-%PY% -m pip show opencv-contrib-python >nul 2>&1 && set "CVFIX=1"
-%PY% -c "import cv2,sys; sys.exit(0 if cv2.__version__.startswith('4.') else 1)" >nul 2>&1 || set "CVFIX=1"
+%PY% -c "import sys;from importlib.metadata import distributions;n={(d.metadata['Name'] or '').lower():(d.version or '') for d in distributions()};sys.exit(1 if ('opencv-python' in n or 'opencv-contrib-python' in n or not n.get('opencv-python-headless','').startswith('4.')) else 0)" >nul 2>&1 || set "CVFIX=1"
 if defined CVFIX (
-  %PY% -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
-  %PY% -m pip install --no-input --timeout 30 --retries 2 --force-reinstall "opencv-python-headless>=4.9,<5"
+  %PY% -m pip uninstall --disable-pip-version-check -y opencv-python opencv-contrib-python >nul 2>&1
+  %PY% -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 --force-reinstall "opencv-python-headless>=4.9,<5"
 ) else (
   echo   cv2 4.x headless joyida - o'tkazib yuborildi.
 )
