@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.common.di import Container
+from src.common.logging import get_logger
 from src.config import constants
 from src.config.settings_service import SettingsService
 from src.controllers.process_controller import ProcessController
@@ -45,6 +46,8 @@ from src.ui.views.registration_view import RegistrationView
 from src.ui.views.settings_view import SettingsView
 from src.ui.views.svera_view import SveraView
 from src.ui.views.trud_view import TrudView
+
+log = get_logger(__name__)
 
 # (section header | None, key, default title, subtitle, icon)
 _NAV = [
@@ -166,7 +169,9 @@ class MainWindow(QMainWindow):
             self._stack.addWidget(self._make_view(key, title, subtitle))
 
         self._nav_list.currentRowChanged.connect(self._on_nav)
-        self._select_page(1)  # open on Process Employee
+        # The home screen first: the office opens the program to pick a
+        # section, and forty of them read faster as cards than as a list.
+        self._select_page(0)
 
         self._build_status_bar()
 
@@ -177,11 +182,21 @@ class MainWindow(QMainWindow):
 
     def _make_view(self, key: str, title: str, subtitle: str) -> QWidget:
         if key == "nav.dashboard":
-            return DashboardView(
+            from src.ui.sections import sections_from_nav
+
+            # The home screen lays out the SAME table the sidebar is built
+            # from — a second list of sections would drift the first time one
+            # of them gained a section and the other did not.
+            home = DashboardView(
                 self._container.resolve(GeneratedRepository),
                 self._container.resolve(CompanyService),
                 self._container.resolve(GenerationService),
+                sections_from_nav(_NAV),
+                self._theme,
             )
+            home.section_chosen.connect(self.open_section)
+            self._home = home
+            return home
         if key == "nav.process":
             controller = ProcessController(
                 self._container.resolve(CompanyService),
@@ -604,6 +619,22 @@ class MainWindow(QMainWindow):
                 self._nav_list.setCurrentRow(row)
                 return
 
+    def open_section(self, nav_key: str) -> bool:
+        """Open the section ``nav_key`` — what a card on the home screen does.
+
+        The sidebar stays the one place a section is opened from: the card
+        selects its row, so the rail, the title's colour and the status bar
+        all follow exactly as if the row had been clicked. Returns False for
+        a key that is not in the navigation, so a stale card cannot leave the
+        window showing one section while the sidebar points at another.
+        """
+        for row, key in self._row_to_key.items():
+            if key == nav_key:
+                self._nav_list.setCurrentRow(row)
+                return True
+        log.warning("Бундай бўлим йўқ: %s", nav_key)
+        return False
+
     def _on_nav(self, row: int) -> None:
         page = self._row_to_page.get(row)
         if page is None:  # a section header — ignore
@@ -630,6 +661,9 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             apply_theme(app, self._theme, self._nav_key)  # type: ignore[arg-type]
+        home = getattr(self, "_home", None)
+        if home is not None:
+            home.set_theme(self._theme)
         brand = getattr(self, "_brand", None)
         if brand is not None:
             ink, muted = INKS.get(self._theme, INKS["dark"])

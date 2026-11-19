@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 from src.database.connection import Database
@@ -74,3 +74,25 @@ class GeneratedRepository:
         return int(self._conn.execute(
             "SELECT COUNT(*) n FROM generated_documents WHERE substr(created_at,1,10)=?", (today,)
         ).fetchone()["n"])
+
+    def busiest_day(self, days: int = 14) -> int:
+        """The most documents made on any one of the last ``days`` days.
+
+        The home screen's ring needs something true to be a fraction OF. A
+        made-up daily target would make the ring a decoration; the office's
+        own busiest recent day is a real mark, and it answers the question
+        they actually ask in the morning — «бугун қандай кетяпти?».
+
+        Returns 0 when nothing has been made in that window, and the caller
+        decides what an empty ring means.
+        """
+        window = max(1, int(days))
+        first = (date.today() - timedelta(days=window - 1)).isoformat()
+        row = self._conn.execute(
+            """SELECT MAX(n) m FROM (
+                   SELECT COUNT(*) n FROM generated_documents
+                   WHERE substr(created_at,1,10) >= ?
+                   GROUP BY substr(created_at,1,10))""",
+            (first,),
+        ).fetchone()
+        return int(row["m"] or 0)

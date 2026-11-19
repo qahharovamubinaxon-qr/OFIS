@@ -210,3 +210,12 @@ QTabBar::tab { background: transparent; color: #9A97A1; padding: 10px 18px;
                border-bottom: 2px solid transparent; font-weight: 600; }
 QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid @ACCENT@; }
 QTabBar::tab:hover { color: #ECEAE7; }
+
+/* ---------- home screen: the section cards and the figures above them ----
+   The cards paint themselves (src/ui/widgets/section_card.py) — the sheet
+   only has to keep the surfaces they sit on out of their way. */
+#homeScroll, #homeScroll > QWidget > QWidget { background: transparent; }
+#homeRecent { background: transparent; border: none; padding: 0; }
+#homeRecent::item { padding: 3px 2px; color: #9A97A1; border-radius: 6px; }
+#homeRecent::item:hover { background: #22242F; color: #ECEAE7; }
+#homeRecent::item:selected { background: #22242F; color: #FFFFFF; }

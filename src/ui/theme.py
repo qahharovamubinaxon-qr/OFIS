@@ -67,6 +67,14 @@ PAPER: dict[str, str] = {
     "nav.universal": "brass",      # ҳар хил бланка — нейтрал
 }
 
+#: The machine's own voice. Everything the PROGRAM says about itself — the
+#: progress ring, the section headings on the home screen, the search mark,
+#: the chevron on a card under the cursor — is written in this one colour, and
+#: nothing the DOCUMENT says ever is. So the operator can tell at a glance
+#: what is the paper and what is the machine, which is the whole point of
+#: giving each section its own colour in the first place.
+MACHINE: dict[str, str] = {"dark": "#FF7A18", "light": "#B4530A"}
+
 #: The text colours each theme sets its own ink in, for the parts of the window
 #: that are painted rather than styled — currently the brand mark. (ink, muted)
 INKS: dict[str, tuple[str, str]] = {
