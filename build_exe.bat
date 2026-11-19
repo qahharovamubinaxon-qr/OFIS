@@ -36,17 +36,53 @@ if not errorlevel 1 (
 )
 
 echo === Installing build tools (Python 3.12) ===
-%PY% -m pip install -r requirements.txt
+REM  Kutubxonalar joyida bo'lsa - TARMOQQA UMUMAN CHIQMAYMIZ.
+REM  requirements.txt da torch bor (~200 MB). Internet sekin yoki yopiq
+REM  bo'lsa pip hech narsa chizmasdan uzoq kutadi, va tashqaridan bu
+REM  "qotib qolgan"dek ko'rinadi - ofis aynan shunda to'xtab qoldi.
+REM  Yig'ish uchun kerakli hamma narsa allaqachon o'rnatilgan bo'lsa,
+REM  qayta o'rnatishning ma'nosi yo'q.
+REM  Lekin requirements.txt O'ZGARGAN bo'lsa - albatta o'rnatamiz, aks
+REM  holda yangi qo'shilgan kutubxona sezilmay qolardi va EXE usiz
+REM  chiqardi ("No module named ..." - bu bir marta bo'lgan).
+if not exist "%~dp0build" mkdir "%~dp0build" >nul 2>&1
+set "REQSTAMP=%~dp0build\.reqs.sha"
+set "REQNOW="
+for /f %%h in ('%PY% -c "import hashlib;print(hashlib.sha256(open(r'requirements.txt','rb').read()).hexdigest())"') do set "REQNOW=%%h"
+set "REQOLD="
+if exist "%REQSTAMP%" set /p REQOLD=<"%REQSTAMP%"
+if "%REQNOW%"=="%REQOLD%" (
+  %PY% -c "import PySide6, fitz, pydantic, PIL, openai, docx, onnxruntime, qrcode, rembg, reportlab, torch, cv2, PyInstaller" >nul 2>&1
+  if not errorlevel 1 (
+    echo   Kutubxonalar joyida - o'rnatish o'tkazib yuborildi.
+    goto :deps_ready
+  )
+)
+REM  --no-input: pip hech qachon savol bermaydi (javobsiz kutib qolmasin).
+REM  --timeout/--retries: tarmoq yo'q bo'lsa tez aytadi, soatlab turmaydi.
+%PY% -m pip install --no-input --timeout 30 --retries 2 -r requirements.txt
 if errorlevel 1 goto :depsfail
-%PY% -m pip install pyinstaller
+%PY% -m pip install --no-input --timeout 30 --retries 2 pyinstaller
+if defined REQNOW > "%REQSTAMP%" echo %REQNOW%
+:deps_ready
 
 echo === cv2 ni faqat headless (4.x) qoldirish ===
 REM gfpgan/basicsr/facexlib to'liq "opencv-python" ni tortadi. U PySide6 ning
 REM Qt si bilan urishadi, va OpenCV 5.0 da Haar (CascadeClassifier) olib
 REM tashlangan - photo_tools yuz topishda uni ishlatadi. Shu sabab to'liq
 REM nusxa o'chirilib, faqat headless 4.x qoldiriladi.
-%PY% -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
-%PY% -m pip install --force-reinstall "opencv-python-headless>=4.9,<5"
+REM  Bu ham faqat KERAK BO'LSA: to'liq opencv o'rnatilgan bo'lsa yoki
+REM  cv2 4.x bo'lmasa. Aks holda har yig'ishda ~40 MB qayta yuklanardi.
+set "CVFIX="
+%PY% -m pip show opencv-python >nul 2>&1 && set "CVFIX=1"
+%PY% -m pip show opencv-contrib-python >nul 2>&1 && set "CVFIX=1"
+%PY% -c "import cv2,sys; sys.exit(0 if cv2.__version__.startswith('4.') else 1)" >nul 2>&1 || set "CVFIX=1"
+if defined CVFIX (
+  %PY% -m pip uninstall -y opencv-python opencv-contrib-python >nul 2>&1
+  %PY% -m pip install --no-input --timeout 30 --retries 2 --force-reinstall "opencv-python-headless>=4.9,<5"
+) else (
+  echo   cv2 4.x headless joyida - o'tkazib yuborildi.
+)
 
 echo === Building OFIS.exe (torch bilan katta: 10-20 daqiqa) ===
 %PY% -m PyInstaller build\ofis.spec --noconfirm --clean

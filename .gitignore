@@ -42,3 +42,4 @@ htmlcov/
 # AI model files — downloaded at first run into AppData, never committed
 u2net*.onnx
 *.onnx.part
+build/.reqs.sha
