@@ -44,6 +44,7 @@ from src.ui.views.photo_view import PhotoView
 from src.ui.views.process_view import ProcessView
 from src.ui.views.registration_view import RegistrationView
 from src.ui.views.settings_view import SettingsView
+from src.ui.widgets.screen_scroll import ScrollHost, screen_of
 from src.ui.views.svera_view import SveraView
 from src.ui.views.trud_view import TrudView
 
@@ -166,7 +167,12 @@ class MainWindow(QMainWindow):
             self._nav_list.addItem(item)
             self._row_to_page[self._nav_list.count() - 1] = self._stack.count()
             self._row_to_key[self._nav_list.count() - 1] = key
-            self._stack.addWidget(self._make_view(key, title, subtitle))
+            # Every screen hangs in a scroll host: a section taller than the
+            # window must scroll, not squeeze its boxes on top of each other.
+            # The home screen scrolls its own card grid, so it stays as it is.
+            screen = self._make_view(key, title, subtitle)
+            self._stack.addWidget(
+                screen if key == "nav.dashboard" else ScrollHost(screen))
 
         self._nav_list.currentRowChanged.connect(self._on_nav)
         # The home screen first: the office opens the program to pick a
@@ -643,10 +649,14 @@ class MainWindow(QMainWindow):
         # the screen takes the colour of the paper it prints on
         self._nav_key = self._row_to_key.get(row, self._nav_key)
         self._repaint()
-        view = self._stack.currentWidget()
+        view = self.current_view()
         refresh = getattr(view, "refresh", None)
         if callable(refresh):
             refresh()
+
+    def current_view(self) -> QWidget | None:
+        """The screen on show — reached past its scroll host."""
+        return screen_of(self._stack.currentWidget())
 
     def _apply_theme(self, theme: str) -> None:
         """Switch light/dark without losing which section's colour is showing."""
@@ -711,7 +721,7 @@ class MainWindow(QMainWindow):
         """Clear the open screen's uploads so a new document can be loaded."""
         from src.ui.widgets.reset import reset_view
 
-        view = self._stack.currentWidget()
+        view = self.current_view()
         if view is not None and reset_view(view):
             self.statusBar().showMessage("Майдонлар тозаланди / Очищено", 2500)
 

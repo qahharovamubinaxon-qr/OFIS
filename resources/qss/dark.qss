@@ -1,221 +1,233 @@
 /* ===========================================================================
-   OFIS — «ночная смена»: the press at night.
+   OFIS — «приборная панель»: the instrument panel at night.
 
-   This program is a print shop for migration documents, so its colour is not
-   invented — it is taken off the paper. Every section carries the stock it
-   prints on: патент is pink, разрешение sage, страховка policy-blue, ДМС red.
-   Exactly one of those is on screen at a time — the one you are working in —
-   and it lands in three places only: the rail beside the open section, the
-   hairline under the screen's title, and the RUN button. Everything else is
-   ink and paper. The operator learns this program by colour, the way they
-   know their own stack of blanks.
+   The office chose this look from a head-up display: a black ground, sharp
+   corners, hairline frames, and one warm machine colour running through the
+   chrome. Everything here follows from three rules.
 
-   The ground is a warm ink black rather than the usual blue-black, so the
-   paper colours sit on it the way ink sits on a plate. Cards are lifted off
-   it with a real shadow (src/ui/widgets/shadow.py) — QSS cannot cast one.
+   ONE — THE GROUND IS BLACK AND THE FRAMES ARE HAIRLINES.
+   Surfaces are not raised with fills and radii; they are drawn with a single
+   line. Corners are square. A panel is a frame, not a pillow.
 
-   @ACCENT@ / @ACCENT_SOFT@ / @ACCENT_INK@ are filled in by src/ui/theme.py
-   from the section that is open. Nothing else in here changes.
+   TWO — TWO VOICES, NEVER MIXED.
+   @ACCENT@ is the colour of the PAPER the open section prints — патент pink,
+   регистрация sage, ДМС red (src/ui/theme.py). It appears on exactly three
+   things: the rail beside the open section, the hairline under the screen's
+   title, and the RUN button. The orange #FF7A18 is the MACHINE's own voice —
+   progress, search, chips, the program talking about itself. The operator can
+   always tell which of the two is speaking.
 
-   ink        #101119   ground
-   surface    #191B24   panels, cards
-   raised     #22242F   hover, chips
-   inset      #0C0D13   inputs, wells
-   line       #2B2E3B   borders
-   text       #ECEAE7   warm paper white
-   muted      #9A97A1   labels, hints
-   faint      #62606B   version, disabled
+   THREE — NOTHING GLOWS.
+   No text shadow, no bloom, no gradient wash. This is read for eight hours a
+   day; the look is carried by frames and spacing, not by light.
+
+   ink        #05070A   ground
+   panel      #0A0E14   cards, surfaces
+   raised     #121A22   hover, chips
+   inset      #05070A   inputs, wells (darker than the panel they sit in)
+   line       #26384A   frames
+   line-soft  #1A2430   dividers inside a frame
+   text       #E8EEF2
+   muted      #8A9BA8   labels, hints
+   faint      #60707E   version, disabled
+   machine    #FF7A18   the program's own voice
    =========================================================================== */
 
-QWidget { background: #101119; color: #ECEAE7;
+QWidget { background: #05070A; color: #E8EEF2;
           font-family: "Segoe UI Variable Text", "Segoe UI", "Inter",
                        "Arial", sans-serif; font-size: 14px; }
-QMainWindow { background: #101119; }
+QMainWindow { background: #05070A; }
 QLabel { background: transparent; }
-QToolTip { background: #22242F; color: #ECEAE7; border: 1px solid #33374a;
-           border-radius: 9px; padding: 8px 12px; }
-QFrame[frameShape="4"] { border: none; background: #23252F; max-height: 1px; }
-QMenu { background: #191B24; border: 1px solid #2B2E3B; border-radius: 12px; padding: 7px; }
-QMenu::item { padding: 9px 24px; border-radius: 8px; }
-QMenu::item:selected { background: #22242F; }
+QToolTip { background: #121A22; color: #E8EEF2; border: 1px solid #26384A;
+           border-radius: 0; padding: 8px 12px; }
+QFrame[frameShape="4"] { border: none; background: #1A2430; max-height: 1px; }
+QMenu { background: #0A0E14; border: 1px solid #26384A; border-radius: 0; padding: 6px; }
+QMenu::item { padding: 9px 24px; }
+QMenu::item:selected { background: #121A22; }
 
-/* ---------- sidebar: a plate rail, not a gradient ---------- */
-#sidebar { background: #0C0D13; border-right: 1px solid #1E2029; }
-/* the mark paints itself (src/ui/widgets/brand_mark.py) — the sheet only rules
-   a line under it, so the sidebar still reads as headed */
-#brandMark { background: transparent; border-bottom: 1px solid #1E2029; }
+/* ---------- sidebar: the instrument rail ---------- */
+#sidebar { background: #04060A; border-right: 1px solid #16222E; }
+#brandMark { background: transparent; border-bottom: 1px solid #16222E; }
 
-#navList { background: transparent; border: none; padding: 12px 10px; outline: 0; }
-#navList::item { padding: 10px 13px; margin: 2px 4px; border-radius: 9px;
-                 color: #A6A3AD; border-left: 3px solid transparent; }
-#navList::item:hover { background: #191B24; color: #ECEAE7; }
-#navList::item:selected { background: #1D202B; color: #FFFFFF; font-weight: 600;
-                          border-left: 3px solid @ACCENT@; }
-/* the section headings — quiet, letterspaced, never mistaken for a row */
-#navList::item:disabled { color: #5B5964; font-size: 10px; font-weight: 700;
-                          letter-spacing: 1.7px; padding: 18px 13px 7px 13px;
-                          background: transparent; border-left: 3px solid transparent; }
+#navList { background: transparent; border: none; padding: 10px 8px; outline: 0; }
+#navList::item { padding: 10px 13px; margin: 1px 2px; border-radius: 0;
+                 color: #A3B6C3; border-left: 2px solid transparent; }
+#navList::item:hover { background: #0D141C; color: #E8EEF2; }
+#navList::item:selected { background: #0F1821; color: #FFFFFF; font-weight: 600;
+                          border-left: 2px solid @ACCENT@; }
+/* the group headings — letterspaced, quiet, never mistaken for a row */
+#navList::item:disabled { color: #4A5D6C; font-size: 10px; font-weight: 700;
+                          letter-spacing: 1.9px; padding: 18px 13px 7px 13px;
+                          background: transparent; border-left: 2px solid transparent; }
 
-#sidebarVersion { color: #55535E; font-size: 11px; padding: 12px 0 14px 0;
-                  border-top: 1px solid #1E2029; background: transparent; }
+#sidebarVersion { color: #42525F; font-size: 11px; padding: 12px 0 14px 0;
+                  border-top: 1px solid #16222E; background: transparent; }
 
-#refreshButton { background: #191B24; border: 1px solid #2B2E3B; border-radius: 10px;
-                 color: #A6A3AD; font-weight: 600; padding: 10px 14px; }
-#refreshButton:hover { background: #22242F; border-color: #3A3D4C; color: #FFFFFF; }
-#refreshButton:pressed { background: #15161D; }
+#refreshButton { background: #0A0E14; border: 1px solid #26384A; border-radius: 0;
+                 color: #A3B6C3; font-weight: 600; padding: 10px 14px; }
+#refreshButton:hover { background: #121A22; border-color: #FF7A18; color: #FFFFFF; }
+#refreshButton:pressed { background: #05070A; }
 
 /* ---------- typography ---------- */
-#viewTitle { font-size: 31px; font-weight: 700; color: #FFFFFF;
-             background: transparent; letter-spacing: -0.4px;
+#viewTitle { font-size: 29px; font-weight: 700; color: #FFFFFF;
+             background: transparent; letter-spacing: 0.3px;
              padding-bottom: 12px; border-bottom: 2px solid @ACCENT@; }
-#viewSubtitle { font-size: 13px; color: #9A97A1; background: transparent; }
-/* the small upper-case label that sits above an input, modern-form style */
-#fieldLabel { font-size: 10.5px; font-weight: 700; letter-spacing: 1px;
-              color: #8E8B96; background: transparent; }
-/* the status chip on the right of a header (e.g. «AI тайёр») */
-#viewBadge { color: @ACCENT@; background: #191B24; border: 1px solid #2B2E3B;
-             border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; }
+#viewSubtitle { font-size: 13px; color: #8A9BA8; background: transparent; }
+/* the small upper-case label above an input */
+#fieldLabel { font-size: 10px; font-weight: 700; letter-spacing: 1.9px;
+              color: #FF7A18; background: transparent; }
+#viewBadge { color: #FFA052; background: #0A0E14; border: 1px solid #26384A;
+             border-radius: 0; padding: 6px 14px; font-size: 12px; font-weight: 700; }
 
 /* ---------- status bar ---------- */
-QStatusBar { background: #0C0D13; color: #9A97A1; border-top: 1px solid #1E2029; }
-QStatusBar QLabel { color: #9A97A1; background: transparent; }
+QStatusBar { background: #04060A; color: #8A9BA8; border-top: 1px solid #16222E; }
+QStatusBar QLabel { color: #8A9BA8; background: transparent; }
 QStatusBar::item { border: none; }
-#statusReady { color: #6FB894; font-weight: 700; }
-#statusChip { color: #A6A3AD; background: #191B24; border: 1px solid #2B2E3B;
-              border-radius: 10px; padding: 3px 12px; margin-right: 8px; }
+#statusReady { color: #6ECFA3; font-weight: 700; }
+#statusChip { color: #A3B6C3; background: #0A0E14; border: 1px solid #26384A;
+              border-radius: 0; padding: 3px 12px; margin-right: 8px; }
 
-/* ---------- cards ---------- */
-#statCard { background: #191B24; border: 1px solid #262835; border-radius: 16px;
+/* ---------- surfaces: every panel is a frame ---------- */
+#statCard { background: #0A0E14; border: 1px solid #26384A; border-radius: 0;
             min-width: 150px; }
-#statValue { font-family: "Cascadia Mono", "Consolas", monospace;
-             font-size: 32px; font-weight: 700; color: @ACCENT@;
-             background: transparent; }
-#statLabel { font-size: 11px; color: #9A97A1; background: transparent;
-             letter-spacing: 0.9px; }
+#statValue { font-family: "Consolas", "Cascadia Mono", monospace;
+             font-size: 28px; font-weight: 700; color: #E8EEF2;
+             background: transparent; letter-spacing: 1px; }
+#statLabel { font-size: 10px; color: #60707E; background: transparent;
+             letter-spacing: 1.8px; }
 
-#card { background: #191B24; border: 1px solid #262835; border-radius: 18px; }
+#card { background: #0A0E14; border: 1px solid #26384A; border-radius: 0; }
 #card QLabel { background: transparent; }
-#cardTitle { font-size: 15.5px; font-weight: 700; color: #F3F1EE; }
-#cardSubtitle { font-size: 12.5px; color: #9A97A1; }
-#cardNote { font-size: 12px; color: #6A6874; }
+#cardTitle { font-size: 15px; font-weight: 700; color: #F2F7FA; letter-spacing: .3px; }
+#cardSubtitle { font-size: 12.5px; color: #8A9BA8; }
+#cardNote { font-size: 12px; color: #60707E; }
 
-/* a titled group — the «ўқилгани» review blocks — reads as a card, its
-   heading sitting inside at the top-left rather than cut into the border */
-QGroupBox { background: #191B24; border: 1px solid #262835; border-radius: 16px;
+/* a titled block — «ўқилгани» and its kin — reads as an instrument panel */
+QGroupBox { background: #0A0E14; border: 1px solid #26384A; border-radius: 0;
             margin-top: 12px; padding: 26px 20px 20px 20px; font-weight: 700; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left;
-                   left: 20px; top: 12px; padding: 0; color: #F3F1EE;
-                   font-size: 13.5px; background: transparent; }
-QGroupBox QLabel { color: #9A97A1; }
+                   left: 18px; top: 10px; padding: 0; color: #FF7A18;
+                   font-size: 11px; font-weight: 700; letter-spacing: 1.8px;
+                   background: transparent; }
+QGroupBox QLabel { color: #8A9BA8; }
 
 /* ---------- buttons ---------- */
-QPushButton { background: #20222D; border: 1px solid #2F323F; border-radius: 10px;
-              padding: 10px 18px; color: #E4E1DD; font-weight: 600; }
-QPushButton:hover { background: #282B38; border-color: #3E4252; color: #FFFFFF; }
-QPushButton:pressed { background: #171922; }
-QPushButton:disabled { background: #16171F; color: #55535E; border-color: #212330; }
+QPushButton { background: #0D141C; border: 1px solid #26384A; border-radius: 0;
+              padding: 10px 18px; color: #CFDEE7; font-weight: 600; }
+QPushButton:hover { background: #121A22; border-color: #FF7A18; color: #FFFFFF; }
+QPushButton:pressed { background: #05070A; }
+QPushButton:disabled { background: #080C11; color: #46586A; border-color: #1A2430; }
 
 /* the one loud thing on the screen, in the colour of what it prints */
 #runButton, #primaryButton {
     background: @ACCENT@; color: @ACCENT_INK@; font-weight: 700; font-size: 14.5px;
-    padding: 13px 30px; border-radius: 12px; border: 1px solid @ACCENT@; }
+    padding: 13px 30px; border-radius: 0; border: 1px solid @ACCENT@;
+    letter-spacing: 1.1px; }
 #runButton:hover, #primaryButton:hover {
     background: @ACCENT_SOFT@; border-color: @ACCENT_SOFT@; }
 #runButton:pressed, #primaryButton:pressed { background: @ACCENT@; }
 #runButton:disabled, #primaryButton:disabled {
-    background: #1D202B; color: #55535E; border-color: #23252F; }
+    background: #0D141C; color: #46586A; border-color: #1A2430; }
 
 /* ---------- inputs ---------- */
 QLineEdit, QComboBox, QDateEdit, QSpinBox, QTextEdit, QPlainTextEdit {
-    background: #0C0D13; border: 1px solid #2F323F; border-radius: 10px;
-    padding: 10px 13px; min-height: 20px; color: #ECEAE7;
+    background: #05070A; border: 1px solid #26384A; border-radius: 0;
+    padding: 10px 13px; min-height: 20px; color: #E8EEF2;
     selection-background-color: @ACCENT@; selection-color: @ACCENT_INK@; }
 QLineEdit:hover, QComboBox:hover, QDateEdit:hover, QSpinBox:hover,
-QTextEdit:hover, QPlainTextEdit:hover { border-color: #3E4252; }
+QTextEdit:hover, QPlainTextEdit:hover { border-color: #3A5062; }
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QSpinBox:focus, QTextEdit:focus,
-QPlainTextEdit:focus { border: 2px solid @ACCENT@; padding: 9px 12px; background: #12131A; }
+QPlainTextEdit:focus { border: 1px solid @ACCENT@; background: #070C12; }
 QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled {
-    background: #16171F; color: #62606B; border-color: #23252F; }
-/* a date and a count are read back digit by digit — give them a face that
-   lines the digits up */
-QDateEdit, QSpinBox { font-family: "Cascadia Mono", "Consolas", monospace;
-                      letter-spacing: 0.4px; }
+    background: #080C11; color: #60707E; border-color: #1A2430; }
+/* a date and a count are read back digit by digit */
+QDateEdit, QSpinBox { font-family: "Consolas", "Cascadia Mono", monospace;
+                      letter-spacing: 0.6px; }
 QComboBox::drop-down { border: none; width: 28px; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent;
                         border-right: 4px solid transparent;
-                        border-top: 5px solid #9A97A1; margin-right: 10px; }
-QComboBox QAbstractItemView { background: #191B24; border: 1px solid #2B2E3B;
-                              border-radius: 10px; selection-background-color: #22242F;
-                              padding: 5px; outline: 0; }
+                        border-top: 5px solid #FF7A18; margin-right: 10px; }
+QComboBox QAbstractItemView { background: #0A0E14; border: 1px solid #26384A;
+                              border-radius: 0; selection-background-color: #121A22;
+                              padding: 4px; outline: 0; }
 QDateEdit::drop-down, QSpinBox::up-button, QSpinBox::down-button { border: none; width: 22px; }
 
 /* ---------- lists / tables ---------- */
-QListWidget { background: #0C0D13; border: 1px solid #262835; border-radius: 12px;
-              padding: 5px; outline: 0; }
-QListWidget::item { padding: 9px 11px; border-radius: 8px; }
-QListWidget::item:hover { background: #191B24; }
-QListWidget::item:selected { background: #22242F; color: #FFFFFF; }
-QTableWidget { background: #0C0D13; border: 1px solid #262835; border-radius: 12px;
-               gridline-color: #1E2029; outline: 0; }
+QListWidget { background: #05070A; border: 1px solid #26384A; border-radius: 0;
+              padding: 4px; outline: 0; }
+QListWidget::item { padding: 9px 11px; border-radius: 0; }
+QListWidget::item:hover { background: #0D141C; }
+QListWidget::item:selected { background: #121A22; color: #FFFFFF; }
+QTableWidget { background: #05070A; border: 1px solid #26384A; border-radius: 0;
+               gridline-color: #1A2430; outline: 0; }
 QTableWidget::item { padding: 8px; }
-QTableWidget::item:selected { background: #22242F; color: #FFFFFF; }
-QHeaderView::section { background: #191B24; color: #9A97A1; border: none;
-                       border-bottom: 1px solid #2B2E3B; padding: 10px;
-                       font-size: 11px; font-weight: 700; letter-spacing: 0.9px; }
-QTableCornerButton::section { background: #191B24; border: none; }
+QTableWidget::item:selected { background: #121A22; color: #FFFFFF; }
+QHeaderView::section { background: #0A0E14; color: #FF7A18; border: none;
+                       border-bottom: 1px solid #26384A; padding: 10px;
+                       font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; }
+QTableCornerButton::section { background: #0A0E14; border: none; }
 
-#settingsNav { background: #0C0D13; border: 1px solid #262835; border-radius: 12px;
-               padding: 9px; outline: 0; }
-#settingsNav::item { padding: 11px 13px; margin: 2px 0; border-radius: 9px; color: #A6A3AD; }
-#settingsNav::item:hover { background: #191B24; color: #ECEAE7; }
-#settingsNav::item:selected { background: #22242F; color: #FFFFFF; font-weight: 600; }
+#settingsNav { background: #05070A; border: 1px solid #26384A; border-radius: 0;
+               padding: 8px; outline: 0; }
+#settingsNav::item { padding: 11px 13px; margin: 1px 0; border-radius: 0; color: #A3B6C3; }
+#settingsNav::item:hover { background: #0D141C; color: #E8EEF2; }
+#settingsNav::item:selected { background: #121A22; color: #FFFFFF; font-weight: 600; }
 
 /* ---------- dialogs ---------- */
-QDialog { background: #101119; }
-QMessageBox { background: #101119; }
+QDialog { background: #05070A; }
+QMessageBox { background: #05070A; }
 
-/* ---------- scrollbars ---------- */
-QScrollBar:vertical { background: transparent; width: 11px; margin: 2px; }
-QScrollBar::handle:vertical { background: #2B2E3B; border-radius: 5px; min-height: 32px; }
-QScrollBar::handle:vertical:hover { background: #3E4252; }
-QScrollBar:horizontal { background: transparent; height: 11px; margin: 2px; }
-QScrollBar::handle:horizontal { background: #2B2E3B; border-radius: 5px; min-width: 32px; }
-QScrollBar::handle:horizontal:hover { background: #3E4252; }
+/* ---------- scrollbars: thin, square, machine-coloured under the hand ---- */
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: #26384A; border-radius: 0; min-height: 32px; }
+QScrollBar::handle:vertical:hover { background: #FF7A18; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:horizontal { background: #26384A; border-radius: 0; min-width: 32px; }
+QScrollBar::handle:horizontal:hover { background: #FF7A18; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
-/* ---------- drop zones: a place to lay a document, not a dotted box ------ */
-#dropZone { background: #191B24; border: 1.5px solid #2F323F; border-radius: 16px; }
-#dropZone[hover="true"] { border: 1.5px solid @ACCENT@; background: #1D202B; }
-#dropZone[filled="true"] { border: 1.5px solid @ACCENT@; background: #1D202B; }
-#dzIcon { font-size: 28px; background: transparent; }
-#dzTitle { font-size: 13.5px; font-weight: 700; color: #ECEAE7; background: transparent; }
-#dzHint { font-size: 11px; color: #9A97A1; background: transparent; }
+/* ---------- drop zones: a place to lay a document ---------- */
+#dropZone { background: #0A0E14; border: 1px solid #26384A; border-radius: 0; }
+#dropZone[hover="true"] { border: 1px solid #FF7A18; background: #120D06; }
+#dropZone[filled="true"] { border: 1px solid @ACCENT@; background: #0B1118; }
+#dzIcon { font-size: 26px; background: transparent; }
+#dzTitle { font-size: 13px; font-weight: 700; color: #E8EEF2; background: transparent;
+           letter-spacing: .4px; }
+#dzHint { font-size: 11px; color: #8A9BA8; background: transparent; }
 
 /* ---------- progress, choices, tabs ---------- */
-QProgressBar { background: #0C0D13; border: 1px solid #2B2E3B; border-radius: 8px;
-               height: 9px; text-align: center; color: transparent; }
-QProgressBar::chunk { background: @ACCENT@; border-radius: 7px; }
+QProgressBar { background: #05070A; border: 1px solid #26384A; border-radius: 0;
+               height: 8px; text-align: center; color: transparent; }
+QProgressBar::chunk { background: #FF7A18; border-radius: 0; }
 
 QCheckBox, QRadioButton { spacing: 9px; background: transparent; }
-QCheckBox::indicator, QRadioButton::indicator { width: 18px; height: 18px;
-    border: 1.5px solid #3E4252; border-radius: 5px; background: #0C0D13; }
-QRadioButton::indicator { border-radius: 9px; }
-QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: @ACCENT@; }
+QCheckBox::indicator, QRadioButton::indicator { width: 17px; height: 17px;
+    border: 1px solid #3A5062; border-radius: 0; background: #05070A; }
+QRadioButton::indicator { border-radius: 8px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: #FF7A18; }
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {
     background: @ACCENT@; border-color: @ACCENT@; }
 
-QTabWidget::pane { border: 1px solid #262835; border-radius: 12px; top: -1px; }
-QTabBar::tab { background: transparent; color: #9A97A1; padding: 10px 18px;
+QTabWidget::pane { border: 1px solid #26384A; border-radius: 0; top: -1px; }
+QTabBar::tab { background: transparent; color: #8A9BA8; padding: 10px 18px;
                border-bottom: 2px solid transparent; font-weight: 600; }
 QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid @ACCENT@; }
-QTabBar::tab:hover { color: #ECEAE7; }
+QTabBar::tab:hover { color: #E8EEF2; }
 
-/* ---------- home screen: the section cards and the figures above them ----
+/* ---------- the screens hang in a scroll host; it owns no colour --------- */
+#screenScroll, #screenScroll > QWidget > QWidget { background: transparent; }
+
+/* ---------- home screen ----------
    The cards paint themselves (src/ui/widgets/section_card.py) — the sheet
-   only has to keep the surfaces they sit on out of their way. */
+   only keeps the surfaces they sit on out of their way. */
 #homeScroll, #homeScroll > QWidget > QWidget { background: transparent; }
 #homeRecent { background: transparent; border: none; padding: 0; }
-#homeRecent::item { padding: 3px 2px; color: #9A97A1; border-radius: 6px; }
-#homeRecent::item:hover { background: #22242F; color: #ECEAE7; }
-#homeRecent::item:selected { background: #22242F; color: #FFFFFF; }
+#homeRecent::item { padding: 3px 2px; color: #8A9BA8; border-radius: 0; }
+#homeRecent::item:hover { background: #121A22; color: #E8EEF2; }
+#homeRecent::item:selected { background: #121A22; color: #FFFFFF; }
+
+/* ---------- the progress ring's two lines ---------- */
+#runProgressText { font-size: 13px; font-weight: 600; color: #E8EEF2;
+                   background: transparent; }
+#runProgressStep { font-size: 11.5px; color: #8A9BA8; background: transparent; }
